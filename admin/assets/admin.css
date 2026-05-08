@@ -1,0 +1,66 @@
+/*
+ * ServerTrack Admin Styles
+ * Inherits WordPress native design — no custom theme overrides.
+ * Uses --wp-admin-theme-color for accent points only.
+ */
+
+/* Page header */
+.servertrack-page-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 1.5rem;
+}
+
+.servertrack-logo-mark {
+    color: var(--wp-admin-theme-color, #2271b1);
+    font-size: 1rem;
+}
+
+/* Tab nav — inherits .nav-tab-wrapper, adds only spacing */
+.servertrack-tabs {
+    margin-bottom: 0;
+}
+
+/* Debug toolbar */
+.servertrack-debug-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0 8px;
+}
+
+/* Log row status colouring — subtle, accessible */
+.servertrack-log-row.servertrack-status-success td:nth-child(3) {
+    color: #008a00;
+    font-weight: 600;
+}
+.servertrack-log-row.servertrack-status-error td:nth-child(3) {
+    color: #d63638;
+    font-weight: 600;
+}
+.servertrack-log-row.servertrack-status-skipped td:nth-child(3),
+.servertrack-log-row.servertrack-status-dedup_blocked td:nth-child(3) {
+    color: #996800;
+    font-weight: 600;
+}
+
+/* Test event response box */
+.servertrack-test-response {
+    margin-top: 12px;
+    padding: 10px 14px;
+    background: #f6f7f7;
+    border-left: 4px solid var(--wp-admin-theme-color, #2271b1);
+    font-family: monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    display: none;
+}
+.servertrack-test-response.is-visible {
+    display: block;
+}
+.servertrack-test-response.is-error {
+    border-left-color: #d63638;
+    background: #fcf0f1;
+}
