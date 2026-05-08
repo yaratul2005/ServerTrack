@@ -53,3 +53,8 @@ ServerTrack enforces strict architectural constraints:
 
 ## License
 GPLv2 or later
+
+## Credits
+**Developed by:** Yaser Ahmmed Ratul  
+**Portfolio:** [yaratul.com](https://yaratul.com)  
+**Location:** Dhaka, Bangladesh
