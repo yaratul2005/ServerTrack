@@ -1,13 +1,14 @@
 /**
  * servertrack-pixel.js
  * Browser-side pixel coordinator.
- * Fires Meta Pixel and TikTok Pixel using the server-generated event_id
- * injected via wp_localize_script() as servertrack_config.
+ * Fires Meta Pixel, TikTok Pixel, and Google gtag conversion
+ * using the server-generated event_id injected via wp_localize_script()
+ * as servertrack_config.
  *
  * RULES:
  * - Never generate event_id here. Always use the PHP-provided one.
- * - Never fire pixels independently — only when config.event_id is present.
- * - Designed for the thank-you page exclusively.
+ * - Google gtag block only fires on thank-you page (event_id present).
+ * - Google transaction_id = event_id for browser/server dedup.
  */
 (function () {
     'use strict';
@@ -29,7 +30,6 @@
 
         fbq( 'init', cfg.meta_pixel );
 
-        // Only fire a tracked event if we have a server-generated event_id
         if ( cfg.event_id && cfg.event_name ) {
             var eventParams = { eventID: cfg.event_id };
 
@@ -85,15 +85,59 @@
         }
     }
 
+    // ── Google gtag Conversion ───────────────────────────────────────────
+    // Only fires on the thank-you page (event_id + gtag_id both present).
+    // transaction_id = event_id — this is the browser half of the
+    // server/browser dedup pair for Google Enhanced Conversions.
+    function initGoogleGtag() {
+        if ( ! cfg.google_enabled || ! cfg.gtag_id || ! cfg.gtag_label ) return;
+        if ( ! cfg.event_id || 'Purchase' !== cfg.event_name ) return;
+
+        // Load gtag.js if not already present
+        if ( ! window.gtag ) {
+            var gtagScript = document.createElement( 'script' );
+            gtagScript.async = true;
+            gtagScript.src = 'https://www.googletagmanager.com/gtag/js?id=' + cfg.gtag_id;
+            document.head.appendChild( gtagScript );
+
+            window.dataLayer = window.dataLayer || [];
+            window.gtag = function () {
+                // eslint-disable-next-line prefer-rest-params
+                window.dataLayer.push( arguments );
+            };
+            gtag( 'js', new Date() );
+            gtag( 'config', cfg.gtag_id, { send_page_view: false } );
+        }
+
+        // Fire conversion event
+        // transaction_id must match the event_id used in the server-side upload
+        // so Google can deduplicate the browser and server hits.
+        var conversionData = {
+            send_to:        cfg.gtag_id + '/' + cfg.gtag_label,
+            transaction_id: cfg.event_id,
+            value:          cfg.value    || 0,
+            currency:       cfg.currency || 'USD',
+        };
+
+        // Append gclid if PHP passed it (cookie-readable on this page)
+        if ( cfg.gclid ) {
+            conversionData.gclid = cfg.gclid;
+        }
+
+        gtag( 'event', 'conversion', conversionData );
+    }
+
     // ── Boot ─────────────────────────────────────────────────────────────
-    if ( document.readyState === 'loading' ) {
-        document.addEventListener( 'DOMContentLoaded', function () {
-            initMetaPixel();
-            initTikTokPixel();
-        } );
-    } else {
+    function boot() {
         initMetaPixel();
         initTikTokPixel();
+        initGoogleGtag();
+    }
+
+    if ( document.readyState === 'loading' ) {
+        document.addEventListener( 'DOMContentLoaded', boot );
+    } else {
+        boot();
     }
 
 }());

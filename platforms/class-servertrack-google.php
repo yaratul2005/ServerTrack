@@ -27,10 +27,10 @@ class ServerTrack_Google {
             return [ 'status' => 'error', 'message' => 'Google Ads credentials not fully configured.' ];
         }
 
-        // Constraint #4: ALWAYS check token expiry before every API call — never assume valid
+        // Constraint #4: ALWAYS check token expiry before every API call
         $access_token = self::get_valid_access_token();
         if ( ! $access_token ) {
-            return [ 'status' => 'error', 'message' => 'Google OAuth token refresh failed.' ];
+            return [ 'status' => 'error', 'http_code' => 0, 'message' => 'Google OAuth token refresh failed.' ];
         }
 
         $conversion = [
@@ -41,12 +41,33 @@ class ServerTrack_Google {
             'order_id'             => $event->custom_data['order_id'] ?? $event->event_id,
         ];
 
-        // GCLID — only include if present (constraint #5)
-        if ( ! empty( $event->user_data['gclid'] ) ) {
-            $conversion['gclid'] = $event->user_data['gclid'];
+        // ── GCLID resolution (Day 4) ────────────────────────────────────────
+        // Priority 1: gclid already in user_data (set by woocommerce source from cookie)
+        // Priority 2: order meta _servertrack_gclid (set by frontend.php on thank-you page)
+        // Priority 3: WC-session-keyed transient written at landing-page capture time
+        $gclid = $event->user_data['gclid'] ?? '';
+
+        if ( empty( $gclid ) ) {
+            $order_id = (int) ( $event->custom_data['order_id'] ?? 0 );
+            if ( $order_id > 0 ) {
+                $order = wc_get_order( $order_id );
+                if ( $order ) {
+                    $meta_gclid = $order->get_meta( '_servertrack_gclid', true );
+                    if ( ! empty( $meta_gclid ) ) {
+                        $gclid = (string) $meta_gclid;
+                    }
+                }
+            }
         }
 
-        // User identifiers
+        if ( ! empty( $gclid ) ) {
+            $conversion['gclid'] = $gclid;
+        }
+        // If gclid is still empty after all fallbacks, Google Enhanced Conversions
+        // will still match using hashed email/address — no gclid is acceptable.
+        // ────────────────────────────────────────────────────────────────────
+
+        // User identifiers for Enhanced Conversions
         $user_identifiers = [];
         if ( ! empty( $event->user_data['email'] ) ) {
             $user_identifiers[] = [ 'hashed_email' => $event->user_data['email'] ];
@@ -59,7 +80,7 @@ class ServerTrack_Google {
         if ( ! empty( $event->user_data['last_name'] ) ) {
             $address['hashed_last_name'] = $event->user_data['last_name'];
         }
-        // Google accepts raw (unhashed) geo fields — only include if present (constraint #5)
+        // Google accepts raw (unhashed) geo fields — only include if present
         $raw_addr_map = [
             'city_raw'    => 'city',
             'state_raw'   => 'state',
@@ -94,7 +115,7 @@ class ServerTrack_Google {
 
         if ( is_wp_error( $response ) ) {
             ServerTrack_Logger::log( 'error', 'google', $response->get_error_message(), '', $event->event_id, (int) ( $event->custom_data['order_id'] ?? 0 ), $event->event_name, 0 );
-            return [ 'status' => 'error', 'message' => $response->get_error_message() ];
+            return [ 'status' => 'error', 'http_code' => 0, 'message' => $response->get_error_message() ];
         }
 
         $code     = wp_remote_retrieve_response_code( $response );
