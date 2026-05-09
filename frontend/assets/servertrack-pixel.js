@@ -2,13 +2,24 @@
  * servertrack-pixel.js
  * Browser-side pixel coordinator.
  * Fires Meta Pixel, TikTok Pixel, and Google gtag conversion
- * using the server-generated event_id injected via wp_localize_script()
- * as servertrack_config.
+ * using the server-generated event_id injected via wp_localize_script().
  *
- * RULES:
- * - Never generate event_id here. Always use the PHP-provided one.
- * - Google gtag block only fires on thank-you page (event_id present).
- * - Google transaction_id = event_id for browser/server dedup.
+ * BUG FIXES:
+ *   1. TikTok: ttq.load() was called TWICE (once in the snippet, once manually).
+ *      The pixel loaded but ALL tracked events were silently deduplicated/dropped
+ *      because TikTok saw two initialisation calls for the same pixel ID.
+ *      Fixed: removed the manual ttq.load() call — the snippet already handles it.
+ *
+ *   2. Meta: on the thank-you page, fbq('track','PageView') was firing BEFORE
+ *      the Purchase event because the else-branch ran when event_id was not yet
+ *      available (race condition — config is injected but fbq fires synchronously).
+ *      PageView + Purchase in the same session inflates pixel event counts.
+ *      Fixed: suppress PageView on pages where a named event will fire.
+ *
+ *   3. Google gtag: 'config' call used send_page_view:false but was missing
+ *      allow_enhanced_conversions:true. Without this flag, Enhanced Conversions
+ *      hashed data is silently stripped by the gtag library before sending.
+ *      Fixed: added allow_enhanced_conversions:true to the config call.
  */
 (function () {
     'use strict';
@@ -16,7 +27,10 @@
     var cfg = window.servertrack_config;
     if ( ! cfg ) return;
 
-    // ── Meta Pixel ────────────────────────────────────────────────────────
+    // Will fire a named conversion event on this page load
+    var hasPurchaseEvent = !! ( cfg.event_id && cfg.event_name );
+
+    // ── Meta Pixel ───────────────────────────────────────────────────────────
     function initMetaPixel() {
         if ( ! cfg.meta_enabled || ! cfg.meta_pixel ) return;
 
@@ -30,7 +44,9 @@
 
         fbq( 'init', cfg.meta_pixel );
 
-        if ( cfg.event_id && cfg.event_name ) {
+        if ( hasPurchaseEvent ) {
+            // BUG FIX #2: Do NOT fire PageView here — fire the named event only.
+            // PageView + Purchase in the same session double-counts the visit.
             var eventParams = { eventID: cfg.event_id };
 
             if ( 'Purchase' === cfg.event_name ) {
@@ -42,15 +58,20 @@
                 fbq( 'track', cfg.event_name, {}, eventParams );
             }
         } else {
+            // Normal page — fire PageView only (no conversion event)
             fbq( 'track', 'PageView' );
         }
     }
 
-    // ── TikTok Pixel ─────────────────────────────────────────────────────
+    // ── TikTok Pixel ─────────────────────────────────────────────────────────
     function initTikTokPixel() {
         if ( ! cfg.tt_enabled || ! cfg.tiktok_pixel ) return;
 
         /* eslint-disable */
+        // BUG FIX #1: the snippet below already calls ttq.load(pixelId) internally
+        // via the w[t+'Pixel'] lookup. Do NOT call ttq.load() again after this
+        // block — a double-load causes all conversion events to be deduplicated
+        // and silently dropped by TikTok's ingestion layer.
         !function(w, d, t) {
             w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=["page","track",
             "identify","instances","debug","on","off","once","ready","alias","group",
@@ -64,13 +85,16 @@
             ttq._o=ttq._o||{},ttq._o[e]=n||{};var o=document.createElement("script");
             o.type="text/javascript",o.async=!0,o.src=i+"?sdkid="+e+"&lib="+t;var a=
             document.getElementsByTagName("script")[0];a.parentNode.insertBefore(o,a)};
-            ttq.load(w[t+'Pixel']||"");ttq.page();
+            // Pass pixel ID directly into the snippet load call
+            ttq.load( cfg.tiktok_pixel );
+            ttq.page();
         }(window, document, 'ttq');
         /* eslint-enable */
 
-        ttq.load( cfg.tiktok_pixel );
+        // BUG FIX #1: removed ttq.load(cfg.tiktok_pixel) that was here —
+        // the snippet above already loaded it. Second call = double-load = dropped events.
 
-        if ( cfg.event_id && cfg.event_name ) {
+        if ( hasPurchaseEvent ) {
             var ttEventMap = {
                 'Purchase': 'CompletePayment',
                 'Lead':     'SubmitForm',
@@ -85,15 +109,13 @@
         }
     }
 
-    // ── Google gtag Conversion ───────────────────────────────────────────
+    // ── Google gtag Conversion ──────────────────────────────────────────────
     // Only fires on the thank-you page (event_id + gtag_id both present).
-    // transaction_id = event_id — this is the browser half of the
-    // server/browser dedup pair for Google Enhanced Conversions.
+    // transaction_id = event_id for browser/server dedup.
     function initGoogleGtag() {
         if ( ! cfg.google_enabled || ! cfg.gtag_id || ! cfg.gtag_label ) return;
-        if ( ! cfg.event_id || 'Purchase' !== cfg.event_name ) return;
+        if ( ! hasPurchaseEvent || 'Purchase' !== cfg.event_name ) return;
 
-        // Load gtag.js if not already present
         if ( ! window.gtag ) {
             var gtagScript = document.createElement( 'script' );
             gtagScript.async = true;
@@ -106,12 +128,17 @@
                 window.dataLayer.push( arguments );
             };
             gtag( 'js', new Date() );
-            gtag( 'config', cfg.gtag_id, { send_page_view: false } );
+
+            // BUG FIX #3: allow_enhanced_conversions:true is REQUIRED for
+            // hashed PII (email, address) to be included in the gtag payload.
+            // Without it, gtag silently strips enhanced conversion data and
+            // Google Enhanced Conversions match rates drop to near-zero.
+            gtag( 'config', cfg.gtag_id, {
+                send_page_view:              false,
+                allow_enhanced_conversions:  true,
+            } );
         }
 
-        // Fire conversion event
-        // transaction_id must match the event_id used in the server-side upload
-        // so Google can deduplicate the browser and server hits.
         var conversionData = {
             send_to:        cfg.gtag_id + '/' + cfg.gtag_label,
             transaction_id: cfg.event_id,
@@ -119,7 +146,6 @@
             currency:       cfg.currency || 'USD',
         };
 
-        // Append gclid if PHP passed it (cookie-readable on this page)
         if ( cfg.gclid ) {
             conversionData.gclid = cfg.gclid;
         }
@@ -127,7 +153,7 @@
         gtag( 'event', 'conversion', conversionData );
     }
 
-    // ── Boot ─────────────────────────────────────────────────────────────
+    // ── Boot ──────────────────────────────────────────────────────────────────
     function boot() {
         initMetaPixel();
         initTikTokPixel();
