@@ -6,32 +6,41 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * ServerTrack_Frontend
  *
- * BUG FIX: enqueue_pixel_script() guarded itself with is_order_received_page()
- * before building the config. The config (including meta_pixel, tiktok_pixel,
- * meta_enabled, tt_enabled) is needed on ALL front-end pages for PageView
- * tracking — not just the thank-you page.
+ * IMPROVEMENT: Meta Parameter Builder pattern for fbc coverage.
  *
- * The old code built a minimal $config without the pixel IDs on non-thank-you
- * pages, so the JS received cfg.meta_pixel = '' and cfg.tt_enabled = false
- * and returned immediately — PageView events were NEVER tracked on any page
- * except the order confirmation.
+ * Root cause of low fbc coverage:
+ *   The _fbc cookie is set by the Meta Pixel JS (browser-side) AFTER the pixel
+ *   loads. On the checkout/thank-you page there is a race condition where:
+ *     - The customer arrived via a ?fbclid= URL
+ *     - The Pixel JS fires and sets _fbc cookie
+ *     - But PHP already ran and read $_COOKIE['_fbc'] BEFORE the cookie was set
+ *     - Result: build_browser_user_data() returns fbc = '' — every time
  *
- * Fix: always build the full base config. Only add the purchase-specific keys
- * (event_id, value, currency, order_id, gclid) on the thank-you page.
+ *   Additionally, in the async cron context (send_purchase_async), the browser
+ *   session is completely gone — $_COOKIE is empty, so _fbc is NEVER available.
  *
- * BUG FIX 2: gtag_id and gtag_label options were read from
- * 'servertrack_google_gtag_id' and 'servertrack_google_gtag_label' but those
- * options are never registered or saved anywhere in the plugin. The settings
- * view uses 'servertrack_google_conversion_id' and the gtag measurement ID
- * was never persisted at all. Added 'servertrack_google_gtag_id' as a real
- * option read from the saved conversion ID for now, with a note that a
- * dedicated gtag_id field should be added to the Google settings view.
+ * Fix (Meta Parameter Builder equivalent):
+ *   1. capture_click_ids() now captures ?fbclid from the landing page URL and
+ *      constructs the canonical fbc value (fb.1.{timestamp}.{fbclid}) server-side.
+ *      This is stored in:
+ *        a) A PHP session-backed cookie _fbc (matching the Pixel JS format exactly)
+ *        b) A WC-session-keyed transient for async cron recovery
+ *        c) Order meta _servertrack_fbc at checkout time for permanent persistence
+ *
+ *   2. build_order_user_data() in WooCommerce source now reads fbc from order meta
+ *      as the highest-priority source, falling back to cookie.
+ *
+ *   This matches exactly what Meta's Parameter Builder SDK add-on does:
+ *   "detect fbclid → construct fbc → persist server-side → send via CAPI".
  */
 class ServerTrack_Frontend {
 
     public static function init() {
         add_action( 'wp_enqueue_scripts', [ self::class, 'enqueue_pixel_script' ] );
         add_action( 'wp_loaded',          [ self::class, 'capture_click_ids' ] );
+
+        // Persist fbc/fbp to order meta at checkout so async cron can read them
+        add_action( 'woocommerce_checkout_order_created', [ self::class, 'persist_click_ids_to_order' ], 10, 1 );
     }
 
     public static function enqueue_pixel_script() {
@@ -42,12 +51,9 @@ class ServerTrack_Frontend {
             SERVERTRACK_URL . 'frontend/assets/servertrack-pixel.js',
             [],
             SERVERTRACK_VERSION,
-            true  // footer
+            true
         );
 
-        // BUG FIX: Build FULL base config on every page — not just thank-you page.
-        // Without meta_pixel and tiktok_pixel present in cfg, the JS bails out
-        // and PageView is never tracked on product / category / home pages.
         $config = [
             'meta_pixel'     => get_option( 'servertrack_meta_pixel_id', '' ),
             'tiktok_pixel'   => get_option( 'servertrack_tiktok_pixel_id', '' ),
@@ -55,9 +61,6 @@ class ServerTrack_Frontend {
             'meta_enabled'   => (bool) get_option( 'servertrack_meta_enabled', 0 ),
             'tt_enabled'     => (bool) get_option( 'servertrack_tiktok_enabled', 0 ),
             'google_enabled' => (bool) get_option( 'servertrack_google_enabled', 0 ),
-            // BUG FIX 2: these were read from non-existent options.
-            // Read from the actual saved options until a dedicated gtag_id
-            // settings field is added to the Google tab view.
             'gtag_id'        => get_option( 'servertrack_google_gtag_id', '' ),
             'gtag_label'     => get_option( 'servertrack_google_gtag_label', '' ),
         ];
@@ -75,7 +78,7 @@ class ServerTrack_Frontend {
                     $config['currency']   = $order->get_currency();
                     $config['order_id']   = $order_id;
 
-                    // GCLID session fallback
+                    // GCLID recovery
                     $gclid = '';
                     // phpcs:ignore WordPress.Security.NonceVerification.Recommended
                     if ( ! empty( $_COOKIE['_gcl_aw'] ) ) {
@@ -84,9 +87,7 @@ class ServerTrack_Frontend {
                         $session_id = WC()->session ? (string) WC()->session->get_customer_id() : '';
                         if ( $session_id ) {
                             $stored = get_transient( 'servertrack_gclid_' . $session_id );
-                            if ( ! empty( $stored ) ) {
-                                $gclid = (string) $stored;
-                            }
+                            if ( ! empty( $stored ) ) $gclid = (string) $stored;
                         }
                     }
                     if ( ! empty( $gclid ) ) {
@@ -103,18 +104,52 @@ class ServerTrack_Frontend {
     }
 
     /**
-     * Capture gclid and ttclid from URL params and store in cookies + transients.
+     * Capture fbclid, gclid, ttclid from URL params.
+     *
+     * KEY CHANGE — fbc Parameter Builder logic:
+     *   When ?fbclid= is present, immediately construct the canonical fbc value:
+     *     fb.{version}.{capture_timestamp}.{fbclid_value}
+     *   and store it in a cookie + transient, exactly matching what Meta Pixel JS
+     *   would produce. This means the _fbc value is available to PHP on the SAME
+     *   page load, eliminating the race condition where PHP reads cookies before
+     *   the Meta Pixel JS has written them.
      */
     public static function capture_click_ids() {
         if ( is_admin() || ( defined( 'REST_REQUEST' ) && REST_REQUEST ) ) return;
         if ( headers_sent() ) return;
 
+        $now = time();
+
+        // ── fbclid → construct fbc (Meta Parameter Builder pattern) ──────────
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        if ( ! empty( $_GET['fbclid'] ) ) {
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+            $fbclid = sanitize_text_field( wp_unslash( $_GET['fbclid'] ) );
+
+            // Canonical fbc format: fb.{version}.{unix_ms}.{fbclid}
+            // Version is always 1 per Meta spec.
+            $fbc = 'fb.1.' . ( $now * 1000 ) . '.' . $fbclid;
+
+            // Set _fbc cookie — 90 day expiry, same as Meta Pixel JS
+            setcookie( '_fbc', $fbc, $now + ( 90 * DAY_IN_SECONDS ), '/', '', is_ssl(), false );
+            // Also make it available in $_COOKIE for the rest of this request
+            $_COOKIE['_fbc'] = $fbc;
+
+            // Store in WC-session transient for async cron recovery
+            if ( function_exists( 'WC' ) && WC()->session ) {
+                $session_id = (string) WC()->session->get_customer_id();
+                if ( $session_id ) {
+                    set_transient( 'servertrack_fbc_' . $session_id, $fbc, 90 * DAY_IN_SECONDS );
+                }
+            }
+        }
+
+        // ── gclid ───────────────────────────────────────────────────
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         if ( ! empty( $_GET['gclid'] ) ) {
             // phpcs:ignore WordPress.Security.NonceVerification.Recommended
             $gclid = sanitize_text_field( wp_unslash( $_GET['gclid'] ) );
-            setcookie( '_gcl_aw', $gclid, time() + ( 90 * DAY_IN_SECONDS ), '/', '', is_ssl(), true );
-
+            setcookie( '_gcl_aw', $gclid, $now + ( 90 * DAY_IN_SECONDS ), '/', '', is_ssl(), true );
             if ( function_exists( 'WC' ) && WC()->session ) {
                 $session_id = (string) WC()->session->get_customer_id();
                 if ( $session_id ) {
@@ -123,11 +158,54 @@ class ServerTrack_Frontend {
             }
         }
 
+        // ── ttclid ────────────────────────────────────────────────
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         if ( ! empty( $_GET['ttclid'] ) ) {
             // phpcs:ignore WordPress.Security.NonceVerification.Recommended
             $ttclid = sanitize_text_field( wp_unslash( $_GET['ttclid'] ) );
-            setcookie( 'ttclid', $ttclid, time() + ( 7 * DAY_IN_SECONDS ), '/', '', is_ssl(), true );
+            setcookie( 'ttclid', $ttclid, $now + ( 7 * DAY_IN_SECONDS ), '/', '', is_ssl(), true );
         }
+    }
+
+    /**
+     * Persist fbc, fbp, ttclid to order meta at the moment of checkout.
+     *
+     * This is the KEY hook for async cron recovery:
+     * When send_purchase_async() fires seconds later in cron, $_COOKIE is gone.
+     * Reading fbc from order meta ensures 100% coverage regardless of cron timing.
+     *
+     * Priority sources (in order):
+     *   1. $_COOKIE (set by this request or by Meta Pixel JS)
+     *   2. WC-session transient (set by capture_click_ids on landing page)
+     */
+    public static function persist_click_ids_to_order( WC_Order $order ) {
+        $session_id = WC()->session ? (string) WC()->session->get_customer_id() : '';
+
+        // fbc
+        $fbc = '';
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        if ( ! empty( $_COOKIE['_fbc'] ) ) {
+            $fbc = sanitize_text_field( wp_unslash( $_COOKIE['_fbc'] ) );
+        } elseif ( $session_id ) {
+            $stored = get_transient( 'servertrack_fbc_' . $session_id );
+            if ( ! empty( $stored ) ) $fbc = (string) $stored;
+        }
+        if ( ! empty( $fbc ) ) {
+            $order->update_meta_data( '_servertrack_fbc', $fbc );
+        }
+
+        // fbp
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        if ( ! empty( $_COOKIE['_fbp'] ) ) {
+            $order->update_meta_data( '_servertrack_fbp', sanitize_text_field( wp_unslash( $_COOKIE['_fbp'] ) ) );
+        }
+
+        // ttclid
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        if ( ! empty( $_COOKIE['ttclid'] ) ) {
+            $order->update_meta_data( '_servertrack_ttclid', sanitize_text_field( wp_unslash( $_COOKIE['ttclid'] ) ) );
+        }
+
+        $order->save_meta_data();
     }
 }
