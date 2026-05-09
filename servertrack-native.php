@@ -8,6 +8,8 @@
  * Requires PHP:    7.4+
  * Requires WC:     7.0+
  * License:         GPLv2 or later
+ * Author:          Yaser Ahmmed Ratul
+ * Author URI:      https://yaratul.com
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
