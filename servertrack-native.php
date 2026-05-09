@@ -1,12 +1,12 @@
 <?php
 /**
- * Plugin Name:     ServerTrack — Native Server-Side Events
- * Plugin Slug:     servertrack-native
+ * Plugin Name:     ServerTrack
+ * Plugin Slug:     servertrack
  * Description:     A high-performance, zero-dependency server-side tracking plugin for WordPress. Completely bypasses ad blockers and iOS privacy restrictions.
  * Text Domain:     servertrack
  * Version:         1.0.0
- * Requires WP:     6.0+
- * Requires PHP:    7.4+
+ * Requires WP:     6.0
+ * Requires PHP:    7.4
  * Requires WC:     7.0+
  * License:         GPLv2 or later
  * Author:          Yaser Ahmmed Ratul

@@ -49,7 +49,14 @@ class ServerTrack_Admin {
             'servertrack_cf7_mappings', // JSON field mapping per CF7 form ID
         ];
         foreach ( $options as $option ) {
-            register_setting( 'servertrack_settings', $option );
+            // Skip cf7_mappings in this generic loop because it requires a special array sanitization
+            if ( 'servertrack_cf7_mappings' === $option ) continue;
+            
+            register_setting( 'servertrack_settings', $option, [
+                'type'              => 'string',
+                'sanitize_callback' => 'sanitize_text_field',
+                'default'           => '',
+            ] );
         }
 
         // CF7 mappings is an array — sanitize each nested value
