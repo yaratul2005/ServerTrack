@@ -56,6 +56,7 @@ class ServerTrack_Frontend {
      * Runs on wp_loaded to catch all page types.
      */
     public static function capture_click_ids() {
+        if ( is_admin() || ( defined('REST_REQUEST') && REST_REQUEST ) ) return;
         if ( headers_sent() ) return;
 
         // GCLID — 90 days

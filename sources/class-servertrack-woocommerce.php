@@ -19,7 +19,7 @@ class ServerTrack_WooCommerce {
 
         // ── Engagement signals (synchronous — no PII, no checkout timeout risk)
         add_action( 'woocommerce_after_single_product',    [ self::class, 'on_view_content' ] );
-        add_action( 'woocommerce_add_to_cart',             [ self::class, 'on_add_to_cart' ],     10, 6 );
+        add_action( 'woocommerce_add_to_cart',             [ self::class, 'on_add_to_cart' ],     10, 4 );
         add_action( 'woocommerce_before_checkout_form',    [ self::class, 'on_initiate_checkout' ] );
 
         // ── Lead: new account registration ───────────────────────────────
@@ -53,7 +53,7 @@ class ServerTrack_WooCommerce {
 
         // Constraint #6: check dedup lock before scheduling
         if ( ServerTrack_Dedup::was_sent( $order_id, 'google' ) ) {
-            ServerTrack_Logger::log( 'dedup_blocked', 'google', 'order_completed dedup block', (string) $order_id );
+            ServerTrack_Logger::log( 'dedup_blocked', 'google', 'order_completed dedup block', '', ServerTrack_Dedup::get_event_id( $order_id ), $order_id, 'Purchase' );
             return;
         }
 
@@ -67,7 +67,7 @@ class ServerTrack_WooCommerce {
         ServerTrack_Logger::log(
             'skipped', 'all',
             'Order #' . $order_id . ' refunded. Server event already sent — no reversal sent to platforms.',
-            (string) $order_id
+            '', ServerTrack_Dedup::get_event_id( $order_id ), $order_id, 'Purchase'
         );
         update_post_meta( $order_id, '_servertrack_refunded', true );
     }
@@ -84,8 +84,7 @@ class ServerTrack_WooCommerce {
         $servertrack_product = wc_get_product( get_queried_object_id() );
         if ( ! $servertrack_product ) return;
 
-        require_once SERVERTRACK_DIR . 'platforms/class-servertrack-meta.php';
-        require_once SERVERTRACK_DIR . 'platforms/class-servertrack-tiktok.php';
+
 
         $event_id  = ServerTrack_Dedup::generate_event_id( 'view_' . $servertrack_product->get_id() . '_' . wp_generate_uuid4() );
         $user_data = self::build_browser_user_data();
@@ -101,12 +100,20 @@ class ServerTrack_WooCommerce {
             'content_ids' => [ $sku ],
         ] );
 
+        $timeout_filter = function( $args ) {
+            $args['timeout'] = 3;
+            return $args;
+        };
+        add_filter( 'http_request_args', $timeout_filter, 999 );
+
         if ( $meta_on && ServerTrack_Consent::is_granted( 'meta' ) ) {
             ServerTrack_Meta::send( $event );
         }
         if ( $tiktok_on && ServerTrack_Consent::is_granted( 'tiktok' ) ) {
             ServerTrack_TikTok::send( $event );
         }
+
+        remove_filter( 'http_request_args', $timeout_filter, 999 );
     }
 
     // ── AddToCart — Section 5A ────────────────────────────────────────────
@@ -121,8 +128,7 @@ class ServerTrack_WooCommerce {
         $product   = wc_get_product( $actual_id );
         if ( ! $product ) return;
 
-        require_once SERVERTRACK_DIR . 'platforms/class-servertrack-meta.php';
-        require_once SERVERTRACK_DIR . 'platforms/class-servertrack-tiktok.php';
+
 
         $event_id = ServerTrack_Dedup::generate_event_id( 'atc_' . $product_id . '_' . wp_generate_uuid4() );
         $price    = (float) wc_get_price_to_display( $product );
@@ -136,12 +142,20 @@ class ServerTrack_WooCommerce {
             'contents' => [ [ 'id' => $sku, 'quantity' => $quantity, 'item_price' => $price ] ],
         ] );
 
+        $timeout_filter = function( $args ) {
+            $args['timeout'] = 3;
+            return $args;
+        };
+        add_filter( 'http_request_args', $timeout_filter, 999 );
+
         if ( $meta_on && ServerTrack_Consent::is_granted( 'meta' ) ) {
             ServerTrack_Meta::send( $event );
         }
         if ( $tiktok_on && ServerTrack_Consent::is_granted( 'tiktok' ) ) {
             ServerTrack_TikTok::send( $event );
         }
+
+        remove_filter( 'http_request_args', $timeout_filter, 999 );
     }
 
     // ── InitiateCheckout — Section 5A ─────────────────────────────────────
@@ -153,8 +167,7 @@ class ServerTrack_WooCommerce {
         if ( ! $meta_on && ! $tiktok_on ) return;
         if ( ! WC()->cart ) return;
 
-        require_once SERVERTRACK_DIR . 'platforms/class-servertrack-meta.php';
-        require_once SERVERTRACK_DIR . 'platforms/class-servertrack-tiktok.php';
+
 
         $session_id = WC()->session ? (string) WC()->session->get_customer_id() : wp_generate_uuid4();
         $event_id   = ServerTrack_Dedup::generate_event_id( 'checkout_' . $session_id . '_' . wp_generate_uuid4() );
@@ -180,12 +193,20 @@ class ServerTrack_WooCommerce {
             'contents' => $contents,
         ] );
 
+        $timeout_filter = function( $args ) {
+            $args['timeout'] = 3;
+            return $args;
+        };
+        add_filter( 'http_request_args', $timeout_filter, 999 );
+
         if ( $meta_on && ServerTrack_Consent::is_granted( 'meta' ) ) {
             ServerTrack_Meta::send( $event );
         }
         if ( $tiktok_on && ServerTrack_Consent::is_granted( 'tiktok' ) ) {
             ServerTrack_TikTok::send( $event );
         }
+
+        remove_filter( 'http_request_args', $timeout_filter, 999 );
     }
 
     // ── Lead: New Customer Registration — Section 5A ──────────────────────
@@ -196,8 +217,7 @@ class ServerTrack_WooCommerce {
         $tiktok_on = get_option( 'servertrack_tiktok_enabled', 0 );
         if ( ! $meta_on && ! $tiktok_on ) return;
 
-        require_once SERVERTRACK_DIR . 'platforms/class-servertrack-meta.php';
-        require_once SERVERTRACK_DIR . 'platforms/class-servertrack-tiktok.php';
+
 
         $event_id  = ServerTrack_Dedup::generate_event_id( 'woo_lead_' . $customer_id . '_' . wp_generate_uuid4() );
         $user_data = self::build_browser_user_data();
@@ -229,16 +249,14 @@ class ServerTrack_WooCommerce {
 
     // ── Async Cron Handler ────────────────────────────────────────────────
     public static function send_purchase_async( int $order_id, string $trigger ) {
-        require_once SERVERTRACK_DIR . 'platforms/class-servertrack-meta.php';
-        require_once SERVERTRACK_DIR . 'platforms/class-servertrack-google.php';
-        require_once SERVERTRACK_DIR . 'platforms/class-servertrack-tiktok.php';
+
 
         $order = wc_get_order( $order_id );
         if ( ! $order ) return;
 
         // Section 15: abort if refunded
         if ( get_post_meta( $order_id, '_servertrack_refunded', true ) ) {
-            ServerTrack_Logger::log( 'skipped', 'all', 'Aborted — order was refunded.', (string) $order_id );
+            ServerTrack_Logger::log( 'skipped', 'all', 'Aborted — order was refunded.', '', ServerTrack_Dedup::get_event_id( $order_id ), $order_id, 'Purchase' );
             return;
         }
 
@@ -256,10 +274,10 @@ class ServerTrack_WooCommerce {
                     ServerTrack_Meta::send( $e );
                     ServerTrack_Dedup::mark_as_sent( $order_id, 'meta' );
                 } else {
-                    ServerTrack_Logger::log( 'skipped', 'meta', 'Consent not granted', (string) $order_id );
+                    ServerTrack_Logger::log( 'skipped', 'meta', 'Consent not granted', '', $event_id, $order_id, 'Purchase' );
                 }
             } else {
-                ServerTrack_Logger::log( 'dedup_blocked', 'meta', 'Already sent', (string) $order_id );
+                ServerTrack_Logger::log( 'dedup_blocked', 'meta', 'Already sent', '', $event_id, $order_id, 'Purchase' );
             }
         }
 
@@ -273,10 +291,10 @@ class ServerTrack_WooCommerce {
                     ServerTrack_TikTok::send( $e );
                     ServerTrack_Dedup::mark_as_sent( $order_id, 'tiktok' );
                 } else {
-                    ServerTrack_Logger::log( 'skipped', 'tiktok', 'Consent not granted', (string) $order_id );
+                    ServerTrack_Logger::log( 'skipped', 'tiktok', 'Consent not granted', '', $event_id, $order_id, 'Purchase' );
                 }
             } else {
-                ServerTrack_Logger::log( 'dedup_blocked', 'tiktok', 'Already sent', (string) $order_id );
+                ServerTrack_Logger::log( 'dedup_blocked', 'tiktok', 'Already sent', '', $event_id, $order_id, 'Purchase' );
             }
         }
 
@@ -290,10 +308,10 @@ class ServerTrack_WooCommerce {
                     ServerTrack_Google::send( $e );
                     ServerTrack_Dedup::mark_as_sent( $order_id, 'google' );
                 } else {
-                    ServerTrack_Logger::log( 'skipped', 'google', 'Consent not granted', (string) $order_id );
+                    ServerTrack_Logger::log( 'skipped', 'google', 'Consent not granted', '', $event_id, $order_id, 'Purchase' );
                 }
             } else {
-                ServerTrack_Logger::log( 'dedup_blocked', 'google', 'Already sent', (string) $order_id );
+                ServerTrack_Logger::log( 'dedup_blocked', 'google', 'Already sent', '', $event_id, $order_id, 'Purchase' );
             }
         }
     }
@@ -331,7 +349,17 @@ class ServerTrack_WooCommerce {
         if ( ! empty( $email ) ) $data['email'] = ServerTrack_Hasher::hash_email( $email );
 
         $phone = $order->get_billing_phone();
-        if ( ! empty( $phone ) ) $data['phone'] = ServerTrack_Hasher::hash_phone( $phone );
+        if ( ! empty( $phone ) ) {
+            $country_codes = [
+                'US' => '1', 'CA' => '1', 'GB' => '44', 'AU' => '61', 'DE' => '49',
+                'FR' => '33', 'IT' => '39', 'ES' => '34', 'NL' => '31', 'SE' => '46',
+                'NO' => '47', 'DK' => '45', 'FI' => '358', 'CH' => '41', 'AT' => '43',
+                'IE' => '353', 'NZ' => '64', 'ZA' => '27', 'IN' => '91', 'BR' => '55'
+            ];
+            $country_iso  = $order->get_billing_country();
+            $country_code = $country_codes[ $country_iso ] ?? ''; // Default to no prefix if not in top 20
+            $data['phone'] = ServerTrack_Hasher::hash_phone( $phone, $country_code );
+        }
 
         $pii_map = [
             'first_name' => $order->get_billing_first_name(),

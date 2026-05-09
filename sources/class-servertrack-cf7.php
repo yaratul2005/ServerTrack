@@ -15,8 +15,7 @@ class ServerTrack_CF7 {
     public static function on_form_sent( WPCF7_ContactForm $contact_form ) {
         if ( ! get_option( 'servertrack_enabled', 1 ) ) return;
 
-        require_once SERVERTRACK_DIR . 'platforms/class-servertrack-meta.php';
-        require_once SERVERTRACK_DIR . 'platforms/class-servertrack-tiktok.php';
+
 
         $form_id  = $contact_form->id();
         $event_id = ServerTrack_Dedup::generate_event_id( 'lead_cf7_' . $form_id . '_' . wp_generate_uuid4() );

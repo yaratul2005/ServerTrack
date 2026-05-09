@@ -13,13 +13,17 @@ class ServerTrack_Logger {
      * @param string $message  Message or HTTP Code
      * @param string $response API response body (optional)
      */
-    public static function log( string $status, string $platform, string $message, string $response = '' ) {
+    public static function log( string $status, string $platform, string $message, string $response = '', string $event_id = '', int $order_id = 0, string $event_name = '', int $http_code = 0 ) {
         $log_entry = [
-            'timestamp' => current_time( 'mysql' ),
-            'platform'  => $platform,
-            'status'    => $status,
-            'message'   => $message,
-            'response'  => $response,
+            'timestamp'  => current_time( 'mysql' ),
+            'platform'   => $platform,
+            'status'     => $status,
+            'message'    => $message,
+            'response'   => $response,
+            'event_id'   => $event_id,
+            'order_id'   => $order_id,
+            'event_name' => $event_name,
+            'http_code'  => $http_code,
         ];
 
         $logs = get_option( 'servertrack_debug_log', [] );

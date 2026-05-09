@@ -48,14 +48,22 @@ class ServerTrack_Admin {
             'servertrack_source_woo_enabled', 'servertrack_source_cf7_enabled', 'servertrack_source_edd_enabled',
             'servertrack_cf7_mappings', // JSON field mapping per CF7 form ID
         ];
+        $bool_options = [
+            'servertrack_enabled', 'servertrack_test_mode',
+            'servertrack_meta_enabled', 'servertrack_google_enabled', 'servertrack_tiktok_enabled',
+            'servertrack_source_woo_enabled', 'servertrack_source_cf7_enabled', 'servertrack_source_edd_enabled'
+        ];
+
         foreach ( $options as $option ) {
             // Skip cf7_mappings in this generic loop because it requires a special array sanitization
             if ( 'servertrack_cf7_mappings' === $option ) continue;
             
+            $is_bool = in_array( $option, $bool_options, true );
+            
             register_setting( 'servertrack_settings', $option, [
-                'type'              => 'string',
-                'sanitize_callback' => 'sanitize_text_field',
-                'default'           => '',
+                'type'              => $is_bool ? 'integer' : 'string',
+                'sanitize_callback' => $is_bool ? 'absint' : 'sanitize_text_field',
+                'default'           => $is_bool ? 0 : '',
             ] );
         }
 
@@ -153,9 +161,7 @@ class ServerTrack_Admin {
     }
 
     private static function fire_test_event( string $platform ): array {
-        require_once SERVERTRACK_DIR . 'platforms/class-servertrack-meta.php';
-        require_once SERVERTRACK_DIR . 'platforms/class-servertrack-google.php';
-        require_once SERVERTRACK_DIR . 'platforms/class-servertrack-tiktok.php';
+
 
         $event_id = 'test_event_' . time();
 

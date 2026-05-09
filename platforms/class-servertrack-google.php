@@ -10,7 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class ServerTrack_Google {
 
     const TOKEN_ENDPOINT  = 'https://oauth2.googleapis.com/token';
-    const UPLOAD_ENDPOINT = 'https://googleads.googleapis.com/v14/customers/%s/conversionActions/%s:uploadClickConversions';
+    const UPLOAD_ENDPOINT = 'https://googleads.googleapis.com/v17/customers/%s/conversionActions/%s:uploadClickConversions';
 
     /**
      * Send an Enhanced Conversion to Google Ads.
@@ -93,7 +93,7 @@ class ServerTrack_Google {
         ] );
 
         if ( is_wp_error( $response ) ) {
-            ServerTrack_Logger::log( 'error', 'google', $response->get_error_message() );
+            ServerTrack_Logger::log( 'error', 'google', $response->get_error_message(), '', $event->event_id, (int) ( $event->custom_data['order_id'] ?? 0 ), $event->event_name, 0 );
             return [ 'status' => 'error', 'message' => $response->get_error_message() ];
         }
 
@@ -101,7 +101,7 @@ class ServerTrack_Google {
         $body_raw = wp_remote_retrieve_body( $response );
         $status   = ( $code >= 200 && $code < 300 ) ? 'success' : 'error';
 
-        ServerTrack_Logger::log( $status, 'google', (string) $code, $body_raw );
+        ServerTrack_Logger::log( $status, 'google', (string) $code, $body_raw, $event->event_id, (int) ( $event->custom_data['order_id'] ?? 0 ), $event->event_name, $code );
         return [ 'status' => $status, 'http_code' => $code, 'response' => $body_raw ];
     }
 

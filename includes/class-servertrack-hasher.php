@@ -16,9 +16,14 @@ class ServerTrack_Hasher {
     /**
      * Specific hashing rule for phone numbers.
      */
-    public static function hash_phone( string $phone ): string {
+    public static function hash_phone( string $phone, string $country_code = '1' ): string {
         // Strip all non-numeric characters. Master prompt instructs to strip all non-numeric.
         $normalized = preg_replace( '/[^0-9]/', '', $phone );
+        
+        if ( ! empty( $normalized ) && ! empty( $country_code ) && strpos( $normalized, $country_code ) !== 0 ) {
+            $normalized = $country_code . $normalized;
+        }
+        
         return self::hash( $normalized );
     }
 

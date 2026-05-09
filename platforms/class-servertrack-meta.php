@@ -9,7 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class ServerTrack_Meta {
 
-    const API_ENDPOINT = 'https://graph.facebook.com/v18.0/%s/events';
+    const API_ENDPOINT = 'https://graph.facebook.com/v21.0/%s/events';
 
     /**
      * Send an event to Meta CAPI.
@@ -85,7 +85,7 @@ class ServerTrack_Meta {
         ] );
 
         if ( is_wp_error( $response ) ) {
-            ServerTrack_Logger::log( 'error', 'meta', $response->get_error_message() );
+            ServerTrack_Logger::log( 'error', 'meta', $response->get_error_message(), '', $event->event_id, (int) ( $event->custom_data['order_id'] ?? 0 ), $event->event_name, 0 );
             return [ 'status' => 'error', 'message' => $response->get_error_message() ];
         }
 
@@ -93,7 +93,7 @@ class ServerTrack_Meta {
         $body_raw = wp_remote_retrieve_body( $response );
         $status   = ( $code >= 200 && $code < 300 ) ? 'success' : 'error';
 
-        ServerTrack_Logger::log( $status, 'meta', (string) $code, $body_raw );
+        ServerTrack_Logger::log( $status, 'meta', (string) $code, $body_raw, $event->event_id, (int) ( $event->custom_data['order_id'] ?? 0 ), $event->event_name, $code );
         return [ 'status' => $status, 'http_code' => $code, 'response' => $body_raw ];
     }
 }

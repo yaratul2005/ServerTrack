@@ -59,6 +59,9 @@ function servertrack_activate() {
 function servertrack_deactivate() {
     // Clear any pending cron jobs on deactivation
     wp_clear_scheduled_hook( 'servertrack_send_woo_purchase' );
+    wp_clear_scheduled_hook( 'servertrack_send_edd_purchase' );
+    wp_unschedule_hook( 'servertrack_send_woo_purchase' );
+    wp_unschedule_hook( 'servertrack_send_edd_purchase' );
 }
 
 // Initialize Plugin
