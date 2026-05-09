@@ -22,13 +22,22 @@ class ServerTrack_Core {
         require_once SERVERTRACK_DIR . 'includes/class-servertrack-retry.php';
         ServerTrack_Retry::init();
 
+        // Unconditionally load all platform classes to avoid cron fragilities
+        require_once SERVERTRACK_DIR . 'platforms/class-servertrack-meta.php';
+        require_once SERVERTRACK_DIR . 'platforms/class-servertrack-google.php';
+        require_once SERVERTRACK_DIR . 'platforms/class-servertrack-tiktok.php';
+
         // Event sources — always register hooks so cron callbacks fire correctly
         if ( class_exists( 'WooCommerce' ) ) {
             require_once SERVERTRACK_DIR . 'sources/class-servertrack-woocommerce.php';
             ServerTrack_WooCommerce::init();
+
+            // WooCommerce Subscriptions renewal handler (Day 5)
+            require_once SERVERTRACK_DIR . 'sources/class-servertrack-woo-renewals.php';
+            ServerTrack_WooRenewals::init();
         }
 
-        if ( function_exists( 'wpcf7' ) ) {
+        if ( class_exists( 'WPCF7' ) ) {
             require_once SERVERTRACK_DIR . 'sources/class-servertrack-cf7.php';
             ServerTrack_CF7::init();
         }
@@ -37,10 +46,5 @@ class ServerTrack_Core {
             require_once SERVERTRACK_DIR . 'sources/class-servertrack-edd.php';
             ServerTrack_EDD::init();
         }
-
-        // Unconditionally load all platform classes to avoid cron fragilities
-        require_once SERVERTRACK_DIR . 'platforms/class-servertrack-meta.php';
-        require_once SERVERTRACK_DIR . 'platforms/class-servertrack-google.php';
-        require_once SERVERTRACK_DIR . 'platforms/class-servertrack-tiktok.php';
     }
 }
