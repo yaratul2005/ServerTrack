@@ -16,6 +16,12 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Day 7 additions:
  *   - render_health_notice() extended: also warns when plugin is enabled but
  *     WooCommerce is absent and the Woo source is still toggled on.
+ *
+ * Bug fix (settings not saving):
+ *   - Added 'allowed_options' filter to whitelist all servertrack_* options.
+ *     WordPress 5.5+ requires options to appear in this filter OR be registered
+ *     via register_setting() with a matching group. The filter is the reliable
+ *     canonical approach — without it options.php silently rejects the save.
  */
 class ServerTrack_Admin {
 
@@ -60,7 +66,8 @@ class ServerTrack_Admin {
     // ──────────────────────────────────────────────────────────────────────────
 
     public static function register_settings() {
-        $options = [
+
+        $all_options = [
             'servertrack_enabled', 'servertrack_test_mode', 'servertrack_consent_mode',
             'servertrack_meta_enabled', 'servertrack_meta_pixel_id', 'servertrack_meta_access_token', 'servertrack_meta_test_event_code',
             'servertrack_google_enabled', 'servertrack_google_customer_id', 'servertrack_google_conversion_id',
@@ -70,13 +77,32 @@ class ServerTrack_Admin {
             'servertrack_source_woo_enabled', 'servertrack_source_cf7_enabled', 'servertrack_source_edd_enabled',
             'servertrack_cf7_mappings',
         ];
+
         $bool_options = [
             'servertrack_enabled', 'servertrack_test_mode',
             'servertrack_meta_enabled', 'servertrack_google_enabled', 'servertrack_tiktok_enabled',
             'servertrack_source_woo_enabled', 'servertrack_source_cf7_enabled', 'servertrack_source_edd_enabled',
         ];
 
-        foreach ( $options as $option ) {
+        /*
+         * FIX: Whitelist every servertrack_* option in the allowed_options filter.
+         *
+         * WordPress 5.5+ validates submitted option names against this list inside
+         * options.php. If an option is NOT in allowed_options its submitted value
+         * is silently discarded — the form appears to save but the DB is never
+         * written, so fields reset to blank on next load.
+         *
+         * register_setting() does add options to this list, but only when the
+         * group key in settings_fields() exactly matches the group passed to
+         * register_setting(). Hooking 'allowed_options' directly is the safest
+         * canonical approach and works regardless of page context.
+         */
+        add_filter( 'allowed_options', function( $allowed ) use ( $all_options ) {
+            $allowed['servertrack_settings'] = $all_options;
+            return $allowed;
+        } );
+
+        foreach ( $all_options as $option ) {
             if ( 'servertrack_cf7_mappings' === $option ) continue;
 
             $is_bool = in_array( $option, $bool_options, true );
@@ -127,16 +153,6 @@ class ServerTrack_Admin {
     // Google OAuth 2.0 — Callback handler (Day 6)
     // ──────────────────────────────────────────────────────────────────────────
 
-    /**
-     * Exchanges the Google auth code for access + refresh tokens.
-     * Fires on admin_init — before any HTML is output.
-     *
-     * Flow:
-     *   1. Google redirects to: /wp-admin/options-general.php?page=servertrack&tab=google&code=xxx
-     *   2. We exchange the code for tokens via the token endpoint.
-     *   3. Tokens are stored in wp_options (access_token, refresh_token, token_expires).
-     *   4. Redirect back to the Google tab with an admin notice slug.
-     */
     public static function handle_oauth_callback() {
         // phpcs:disable WordPress.Security.NonceVerification.Recommended
         if ( empty( $_GET['code'] )
@@ -189,7 +205,6 @@ class ServerTrack_Admin {
             exit;
         }
 
-        // Store tokens
         update_option( 'servertrack_google_refresh_token', sanitize_text_field( $body['refresh_token'] ) );
         update_option( 'servertrack_google_access_token',  sanitize_text_field( $body['access_token'] ?? '' ) );
         update_option( 'servertrack_google_token_expires', time() + (int) ( $body['expires_in'] ?? 3600 ) );
@@ -253,7 +268,6 @@ class ServerTrack_Admin {
             'debug'   => __( 'Debug Log', 'servertrack' ),
         ];
 
-        // Inline OAuth notice display
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         $st_notice = isset( $_GET['st_notice'] ) ? sanitize_key( wp_unslash( $_GET['st_notice'] ) ) : '';
         $notices = [
@@ -261,6 +275,7 @@ class ServerTrack_Admin {
             'oauth_revoked' => [ 'warning', __( 'Google OAuth tokens have been revoked. You can re-connect at any time.', 'servertrack' ) ],
             'oauth_error'   => [ 'error',   __( 'Google OAuth authorisation failed. Check the Debug Log for details and try again.', 'servertrack' ) ],
             'oauth_no_creds'=> [ 'error',   __( 'OAuth failed: Client ID and Client Secret must be saved before connecting.', 'servertrack' ) ],
+            'settings_saved'=> [ 'success', __( 'Settings saved.', 'servertrack' ) ],
         ];
         ?>
         <div class="wrap" id="servertrack-wrap">
@@ -310,7 +325,6 @@ class ServerTrack_Admin {
 
         if ( ! get_option( 'servertrack_enabled', 1 ) ) return;
 
-        // Warning: Woo source enabled but WooCommerce is not active
         if ( get_option( 'servertrack_source_woo_enabled', 1 ) && ! class_exists( 'WooCommerce' ) ) {
             $settings_url = admin_url( 'options-general.php?page=servertrack&tab=sources' );
             echo '<div class="notice notice-warning is-dismissible"><p>';
@@ -320,7 +334,6 @@ class ServerTrack_Admin {
             echo '</p></div>';
         }
 
-        // Warning: plugin active but no platform is fully configured
         $meta_ok   = get_option( 'servertrack_meta_enabled', 0 ) && get_option( 'servertrack_meta_pixel_id', '' ) && get_option( 'servertrack_meta_access_token', '' );
         $google_ok = get_option( 'servertrack_google_enabled', 0 ) && get_option( 'servertrack_google_customer_id', '' ) && get_option( 'servertrack_google_refresh_token', '' );
         $tiktok_ok = get_option( 'servertrack_tiktok_enabled', 0 ) && get_option( 'servertrack_tiktok_pixel_id', '' ) && get_option( 'servertrack_tiktok_access_token', '' );
