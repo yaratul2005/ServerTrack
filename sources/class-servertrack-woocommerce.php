@@ -81,6 +81,7 @@ class ServerTrack_WooCommerce {
         $tiktok_on = get_option( 'servertrack_tiktok_enabled', 0 );
         if ( ! $meta_on && ! $tiktok_on ) return;
 
+        // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound
         global $product;
         if ( ! $product instanceof WC_Product ) {
             $product = wc_get_product( get_queried_object_id() );

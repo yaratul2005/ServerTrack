@@ -61,7 +61,7 @@ class ServerTrack_Meta {
             'event_name'       => $event->event_name,
             'event_time'       => time(),
             'event_id'         => $event->event_id,
-            'event_source_url' => home_url( $_SERVER['REQUEST_URI'] ?? '/' ),
+            'event_source_url' => home_url( isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '/' ),
             'action_source'    => 'website',
             'user_data'        => $ud,
             'custom_data'      => $event->custom_data,

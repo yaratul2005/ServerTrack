@@ -72,7 +72,7 @@ class ServerTrack_TikTok {
                 'contents'     => $event->custom_data['contents'] ?? [],
                 'content_type' => 'product',
             ],
-            'page' => [ 'url' => home_url( $_SERVER['REQUEST_URI'] ?? '/' ) ],
+            'page' => [ 'url' => home_url( isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '/' ) ],
         ];
 
         $payload = [

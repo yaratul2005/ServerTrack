@@ -1,5 +1,5 @@
 <?php if ( ! defined( 'ABSPATH' ) ) exit;
-$logs = get_option( 'servertrack_debug_log', [] );
+$servertrack_logs = get_option( 'servertrack_debug_log', [] );
 ?>
 <div id="servertrack-debug-panel">
     <div class="servertrack-debug-toolbar">
@@ -25,16 +25,16 @@ $logs = get_option( 'servertrack_debug_log', [] );
             </tr>
         </thead>
         <tbody id="servertrack-log-body">
-            <?php if ( empty( $logs ) ) : ?>
+            <?php if ( empty( $servertrack_logs ) ) : ?>
                 <tr><td colspan="5"><?php esc_html_e( 'No log entries yet.', 'servertrack' ); ?></td></tr>
             <?php else : ?>
-                <?php foreach ( $logs as $entry ) : ?>
-                    <tr class="servertrack-log-row servertrack-status-<?php echo esc_attr( $entry['status'] ?? '' ); ?>">
-                        <td><?php echo esc_html( $entry['timestamp'] ?? '' ); ?></td>
-                        <td><strong><?php echo esc_html( strtoupper( $entry['platform'] ?? '' ) ); ?></strong></td>
-                        <td><?php echo esc_html( $entry['status'] ?? '' ); ?></td>
-                        <td><?php echo esc_html( $entry['message'] ?? '' ); ?></td>
-                        <td style="max-width:300px; word-break:break-all;"><?php echo esc_html( $entry['response'] ?? '' ); ?></td>
+                <?php foreach ( $servertrack_logs as $servertrack_entry ) : ?>
+                    <tr class="servertrack-log-row servertrack-status-<?php echo esc_attr( $servertrack_entry['status'] ?? '' ); ?>">
+                        <td><?php echo esc_html( $servertrack_entry['timestamp'] ?? '' ); ?></td>
+                        <td><strong><?php echo esc_html( strtoupper( $servertrack_entry['platform'] ?? '' ) ); ?></strong></td>
+                        <td><?php echo esc_html( $servertrack_entry['status'] ?? '' ); ?></td>
+                        <td><?php echo esc_html( $servertrack_entry['message'] ?? '' ); ?></td>
+                        <td style="max-width:300px; word-break:break-all;"><?php echo esc_html( $servertrack_entry['response'] ?? '' ); ?></td>
                     </tr>
                 <?php endforeach; ?>
             <?php endif; ?>

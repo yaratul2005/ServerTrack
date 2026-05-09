@@ -15,7 +15,7 @@ class ServerTrack_Consent {
         if ( 'cookie_yes' === $mode ) {
             // Check cookieyes-analytics and cookieyes-advertisement
             if ( isset( $_COOKIE['cookieyes-consent'] ) ) {
-                $consent_cookie = $_COOKIE['cookieyes-consent'];
+                $consent_cookie = sanitize_text_field( wp_unslash( $_COOKIE['cookieyes-consent'] ) );
                 if ( strpos( $consent_cookie, 'analytics:yes' ) !== false && strpos( $consent_cookie, 'advertisement:yes' ) !== false ) {
                     return true;
                 }
@@ -24,7 +24,7 @@ class ServerTrack_Consent {
         }
 
         if ( 'complianz' === $mode ) {
-            if ( isset( $_COOKIE['cmplz_marketing'] ) && 'allow' === $_COOKIE['cmplz_marketing'] ) {
+            if ( isset( $_COOKIE['cmplz_marketing'] ) && 'allow' === sanitize_text_field( wp_unslash( $_COOKIE['cmplz_marketing'] ) ) ) {
                 return true;
             }
             return false;

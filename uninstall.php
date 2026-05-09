@@ -10,7 +10,7 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 }
 
 // Remove all plugin options
-$options = [
+$servertrack_options = [
     'servertrack_enabled',
     'servertrack_test_mode',
     'servertrack_consent_mode',
@@ -37,15 +37,11 @@ $options = [
     'servertrack_debug_log',
 ];
 
-foreach ( $options as $option ) {
-    delete_option( $option );
+foreach ( $servertrack_options as $servertrack_option ) {
+    delete_option( $servertrack_option );
 }
 
-// Remove order post meta — batched to avoid memory issues on large stores
-global $wpdb;
-$wpdb->query(
-    "DELETE FROM {$wpdb->postmeta} WHERE meta_key IN (
-        '_servertrack_event_id',
-        '_servertrack_server_sent'
-    )"
-);
+// Remove order post meta
+delete_post_meta_by_key( '_servertrack_event_id' );
+delete_post_meta_by_key( '_servertrack_server_sent' );
+delete_post_meta_by_key( '_servertrack_refunded' );

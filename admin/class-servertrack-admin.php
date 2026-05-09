@@ -85,6 +85,7 @@ class ServerTrack_Admin {
             wp_die( esc_html__( 'You do not have sufficient permissions.', 'servertrack' ) );
         }
 
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         $active_tab = isset( $_GET['tab'] ) ? sanitize_text_field( wp_unslash( $_GET['tab'] ) ) : 'general';
         $tabs = [
             'general' => __( 'General', 'servertrack' ),

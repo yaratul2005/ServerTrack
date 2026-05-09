@@ -59,13 +59,17 @@ class ServerTrack_Frontend {
         if ( headers_sent() ) return;
 
         // GCLID — 90 days
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         if ( ! empty( $_GET['gclid'] ) ) {
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended
             $gclid = sanitize_text_field( wp_unslash( $_GET['gclid'] ) );
             setcookie( '_gcl_aw', $gclid, time() + ( 90 * DAY_IN_SECONDS ), '/', '', is_ssl(), true );
         }
 
         // TTCLID — 7 days
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         if ( ! empty( $_GET['ttclid'] ) ) {
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended
             $ttclid = sanitize_text_field( wp_unslash( $_GET['ttclid'] ) );
             setcookie( 'ttclid', $ttclid, time() + ( 7 * DAY_IN_SECONDS ), '/', '', is_ssl(), true );
         }

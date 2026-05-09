@@ -26,19 +26,19 @@
             <td>
                 <select id="servertrack_consent_mode" name="servertrack_consent_mode">
                     <?php
-                    $current = get_option( 'servertrack_consent_mode', 'none' );
-                    $options = [
+                    $servertrack_current = get_option( 'servertrack_consent_mode', 'none' );
+                    $servertrack_options = [
                         'none'       => __( 'None (send all events, no consent check)', 'servertrack' ),
                         'cookie_yes' => __( 'CookieYes (read cookieyes-consent cookie)', 'servertrack' ),
                         'complianz'  => __( 'Complianz (read cmplz_marketing cookie)', 'servertrack' ),
                         'manual'     => __( 'Manual (use servertrack_consent_granted filter)', 'servertrack' ),
                     ];
-                    foreach ( $options as $val => $label ) {
+                    foreach ( $servertrack_options as $servertrack_val => $servertrack_label ) {
                         printf(
                             '<option value="%s" %s>%s</option>',
-                            esc_attr( $val ),
-                            selected( $current, $val, false ),
-                            esc_html( $label )
+                            esc_attr( $servertrack_val ),
+                            selected( $servertrack_current, $servertrack_val, false ),
+                            esc_html( $servertrack_label )
                         );
                     }
                     ?>

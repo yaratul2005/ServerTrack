@@ -46,9 +46,9 @@
 // Only shown when CF7 is active. Lets the admin map each CF7 field tag name
 // to the standard tracking fields (email, phone, name) per form.
 if ( function_exists( 'wpcf7' ) ) :
-    $forms    = WPCF7_ContactForm::find();
-    $mappings = get_option( 'servertrack_cf7_mappings', [] );
-    if ( ! is_array( $mappings ) ) $mappings = [];
+    $servertrack_forms    = WPCF7_ContactForm::find();
+    $servertrack_mappings = get_option( 'servertrack_cf7_mappings', [] );
+    if ( ! is_array( $servertrack_mappings ) ) $servertrack_mappings = [];
 ?>
 
 <hr />
@@ -58,7 +58,7 @@ if ( function_exists( 'wpcf7' ) ) :
     <?php esc_html_e( 'Use the exact tag name as written in your form shortcode (e.g. "your-email").', 'servertrack' ); ?>
 </p>
 
-<?php if ( empty( $forms ) ) : ?>
+<?php if ( empty( $servertrack_forms ) ) : ?>
     <p class="description"><?php esc_html_e( 'No Contact Form 7 forms found.', 'servertrack' ); ?></p>
 <?php else : ?>
     <form method="post" action="options.php">
@@ -73,33 +73,33 @@ if ( function_exists( 'wpcf7' ) ) :
                 </tr>
             </thead>
             <tbody>
-                <?php foreach ( $forms as $form ) :
-                    $form_id  = $form->id();
-                    $form_map = $mappings[ $form_id ] ?? [];
+                <?php foreach ( $servertrack_forms as $servertrack_form ) :
+                    $servertrack_form_id  = $servertrack_form->id();
+                    $servertrack_form_map = $servertrack_mappings[ $servertrack_form_id ] ?? [];
                     ?>
                     <tr>
                         <td>
-                            <strong><?php echo esc_html( $form->title() ); ?></strong>
-                            <br /><span style="color:#888; font-size:11px;">ID: <?php echo esc_html( $form_id ); ?></span>
+                            <strong><?php echo esc_html( $servertrack_form->title() ); ?></strong>
+                            <br /><span style="color:#888; font-size:11px;">ID: <?php echo esc_html( $servertrack_form_id ); ?></span>
                         </td>
                         <td>
                             <input type="text"
-                                   name="servertrack_cf7_mappings[<?php echo esc_attr( $form_id ); ?>][email]"
-                                   value="<?php echo esc_attr( $form_map['email'] ?? 'your-email' ); ?>"
+                                   name="servertrack_cf7_mappings[<?php echo esc_attr( $servertrack_form_id ); ?>][email]"
+                                   value="<?php echo esc_attr( $servertrack_form_map['email'] ?? 'your-email' ); ?>"
                                    class="regular-text"
                                    placeholder="your-email" />
                         </td>
                         <td>
                             <input type="text"
-                                   name="servertrack_cf7_mappings[<?php echo esc_attr( $form_id ); ?>][phone]"
-                                   value="<?php echo esc_attr( $form_map['phone'] ?? 'your-phone' ); ?>"
+                                   name="servertrack_cf7_mappings[<?php echo esc_attr( $servertrack_form_id ); ?>][phone]"
+                                   value="<?php echo esc_attr( $servertrack_form_map['phone'] ?? 'your-phone' ); ?>"
                                    class="regular-text"
                                    placeholder="your-phone" />
                         </td>
                         <td>
                             <input type="text"
-                                   name="servertrack_cf7_mappings[<?php echo esc_attr( $form_id ); ?>][name]"
-                                   value="<?php echo esc_attr( $form_map['name'] ?? 'your-name' ); ?>"
+                                   name="servertrack_cf7_mappings[<?php echo esc_attr( $servertrack_form_id ); ?>][name]"
+                                   value="<?php echo esc_attr( $servertrack_form_map['name'] ?? 'your-name' ); ?>"
                                    class="regular-text"
                                    placeholder="your-name" />
                         </td>
