@@ -4,7 +4,7 @@
  * Plugin Slug:     servertrack
  * Description:     A high-performance, zero-dependency server-side tracking plugin for WordPress. Completely bypasses ad blockers and iOS privacy restrictions.
  * Text Domain:     servertrack
- * Version:         1.0.0
+ * Version:         1.1.0
  * Requires WP:     6.0
  * Requires PHP:    7.4
  * Requires WC:     7.0+
@@ -14,15 +14,15 @@
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
-    exit; // Exit if accessed directly.
+    exit;
 }
 
-define( 'SERVERTRACK_VERSION', '1.0.0' );
+define( 'SERVERTRACK_VERSION', '1.1.0' );
 define( 'SERVERTRACK_FILE', __FILE__ );
 define( 'SERVERTRACK_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SERVERTRACK_URL', plugin_dir_url( __FILE__ ) );
 
-// Require Core Files
+// Core includes — always loaded (required by cron callbacks in all contexts)
 require_once SERVERTRACK_DIR . 'includes/class-servertrack-hasher.php';
 require_once SERVERTRACK_DIR . 'includes/class-servertrack-logger.php';
 require_once SERVERTRACK_DIR . 'includes/class-servertrack-dedup.php';
@@ -30,24 +30,43 @@ require_once SERVERTRACK_DIR . 'includes/class-servertrack-consent.php';
 require_once SERVERTRACK_DIR . 'includes/class-servertrack-event.php';
 require_once SERVERTRACK_DIR . 'includes/class-servertrack-core.php';
 
-// Activation / Deactivation / Uninstall
-register_activation_hook( SERVERTRACK_FILE, 'servertrack_activate' );
+// ── Activation / Deactivation / Uninstall ────────────────────────────────────
+register_activation_hook( SERVERTRACK_FILE,   'servertrack_activate' );
 register_deactivation_hook( SERVERTRACK_FILE, 'servertrack_deactivate' );
 
 function servertrack_activate() {
+    // Verify minimum requirements before activating
+    if ( version_compare( PHP_VERSION, '7.4', '<' ) ) {
+        deactivate_plugins( plugin_basename( SERVERTRACK_FILE ) );
+        wp_die(
+            esc_html__( 'ServerTrack requires PHP 7.4 or higher. Please upgrade PHP and try again.', 'servertrack' ),
+            esc_html__( 'Plugin Activation Error', 'servertrack' ),
+            [ 'back_link' => true ]
+        );
+    }
+
+    if ( version_compare( get_bloginfo( 'version' ), '6.0', '<' ) ) {
+        deactivate_plugins( plugin_basename( SERVERTRACK_FILE ) );
+        wp_die(
+            esc_html__( 'ServerTrack requires WordPress 6.0 or higher. Please upgrade WordPress and try again.', 'servertrack' ),
+            esc_html__( 'Plugin Activation Error', 'servertrack' ),
+            [ 'back_link' => true ]
+        );
+    }
+
     // Set safe defaults on first activation — never overwrite existing values
     $defaults = [
-        'servertrack_enabled'          => 1,
-        'servertrack_test_mode'        => 0,
-        'servertrack_consent_mode'     => 'none',
-        'servertrack_meta_enabled'     => 0,
-        'servertrack_google_enabled'   => 0,
-        'servertrack_tiktok_enabled'   => 0,
+        'servertrack_enabled'            => 1,
+        'servertrack_test_mode'          => 0,
+        'servertrack_consent_mode'       => 'none',
+        'servertrack_meta_enabled'       => 0,
+        'servertrack_google_enabled'     => 0,
+        'servertrack_tiktok_enabled'     => 0,
         'servertrack_source_woo_enabled' => 1,
         'servertrack_source_cf7_enabled' => 0,
         'servertrack_source_edd_enabled' => 0,
-        'servertrack_debug_log'        => [],
-        'servertrack_cf7_mappings'     => [],
+        'servertrack_debug_log'          => [],
+        'servertrack_cf7_mappings'       => [],
     ];
     foreach ( $defaults as $key => $value ) {
         if ( false === get_option( $key ) ) {
@@ -57,14 +76,20 @@ function servertrack_activate() {
 }
 
 function servertrack_deactivate() {
-    // Clear any pending cron jobs on deactivation
-    wp_clear_scheduled_hook( 'servertrack_send_woo_purchase' );
-    wp_clear_scheduled_hook( 'servertrack_send_edd_purchase' );
-    wp_unschedule_hook( 'servertrack_send_woo_purchase' );
-    wp_unschedule_hook( 'servertrack_send_edd_purchase' );
+    // Clear all pending cron jobs registered by ServerTrack
+    $hooks = [
+        'servertrack_send_woo_purchase',
+        'servertrack_send_edd_purchase',
+        'servertrack_send_renewal_purchase',
+        'servertrack_retry_failed_events',
+    ];
+    foreach ( $hooks as $hook ) {
+        wp_clear_scheduled_hook( $hook );
+        wp_unschedule_hook( $hook );
+    }
 }
 
-// Initialize Plugin
+// ── Bootstrap ─────────────────────────────────────────────────────────────────
 function servertrack_native_init() {
     ServerTrack_Core::init();
 }

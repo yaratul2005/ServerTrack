@@ -3,17 +3,37 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
+/**
+ * ServerTrack_Admin
+ *
+ * Day 6 additions:
+ *   - handle_oauth_callback(): exchanges Google auth code for access + refresh tokens.
+ *   - handle_oauth_revoke():   clears all Google OAuth tokens and logs the action.
+ *   - Both handlers fire on admin_init before any output is sent.
+ *   - register_settings() updated: servertrack_consent_mode uses sanitize_text_field
+ *     and is validated against an allowlist.
+ *
+ * Day 7 additions:
+ *   - render_health_notice() extended: also warns when plugin is enabled but
+ *     WooCommerce is absent and the Woo source is still toggled on.
+ */
 class ServerTrack_Admin {
 
     public static function init() {
-        add_action( 'admin_menu', [ self::class, 'register_menu' ] );
-        add_action( 'admin_init', [ self::class, 'register_settings' ] );
+        add_action( 'admin_menu',            [ self::class, 'register_menu' ] );
+        add_action( 'admin_init',            [ self::class, 'register_settings' ] );
+        add_action( 'admin_init',            [ self::class, 'handle_oauth_callback' ] );
+        add_action( 'admin_init',            [ self::class, 'handle_oauth_revoke' ] );
         add_action( 'admin_enqueue_scripts', [ self::class, 'enqueue_assets' ] );
-        add_action( 'admin_notices', [ self::class, 'render_health_notice' ] );
-        add_action( 'wp_ajax_servertrack_clear_log', [ self::class, 'ajax_clear_log' ] );
-        add_action( 'wp_ajax_servertrack_test_event', [ self::class, 'ajax_test_event' ] );
-        add_action( 'wp_ajax_servertrack_get_logs', [ self::class, 'ajax_get_logs' ] );
+        add_action( 'admin_notices',         [ self::class, 'render_health_notice' ] );
+        add_action( 'wp_ajax_servertrack_clear_log',   [ self::class, 'ajax_clear_log' ] );
+        add_action( 'wp_ajax_servertrack_test_event',  [ self::class, 'ajax_test_event' ] );
+        add_action( 'wp_ajax_servertrack_get_logs',    [ self::class, 'ajax_get_logs' ] );
     }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Menu & Assets
+    // ──────────────────────────────────────────────────────────────────────────
 
     public static function register_menu() {
         add_options_page(
@@ -26,9 +46,7 @@ class ServerTrack_Admin {
     }
 
     public static function enqueue_assets( string $hook ) {
-        if ( 'settings_page_servertrack' !== $hook ) {
-            return;
-        }
+        if ( 'settings_page_servertrack' !== $hook ) return;
         wp_enqueue_style( 'servertrack-admin', SERVERTRACK_URL . 'admin/assets/admin.css', [], SERVERTRACK_VERSION );
         wp_enqueue_script( 'servertrack-admin', SERVERTRACK_URL . 'admin/assets/admin.js', [ 'jquery' ], SERVERTRACK_VERSION, true );
         wp_localize_script( 'servertrack-admin', 'servertrack_admin', [
@@ -36,6 +54,10 @@ class ServerTrack_Admin {
             'nonce'    => wp_create_nonce( 'servertrack_admin_nonce' ),
         ] );
     }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Settings Registration
+    // ──────────────────────────────────────────────────────────────────────────
 
     public static function register_settings() {
         $options = [
@@ -46,20 +68,28 @@ class ServerTrack_Admin {
             'servertrack_google_refresh_token',
             'servertrack_tiktok_enabled', 'servertrack_tiktok_pixel_id', 'servertrack_tiktok_access_token',
             'servertrack_source_woo_enabled', 'servertrack_source_cf7_enabled', 'servertrack_source_edd_enabled',
-            'servertrack_cf7_mappings', // JSON field mapping per CF7 form ID
+            'servertrack_cf7_mappings',
         ];
         $bool_options = [
             'servertrack_enabled', 'servertrack_test_mode',
             'servertrack_meta_enabled', 'servertrack_google_enabled', 'servertrack_tiktok_enabled',
-            'servertrack_source_woo_enabled', 'servertrack_source_cf7_enabled', 'servertrack_source_edd_enabled'
+            'servertrack_source_woo_enabled', 'servertrack_source_cf7_enabled', 'servertrack_source_edd_enabled',
         ];
 
         foreach ( $options as $option ) {
-            // Skip cf7_mappings in this generic loop because it requires a special array sanitization
             if ( 'servertrack_cf7_mappings' === $option ) continue;
-            
+
             $is_bool = in_array( $option, $bool_options, true );
-            
+
+            // consent_mode gets its own allowlist sanitizer
+            if ( 'servertrack_consent_mode' === $option ) {
+                register_setting( 'servertrack_settings', $option, [
+                    'sanitize_callback' => [ self::class, 'sanitize_consent_mode' ],
+                    'default'           => 'none',
+                ] );
+                continue;
+            }
+
             register_setting( 'servertrack_settings', $option, [
                 'type'              => $is_bool ? 'integer' : 'string',
                 'sanitize_callback' => $is_bool ? 'absint' : 'sanitize_text_field',
@@ -67,10 +97,15 @@ class ServerTrack_Admin {
             ] );
         }
 
-        // CF7 mappings is an array — sanitize each nested value
         register_setting( 'servertrack_settings', 'servertrack_cf7_mappings', [
             'sanitize_callback' => [ self::class, 'sanitize_cf7_mappings' ],
         ] );
+    }
+
+    public static function sanitize_consent_mode( $input ): string {
+        $allowed = [ 'none', 'granted', 'denied' ];
+        $val     = sanitize_text_field( (string) $input );
+        return in_array( $val, $allowed, true ) ? $val : 'none';
     }
 
     public static function sanitize_cf7_mappings( $input ): array {
@@ -88,6 +123,120 @@ class ServerTrack_Admin {
         return $clean;
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    // Google OAuth 2.0 — Callback handler (Day 6)
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Exchanges the Google auth code for access + refresh tokens.
+     * Fires on admin_init — before any HTML is output.
+     *
+     * Flow:
+     *   1. Google redirects to: /wp-admin/options-general.php?page=servertrack&tab=google&code=xxx
+     *   2. We exchange the code for tokens via the token endpoint.
+     *   3. Tokens are stored in wp_options (access_token, refresh_token, token_expires).
+     *   4. Redirect back to the Google tab with an admin notice slug.
+     */
+    public static function handle_oauth_callback() {
+        // phpcs:disable WordPress.Security.NonceVerification.Recommended
+        if ( empty( $_GET['code'] )
+            || empty( $_GET['page'] ) || 'servertrack' !== $_GET['page']
+            || empty( $_GET['tab'] )  || 'google'      !== $_GET['tab'] ) {
+            return;
+        }
+        // phpcs:enable
+
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_die( esc_html__( 'Insufficient permissions.', 'servertrack' ) );
+        }
+
+        $client_id     = get_option( 'servertrack_google_client_id', '' );
+        $client_secret = get_option( 'servertrack_google_client_secret', '' );
+        $redirect_uri  = admin_url( 'options-general.php?page=servertrack&tab=google' );
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $code          = sanitize_text_field( wp_unslash( $_GET['code'] ) );
+
+        if ( ! $client_id || ! $client_secret ) {
+            wp_safe_redirect( admin_url( 'options-general.php?page=servertrack&tab=google&st_notice=oauth_no_creds' ) );
+            exit;
+        }
+
+        $response = wp_remote_post( 'https://oauth2.googleapis.com/token', [
+            'body' => [
+                'code'          => $code,
+                'client_id'     => $client_id,
+                'client_secret' => $client_secret,
+                'redirect_uri'  => $redirect_uri,
+                'grant_type'    => 'authorization_code',
+            ],
+            'timeout' => 15,
+        ] );
+
+        if ( is_wp_error( $response ) ) {
+            wp_safe_redirect( admin_url( 'options-general.php?page=servertrack&tab=google&st_notice=oauth_error' ) );
+            exit;
+        }
+
+        $body = json_decode( wp_remote_retrieve_body( $response ), true );
+
+        if ( empty( $body['refresh_token'] ) ) {
+            ServerTrack_Logger::log(
+                'error', 'google',
+                'OAuth token exchange failed: ' . ( $body['error_description'] ?? $body['error'] ?? 'Unknown error' ),
+                '', '', 0, 'OAuth'
+            );
+            wp_safe_redirect( admin_url( 'options-general.php?page=servertrack&tab=google&st_notice=oauth_error' ) );
+            exit;
+        }
+
+        // Store tokens
+        update_option( 'servertrack_google_refresh_token', sanitize_text_field( $body['refresh_token'] ) );
+        update_option( 'servertrack_google_access_token',  sanitize_text_field( $body['access_token'] ?? '' ) );
+        update_option( 'servertrack_google_token_expires', time() + (int) ( $body['expires_in'] ?? 3600 ) );
+
+        ServerTrack_Logger::log(
+            'success', 'google',
+            'Google OAuth authorised. Refresh token stored.',
+            '', '', 0, 'OAuth'
+        );
+
+        wp_safe_redirect( admin_url( 'options-general.php?page=servertrack&tab=google&st_notice=oauth_success' ) );
+        exit;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Google OAuth — Revoke / Disconnect handler (Day 6)
+    // ──────────────────────────────────────────────────────────────────────────
+
+    public static function handle_oauth_revoke() {
+        // phpcs:disable WordPress.Security.NonceVerification.Recommended
+        if ( empty( $_GET['st_google_action'] ) || 'revoke' !== $_GET['st_google_action'] ) return;
+        // phpcs:enable
+
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_die( esc_html__( 'Insufficient permissions.', 'servertrack' ) );
+        }
+
+        check_admin_referer( 'st_google_revoke' );
+
+        delete_option( 'servertrack_google_refresh_token' );
+        delete_option( 'servertrack_google_access_token' );
+        delete_option( 'servertrack_google_token_expires' );
+
+        ServerTrack_Logger::log(
+            'success', 'google',
+            'Google OAuth tokens revoked by admin.',
+            '', '', 0, 'OAuth'
+        );
+
+        wp_safe_redirect( admin_url( 'options-general.php?page=servertrack&tab=google&st_notice=oauth_revoked' ) );
+        exit;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Page render
+    // ──────────────────────────────────────────────────────────────────────────
+
     public static function render_page() {
         if ( ! current_user_can( 'manage_options' ) ) {
             wp_die( esc_html__( 'You do not have sufficient permissions.', 'servertrack' ) );
@@ -103,12 +252,29 @@ class ServerTrack_Admin {
             'sources' => __( 'Sources', 'servertrack' ),
             'debug'   => __( 'Debug Log', 'servertrack' ),
         ];
+
+        // Inline OAuth notice display
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $st_notice = isset( $_GET['st_notice'] ) ? sanitize_key( wp_unslash( $_GET['st_notice'] ) ) : '';
+        $notices = [
+            'oauth_success' => [ 'success', __( 'Google account connected successfully. ServerTrack is now authorised to send Enhanced Conversions.', 'servertrack' ) ],
+            'oauth_revoked' => [ 'warning', __( 'Google OAuth tokens have been revoked. You can re-connect at any time.', 'servertrack' ) ],
+            'oauth_error'   => [ 'error',   __( 'Google OAuth authorisation failed. Check the Debug Log for details and try again.', 'servertrack' ) ],
+            'oauth_no_creds'=> [ 'error',   __( 'OAuth failed: Client ID and Client Secret must be saved before connecting.', 'servertrack' ) ],
+        ];
         ?>
         <div class="wrap" id="servertrack-wrap">
             <h1 class="servertrack-page-title">
                 <span class="servertrack-logo-mark">&#9654;</span>
                 <?php esc_html_e( 'ServerTrack — Server-Side Events', 'servertrack' ); ?>
             </h1>
+
+            <?php if ( $st_notice && isset( $notices[ $st_notice ] ) ) :
+                [ $type, $msg ] = $notices[ $st_notice ]; ?>
+                <div class="notice notice-<?php echo esc_attr( $type ); ?> is-dismissible inline">
+                    <p><?php echo esc_html( $msg ); ?></p>
+                </div>
+            <?php endif; ?>
 
             <nav class="nav-tab-wrapper servertrack-tabs" id="servertrack-tab-nav">
                 <?php foreach ( $tabs as $slug => $label ) : ?>
@@ -132,20 +298,57 @@ class ServerTrack_Admin {
         <?php
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    // Health Notice (Day 7 — extended)
+    // ──────────────────────────────────────────────────────────────────────────
+
+    public static function render_health_notice() {
+        if ( ! current_user_can( 'manage_options' ) ) return;
+
+        $screen = get_current_screen();
+        if ( $screen && 'settings_page_servertrack' === $screen->id ) return;
+
+        if ( ! get_option( 'servertrack_enabled', 1 ) ) return;
+
+        // Warning: Woo source enabled but WooCommerce is not active
+        if ( get_option( 'servertrack_source_woo_enabled', 1 ) && ! class_exists( 'WooCommerce' ) ) {
+            $settings_url = admin_url( 'options-general.php?page=servertrack&tab=sources' );
+            echo '<div class="notice notice-warning is-dismissible"><p>';
+            echo '<strong>' . esc_html__( 'ServerTrack:', 'servertrack' ) . '</strong> ';
+            echo esc_html__( 'WooCommerce source is enabled but WooCommerce is not active. No purchase events will fire.', 'servertrack' );
+            echo ' <a href="' . esc_url( $settings_url ) . '">' . esc_html__( 'Review source settings →', 'servertrack' ) . '</a>';
+            echo '</p></div>';
+        }
+
+        // Warning: plugin active but no platform is fully configured
+        $meta_ok   = get_option( 'servertrack_meta_enabled', 0 ) && get_option( 'servertrack_meta_pixel_id', '' ) && get_option( 'servertrack_meta_access_token', '' );
+        $google_ok = get_option( 'servertrack_google_enabled', 0 ) && get_option( 'servertrack_google_customer_id', '' ) && get_option( 'servertrack_google_refresh_token', '' );
+        $tiktok_ok = get_option( 'servertrack_tiktok_enabled', 0 ) && get_option( 'servertrack_tiktok_pixel_id', '' ) && get_option( 'servertrack_tiktok_access_token', '' );
+
+        if ( $meta_ok || $google_ok || $tiktok_ok ) return;
+
+        $settings_url = admin_url( 'options-general.php?page=servertrack&tab=meta' );
+        echo '<div class="notice notice-warning is-dismissible"><p>';
+        echo '<strong>' . esc_html__( 'ServerTrack:', 'servertrack' ) . '</strong> ';
+        echo esc_html__( 'Plugin is active but no ad platforms are configured. Events will not be sent until at least one platform is set up.', 'servertrack' );
+        echo ' <a href="' . esc_url( $settings_url ) . '">' . esc_html__( 'Configure now →', 'servertrack' ) . '</a>';
+        echo '</p></div>';
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // AJAX handlers
+    // ──────────────────────────────────────────────────────────────────────────
+
     public static function ajax_clear_log() {
         check_ajax_referer( 'servertrack_admin_nonce', 'nonce' );
-        if ( ! current_user_can( 'manage_options' ) ) {
-            wp_send_json_error( 'Unauthorized' );
-        }
+        if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Unauthorized' );
         ServerTrack_Logger::clear_logs();
         wp_send_json_success( [ 'message' => __( 'Log cleared.', 'servertrack' ) ] );
     }
 
-    public static function ajax_test_event( ) {
+    public static function ajax_test_event() {
         check_ajax_referer( 'servertrack_admin_nonce', 'nonce' );
-        if ( ! current_user_can( 'manage_options' ) ) {
-            wp_send_json_error( 'Unauthorized' );
-        }
+        if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Unauthorized' );
         $platform = isset( $_POST['platform'] ) ? sanitize_text_field( wp_unslash( $_POST['platform'] ) ) : '';
         $result   = self::fire_test_event( $platform );
         wp_send_json_success( $result );
@@ -153,19 +356,14 @@ class ServerTrack_Admin {
 
     public static function ajax_get_logs() {
         check_ajax_referer( 'servertrack_admin_nonce', 'nonce' );
-        if ( ! current_user_can( 'manage_options' ) ) {
-            wp_send_json_error( 'Unauthorized' );
-        }
+        if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Unauthorized' );
         $logs = get_option( 'servertrack_debug_log', [] );
         wp_send_json_success( $logs );
     }
 
     private static function fire_test_event( string $platform ): array {
-
-
         $event_id = 'test_event_' . time();
-
-        $event = new ServerTrack_Event( 'Lead', $event_id );
+        $event    = new ServerTrack_Event( 'Lead', $event_id );
         $event->set_user_data( [
             'email'      => ServerTrack_Hasher::hash_email( 'test@example.com' ),
             'first_name' => ServerTrack_Hasher::hash( 'Test' ),
@@ -174,46 +372,11 @@ class ServerTrack_Admin {
             'user_agent' => 'ServerTrack/Test',
         ] );
         $event->set_custom_data( [ 'currency' => 'USD', 'value' => 1.00, 'contents' => [] ] );
-
         switch ( $platform ) {
-            case 'meta':
-                return ServerTrack_Meta::send( $event );
-            case 'google':
-                return ServerTrack_Google::send( $event );
-            case 'tiktok':
-                return ServerTrack_TikTok::send( $event );
+            case 'meta':   return ServerTrack_Meta::send( $event );
+            case 'google': return ServerTrack_Google::send( $event );
+            case 'tiktok': return ServerTrack_TikTok::send( $event );
         }
         return [ 'status' => 'error', 'message' => 'Unknown platform.' ];
-    }
-
-    /**
-     * Renders an admin-wide health notice if the plugin is active but
-     * no platforms are enabled — guides the user to configure the plugin.
-     */
-    public static function render_health_notice() {
-        if ( ! current_user_can( 'manage_options' ) ) return;
-
-        // Suppress on the plugin's own settings page — not helpful there
-        $screen = get_current_screen();
-        if ( $screen && 'settings_page_servertrack' === $screen->id ) return;
-
-        if ( ! get_option( 'servertrack_enabled', 1 ) ) return;
-
-        $meta_ok   = get_option( 'servertrack_meta_enabled', 0 ) && get_option( 'servertrack_meta_pixel_id', '' ) && get_option( 'servertrack_meta_access_token', '' );
-        $google_ok = get_option( 'servertrack_google_enabled', 0 ) && get_option( 'servertrack_google_customer_id', '' ) && get_option( 'servertrack_google_refresh_token', '' );
-        $tiktok_ok = get_option( 'servertrack_tiktok_enabled', 0 ) && get_option( 'servertrack_tiktok_pixel_id', '' ) && get_option( 'servertrack_tiktok_access_token', '' );
-
-        if ( $meta_ok || $google_ok || $tiktok_ok ) return; // At least one platform is good — no notice needed
-
-        $settings_url = admin_url( 'options-general.php?page=servertrack&tab=meta' );
-        ?>
-        <div class="notice notice-warning is-dismissible">
-            <p>
-                <strong><?php esc_html_e( 'ServerTrack:', 'servertrack' ); ?></strong>
-                <?php esc_html_e( 'Plugin is active but no ad platforms are configured. Events will not be sent until at least one platform is set up.', 'servertrack' ); ?>
-                &nbsp;<a href="<?php echo esc_url( $settings_url ); ?>"><?php esc_html_e( 'Configure now →', 'servertrack' ); ?></a>
-            </p>
-        </div>
-        <?php
     }
 }
