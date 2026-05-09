@@ -18,6 +18,10 @@ class ServerTrack_Core {
             ServerTrack_Frontend::init();
         }
 
+        // Retry queue — register cron hook unconditionally so it fires in all contexts
+        require_once SERVERTRACK_DIR . 'includes/class-servertrack-retry.php';
+        ServerTrack_Retry::init();
+
         // Event sources — always register hooks so cron callbacks fire correctly
         if ( class_exists( 'WooCommerce' ) ) {
             require_once SERVERTRACK_DIR . 'sources/class-servertrack-woocommerce.php';
