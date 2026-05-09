@@ -19,9 +19,14 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * Bug fix (settings not saving):
  *   - Added 'allowed_options' filter to whitelist all servertrack_* options.
- *     WordPress 5.5+ requires options to appear in this filter OR be registered
- *     via register_setting() with a matching group. The filter is the reliable
- *     canonical approach — without it options.php silently rejects the save.
+ *
+ * Bug fix (test event not showing in Meta Events Manager):
+ *   - fire_test_event() now reads test_event_code from POST data (submitted
+ *     by the JS before the option is committed) and passes it via custom_data.
+ *   - Ensures the test_event_code is attached to the CAPI payload so Meta
+ *     Test Events tool can match and display the incoming event.
+ *   - Also passes real client IP + User-Agent from the admin browser session
+ *     so Meta can correlate the test hit correctly.
  */
 class ServerTrack_Admin {
 
@@ -84,19 +89,7 @@ class ServerTrack_Admin {
             'servertrack_source_woo_enabled', 'servertrack_source_cf7_enabled', 'servertrack_source_edd_enabled',
         ];
 
-        /*
-         * FIX: Whitelist every servertrack_* option in the allowed_options filter.
-         *
-         * WordPress 5.5+ validates submitted option names against this list inside
-         * options.php. If an option is NOT in allowed_options its submitted value
-         * is silently discarded — the form appears to save but the DB is never
-         * written, so fields reset to blank on next load.
-         *
-         * register_setting() does add options to this list, but only when the
-         * group key in settings_fields() exactly matches the group passed to
-         * register_setting(). Hooking 'allowed_options' directly is the safest
-         * canonical approach and works regardless of page context.
-         */
+        // FIX: Whitelist all options in allowed_options filter (WP 5.5+)
         add_filter( 'allowed_options', function( $allowed ) use ( $all_options ) {
             $allowed['servertrack_settings'] = $all_options;
             return $allowed;
@@ -107,7 +100,6 @@ class ServerTrack_Admin {
 
             $is_bool = in_array( $option, $bool_options, true );
 
-            // consent_mode gets its own allowlist sanitizer
             if ( 'servertrack_consent_mode' === $option ) {
                 register_setting( 'servertrack_settings', $option, [
                     'sanitize_callback' => [ self::class, 'sanitize_consent_mode' ],
@@ -209,11 +201,7 @@ class ServerTrack_Admin {
         update_option( 'servertrack_google_access_token',  sanitize_text_field( $body['access_token'] ?? '' ) );
         update_option( 'servertrack_google_token_expires', time() + (int) ( $body['expires_in'] ?? 3600 ) );
 
-        ServerTrack_Logger::log(
-            'success', 'google',
-            'Google OAuth authorised. Refresh token stored.',
-            '', '', 0, 'OAuth'
-        );
+        ServerTrack_Logger::log( 'success', 'google', 'Google OAuth authorised. Refresh token stored.', '', '', 0, 'OAuth' );
 
         wp_safe_redirect( admin_url( 'options-general.php?page=servertrack&tab=google&st_notice=oauth_success' ) );
         exit;
@@ -238,11 +226,7 @@ class ServerTrack_Admin {
         delete_option( 'servertrack_google_access_token' );
         delete_option( 'servertrack_google_token_expires' );
 
-        ServerTrack_Logger::log(
-            'success', 'google',
-            'Google OAuth tokens revoked by admin.',
-            '', '', 0, 'OAuth'
-        );
+        ServerTrack_Logger::log( 'success', 'google', 'Google OAuth tokens revoked by admin.', '', '', 0, 'OAuth' );
 
         wp_safe_redirect( admin_url( 'options-general.php?page=servertrack&tab=google&st_notice=oauth_revoked' ) );
         exit;
@@ -271,10 +255,10 @@ class ServerTrack_Admin {
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         $st_notice = isset( $_GET['st_notice'] ) ? sanitize_key( wp_unslash( $_GET['st_notice'] ) ) : '';
         $notices = [
-            'oauth_success' => [ 'success', __( 'Google account connected successfully. ServerTrack is now authorised to send Enhanced Conversions.', 'servertrack' ) ],
-            'oauth_revoked' => [ 'warning', __( 'Google OAuth tokens have been revoked. You can re-connect at any time.', 'servertrack' ) ],
-            'oauth_error'   => [ 'error',   __( 'Google OAuth authorisation failed. Check the Debug Log for details and try again.', 'servertrack' ) ],
-            'oauth_no_creds'=> [ 'error',   __( 'OAuth failed: Client ID and Client Secret must be saved before connecting.', 'servertrack' ) ],
+            'oauth_success' => [ 'success', __( 'Google account connected successfully.', 'servertrack' ) ],
+            'oauth_revoked' => [ 'warning', __( 'Google OAuth tokens have been revoked.', 'servertrack' ) ],
+            'oauth_error'   => [ 'error',   __( 'Google OAuth authorisation failed. Check the Debug Log.', 'servertrack' ) ],
+            'oauth_no_creds'=> [ 'error',   __( 'OAuth failed: Client ID and Secret must be saved first.', 'servertrack' ) ],
             'settings_saved'=> [ 'success', __( 'Settings saved.', 'servertrack' ) ],
         ];
         ?>
@@ -314,7 +298,7 @@ class ServerTrack_Admin {
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // Health Notice (Day 7 — extended)
+    // Health Notice
     // ──────────────────────────────────────────────────────────────────────────
 
     public static function render_health_notice() {
@@ -362,8 +346,11 @@ class ServerTrack_Admin {
     public static function ajax_test_event() {
         check_ajax_referer( 'servertrack_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Unauthorized' );
-        $platform = isset( $_POST['platform'] ) ? sanitize_text_field( wp_unslash( $_POST['platform'] ) ) : '';
-        $result   = self::fire_test_event( $platform );
+
+        $platform   = isset( $_POST['platform'] ) ? sanitize_text_field( wp_unslash( $_POST['platform'] ) ) : '';
+        $test_code  = isset( $_POST['test_code'] ) ? sanitize_text_field( wp_unslash( $_POST['test_code'] ) ) : '';
+
+        $result = self::fire_test_event( $platform, $test_code );
         wp_send_json_success( $result );
     }
 
@@ -374,17 +361,51 @@ class ServerTrack_Admin {
         wp_send_json_success( $logs );
     }
 
-    private static function fire_test_event( string $platform ): array {
+    /**
+     * Builds and fires a dummy Lead test event to the given platform.
+     *
+     * @param string $platform      'meta' | 'google' | 'tiktok'
+     * @param string $test_code     test_event_code to attach (Meta only)
+     */
+    private static function fire_test_event( string $platform, string $test_code = '' ): array {
         $event_id = 'test_event_' . time();
         $event    = new ServerTrack_Event( 'Lead', $event_id );
+
+        // Pass real admin browser IP + UA so Meta can correlate the test hit
+        $ip = '';
+        if ( isset( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
+            $ip = sanitize_text_field( wp_unslash( explode( ',', $_SERVER['HTTP_X_FORWARDED_FOR'] )[0] ) );
+        } elseif ( isset( $_SERVER['REMOTE_ADDR'] ) ) {
+            $ip = sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) );
+        }
+        $ua = isset( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : 'ServerTrack/Test';
+
         $event->set_user_data( [
             'email'      => ServerTrack_Hasher::hash_email( 'test@example.com' ),
             'first_name' => ServerTrack_Hasher::hash( 'Test' ),
             'last_name'  => ServerTrack_Hasher::hash( 'User' ),
-            'ip'         => '127.0.0.1',
-            'user_agent' => 'ServerTrack/Test',
+            'ip'         => $ip,
+            'user_agent' => $ua,
         ] );
-        $event->set_custom_data( [ 'currency' => 'USD', 'value' => 1.00, 'contents' => [] ] );
+
+        // Resolve test_event_code: POST param > saved option
+        $resolved_test_code = '' !== $test_code
+            ? $test_code
+            : trim( (string) get_option( 'servertrack_meta_test_event_code', '' ) );
+
+        $custom_data = [
+            'currency' => 'USD',
+            'value'    => 1.00,
+            'contents' => [],
+        ];
+
+        // Pass through to Meta send() via custom_data internal key
+        if ( '' !== $resolved_test_code && 'meta' === $platform ) {
+            $custom_data['_test_event_code'] = $resolved_test_code;
+        }
+
+        $event->set_custom_data( $custom_data );
+
         switch ( $platform ) {
             case 'meta':   return ServerTrack_Meta::send( $event );
             case 'google': return ServerTrack_Google::send( $event );
