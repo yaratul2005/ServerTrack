@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/logo/logo_st.png" alt="ServerTrack Logo" width="300" style="margin-bottom: 20px;">
+
 # 🚀 ServerTrack Native
 
 **A high-performance, zero-dependency server-side tracking plugin for WordPress.**
