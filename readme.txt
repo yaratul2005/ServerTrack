@@ -1,4 +1,4 @@
-=== ServerTrack — Native Server-Side Events ===
+=== ServerTrack ===
 Contributors: yaratul2005
 Requires at least: 6.0
 Tested up to: 6.9

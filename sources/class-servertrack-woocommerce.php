@@ -81,20 +81,16 @@ class ServerTrack_WooCommerce {
         $tiktok_on = get_option( 'servertrack_tiktok_enabled', 0 );
         if ( ! $meta_on && ! $tiktok_on ) return;
 
-        // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound
-        global $product;
-        if ( ! $product instanceof WC_Product ) {
-            $product = wc_get_product( get_queried_object_id() );
-        }
-        if ( ! $product ) return;
+        $servertrack_product = wc_get_product( get_queried_object_id() );
+        if ( ! $servertrack_product ) return;
 
         require_once SERVERTRACK_DIR . 'platforms/class-servertrack-meta.php';
         require_once SERVERTRACK_DIR . 'platforms/class-servertrack-tiktok.php';
 
-        $event_id  = ServerTrack_Dedup::generate_event_id( 'view_' . $product->get_id() . '_' . wp_generate_uuid4() );
+        $event_id  = ServerTrack_Dedup::generate_event_id( 'view_' . $servertrack_product->get_id() . '_' . wp_generate_uuid4() );
         $user_data = self::build_browser_user_data();
-        $price     = (float) wc_get_price_to_display( $product );
-        $sku       = $product->get_sku() ?: (string) $product->get_id();
+        $price     = (float) wc_get_price_to_display( $servertrack_product );
+        $sku       = $servertrack_product->get_sku() ?: (string) $servertrack_product->get_id();
 
         $event = new ServerTrack_Event( 'ViewContent', $event_id );
         $event->set_user_data( $user_data );
