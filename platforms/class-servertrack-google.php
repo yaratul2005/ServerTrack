@@ -6,11 +6,17 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Google Ads Enhanced Conversions Sender
  * Depends on: ServerTrack_Event (type-hinted), ServerTrack_Logger
+ *
+ * Bug fix: API was pinned to v17 of the Google Ads API.
+ * Google Ads API v17 reached end-of-life on 2025-04-02.
+ * Upgraded to v19 (current stable as of May 2026).
+ * Stale API versions return HTTP 400 / 404 and drop all conversions silently.
  */
 class ServerTrack_Google {
 
     const TOKEN_ENDPOINT  = 'https://oauth2.googleapis.com/token';
-    const UPLOAD_ENDPOINT = 'https://googleads.googleapis.com/v17/customers/%s/conversionActions/%s:uploadClickConversions';
+    // v19 — current stable. v17 was EOL on 2025-04-02 and caused silent 404s.
+    const UPLOAD_ENDPOINT = 'https://googleads.googleapis.com/v19/customers/%s/conversionActions/%s:uploadClickConversions';
 
     /**
      * Send an Enhanced Conversion to Google Ads.
@@ -41,10 +47,7 @@ class ServerTrack_Google {
             'order_id'             => $event->custom_data['order_id'] ?? $event->event_id,
         ];
 
-        // ── GCLID resolution (Day 4) ────────────────────────────────────────
-        // Priority 1: gclid already in user_data (set by woocommerce source from cookie)
-        // Priority 2: order meta _servertrack_gclid (set by frontend.php on thank-you page)
-        // Priority 3: WC-session-keyed transient written at landing-page capture time
+        // ── GCLID resolution ────────────────────────────────────────────────
         $gclid = $event->user_data['gclid'] ?? '';
 
         if ( empty( $gclid ) ) {
@@ -63,9 +66,6 @@ class ServerTrack_Google {
         if ( ! empty( $gclid ) ) {
             $conversion['gclid'] = $gclid;
         }
-        // If gclid is still empty after all fallbacks, Google Enhanced Conversions
-        // will still match using hashed email/address — no gclid is acceptable.
-        // ────────────────────────────────────────────────────────────────────
 
         // User identifiers for Enhanced Conversions
         $user_identifiers = [];
@@ -80,7 +80,6 @@ class ServerTrack_Google {
         if ( ! empty( $event->user_data['last_name'] ) ) {
             $address['hashed_last_name'] = $event->user_data['last_name'];
         }
-        // Google accepts raw (unhashed) geo fields — only include if present
         $raw_addr_map = [
             'city_raw'    => 'city',
             'state_raw'   => 'state',
@@ -118,7 +117,7 @@ class ServerTrack_Google {
             return [ 'status' => 'error', 'http_code' => 0, 'message' => $response->get_error_message() ];
         }
 
-        $code     = wp_remote_retrieve_response_code( $response );
+        $code     = (int) wp_remote_retrieve_response_code( $response );
         $body_raw = wp_remote_retrieve_body( $response );
         $status   = ( $code >= 200 && $code < 300 ) ? 'success' : 'error';
 
@@ -135,10 +134,9 @@ class ServerTrack_Google {
         $token_expires = (int) get_option( 'servertrack_google_token_expires', 0 );
 
         if ( ! empty( $access_token ) && $token_expires > ( time() + 60 ) ) {
-            return $access_token; // Still valid
+            return $access_token;
         }
 
-        // Expired or missing — refresh now
         $client_id     = get_option( 'servertrack_google_client_id', '' );
         $client_secret = get_option( 'servertrack_google_client_secret', '' );
         $refresh_token = get_option( 'servertrack_google_refresh_token', '' );

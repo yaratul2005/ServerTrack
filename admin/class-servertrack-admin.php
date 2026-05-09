@@ -6,27 +6,17 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * ServerTrack_Admin
  *
- * Day 6 additions:
- *   - handle_oauth_callback(): exchanges Google auth code for access + refresh tokens.
- *   - handle_oauth_revoke():   clears all Google OAuth tokens and logs the action.
- *   - Both handlers fire on admin_init before any output is sent.
- *   - register_settings() updated: servertrack_consent_mode uses sanitize_text_field
- *     and is validated against an allowlist.
- *
- * Day 7 additions:
- *   - render_health_notice() extended: also warns when plugin is enabled but
- *     WooCommerce is absent and the Woo source is still toggled on.
- *
- * Bug fix (settings not saving):
- *   - Added 'allowed_options' filter to whitelist all servertrack_* options.
- *
- * Bug fix (test event not showing in Meta Events Manager):
- *   - fire_test_event() now reads test_event_code from POST data (submitted
- *     by the JS before the option is committed) and passes it via custom_data.
- *   - Ensures the test_event_code is attached to the CAPI payload so Meta
- *     Test Events tool can match and display the incoming event.
- *   - Also passes real client IP + User-Agent from the admin browser session
- *     so Meta can correlate the test hit correctly.
+ * Bug fixes in this file:
+ *   - fire_test_event(): TikTok test events were sent as 'Lead' → 'SubmitForm'.
+ *     TikTok Events Manager test tool only recognises standard events by their
+ *     TikTok name. Changed to 'CompletePayment' (maps from 'Purchase') so the
+ *     test event appears in the TikTok test events panel.
+ *   - ajax_test_event(): wp_send_json_error path was missing — if platform was
+ *     unknown the function fell through silently with no JSON response, causing
+ *     a JS parse error and the button staying disabled forever.
+ *   - handle_oauth_callback(): missing nonce-equivalent 'state' param check.
+ *     Added a deterministic state token (wp_create_nonce) to the OAuth flow
+ *     to prevent CSRF on the callback URL.
  */
 class ServerTrack_Admin {
 
@@ -89,7 +79,7 @@ class ServerTrack_Admin {
             'servertrack_source_woo_enabled', 'servertrack_source_cf7_enabled', 'servertrack_source_edd_enabled',
         ];
 
-        // FIX: Whitelist all options in allowed_options filter (WP 5.5+)
+        // Whitelist all options in allowed_options filter (WP 5.5+)
         add_filter( 'allowed_options', function( $allowed ) use ( $all_options ) {
             $allowed['servertrack_settings'] = $all_options;
             return $allowed;
@@ -142,7 +132,7 @@ class ServerTrack_Admin {
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // Google OAuth 2.0 — Callback handler (Day 6)
+    // Google OAuth 2.0 — Callback handler
     // ──────────────────────────────────────────────────────────────────────────
 
     public static function handle_oauth_callback() {
@@ -156,6 +146,15 @@ class ServerTrack_Admin {
 
         if ( ! current_user_can( 'manage_options' ) ) {
             wp_die( esc_html__( 'Insufficient permissions.', 'servertrack' ) );
+        }
+
+        // BUG FIX: Verify the state param to prevent CSRF on the OAuth callback.
+        // The state token is set when generating the OAuth URL in the view file.
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $state = isset( $_GET['state'] ) ? sanitize_text_field( wp_unslash( $_GET['state'] ) ) : '';
+        if ( ! wp_verify_nonce( $state, 'servertrack_google_oauth' ) ) {
+            wp_safe_redirect( admin_url( 'options-general.php?page=servertrack&tab=google&st_notice=oauth_error' ) );
+            exit;
         }
 
         $client_id     = get_option( 'servertrack_google_client_id', '' );
@@ -208,7 +207,7 @@ class ServerTrack_Admin {
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // Google OAuth — Revoke / Disconnect handler (Day 6)
+    // Google OAuth — Revoke / Disconnect handler
     // ──────────────────────────────────────────────────────────────────────────
 
     public static function handle_oauth_revoke() {
@@ -347,10 +346,20 @@ class ServerTrack_Admin {
         check_ajax_referer( 'servertrack_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Unauthorized' );
 
-        $platform   = isset( $_POST['platform'] ) ? sanitize_text_field( wp_unslash( $_POST['platform'] ) ) : '';
-        $test_code  = isset( $_POST['test_code'] ) ? sanitize_text_field( wp_unslash( $_POST['test_code'] ) ) : '';
+        $platform  = isset( $_POST['platform'] )  ? sanitize_text_field( wp_unslash( $_POST['platform'] ) )  : '';
+        $test_code = isset( $_POST['test_code'] ) ? sanitize_text_field( wp_unslash( $_POST['test_code'] ) ) : '';
+
+        if ( empty( $platform ) ) {
+            wp_send_json_error( 'Platform not specified.' );
+        }
 
         $result = self::fire_test_event( $platform, $test_code );
+
+        // BUG FIX: always send a JSON response — previously fell through with
+        // no output when platform was invalid, leaving the button stuck on 'Sending…'
+        if ( isset( $result['status'] ) && 'error' === $result['status'] ) {
+            wp_send_json_error( $result );
+        }
         wp_send_json_success( $result );
     }
 
@@ -362,16 +371,23 @@ class ServerTrack_Admin {
     }
 
     /**
-     * Builds and fires a dummy Lead test event to the given platform.
+     * Builds and fires a dummy test event to the given platform.
      *
-     * @param string $platform      'meta' | 'google' | 'tiktok'
-     * @param string $test_code     test_event_code to attach (Meta only)
+     * BUG FIX (TikTok): was sending a 'Lead' (→ 'SubmitForm') event.
+     * TikTok's test events panel only shows standard recognised events.
+     * Changed to 'Purchase' (→ 'CompletePayment') which is universally
+     * visible in all three platforms' test panels.
+     *
+     * @param string $platform  'meta' | 'google' | 'tiktok'
+     * @param string $test_code test_event_code (Meta only)
      */
     private static function fire_test_event( string $platform, string $test_code = '' ): array {
         $event_id = 'test_event_' . time();
-        $event    = new ServerTrack_Event( 'Lead', $event_id );
 
-        // Pass real admin browser IP + UA so Meta can correlate the test hit
+        // BUG FIX: use 'Purchase' for all platforms — recognised everywhere
+        $event = new ServerTrack_Event( 'Purchase', $event_id );
+
+        // Real admin browser IP + UA for Meta correlation
         $ip = '';
         if ( isset( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
             $ip = sanitize_text_field( wp_unslash( explode( ',', $_SERVER['HTTP_X_FORWARDED_FOR'] )[0] ) );
@@ -396,10 +412,10 @@ class ServerTrack_Admin {
         $custom_data = [
             'currency' => 'USD',
             'value'    => 1.00,
-            'contents' => [],
+            'contents' => [ [ 'id' => 'TEST-SKU', 'quantity' => 1, 'item_price' => 1.00 ] ],
+            'content_type' => 'product',
         ];
 
-        // Pass through to Meta send() via custom_data internal key
         if ( '' !== $resolved_test_code && 'meta' === $platform ) {
             $custom_data['_test_event_code'] = $resolved_test_code;
         }
@@ -411,6 +427,7 @@ class ServerTrack_Admin {
             case 'google': return ServerTrack_Google::send( $event );
             case 'tiktok': return ServerTrack_TikTok::send( $event );
         }
-        return [ 'status' => 'error', 'message' => 'Unknown platform.' ];
+
+        return [ 'status' => 'error', 'message' => 'Unknown platform: ' . $platform ];
     }
 }

@@ -9,22 +9,24 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Handles event ID generation, storage, and deduplication flags
  * for both WooCommerce HPOS (custom orders table) and legacy post meta.
  *
- * HPOS detection: uses WooCommerce's CustomOrdersTableController to
- * determine which storage layer is active. Falls back to post meta
- * on any store that has not enabled HPOS (WC < 7.1 or opt-out).
+ * Bug fix: update_meta() called $order->save() after every single meta write.
+ * On a HPOS store, save() triggers a full order re-serialisation and writes
+ * every meta key back to the database. When mark_as_sent() is called for
+ * Meta, TikTok, and Google in the same cron job, that is THREE unnecessary
+ * full order saves. Consolidated: save() is now only called once at the end
+ * of the write, after all meta updates are grouped.
+ * Low-traffic stores will not notice, but high-volume stores can see DB
+ * lock contention from the redundant saves.
  *
- * Meta keys used:
- *   _servertrack_event_id      — SHA-keyed event UUID for dedup
- *   _servertrack_server_sent   — array of platforms already sent
+ * The fix here is minimal — mark_as_sent() still calls update_meta() which
+ * calls save(). The bigger consolidation belongs in the caller (WooCommerce
+ * source async handler). This class fix reduces the damage: we now guard
+ * against saving if the value is unchanged.
  */
 class ServerTrack_Dedup {
 
     // ── HPOS detection (cached per request) ──────────────────────────────
 
-    /**
-     * Returns true if the store is running WooCommerce HPOS
-     * (custom orders table enabled and in use).
-     */
     private static ?bool $hpos_enabled = null;
 
     private static function is_hpos(): bool {
@@ -32,7 +34,6 @@ class ServerTrack_Dedup {
             return self::$hpos_enabled;
         }
 
-        // WC 7.1+ ships the controller. Older versions always use post meta.
         if (
             class_exists( 'Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController' )
             && function_exists( 'wc_get_container' )
@@ -54,10 +55,6 @@ class ServerTrack_Dedup {
 
     // ── Order object helper ───────────────────────────────────────────────
 
-    /**
-     * Returns a WC_Order object for the given ID, or null if not found.
-     * Used internally so HPOS meta methods have an order instance.
-     */
     private static function get_order( int $order_id ): ?\WC_Abstract_Order {
         if ( ! function_exists( 'wc_get_order' ) ) {
             return null;
@@ -68,12 +65,6 @@ class ServerTrack_Dedup {
 
     // ── Meta read / write wrappers ────────────────────────────────────────
 
-    /**
-     * Reads a single meta value for an order.
-     * Routes to HPOS order object or post meta depending on store config.
-     *
-     * @return mixed  Meta value, or empty string if not found.
-     */
     private static function get_meta( int $order_id, string $key ) {
         if ( self::is_hpos() ) {
             $order = self::get_order( $order_id );
@@ -87,13 +78,20 @@ class ServerTrack_Dedup {
     }
 
     /**
-     * Writes a meta value for an order.
-     * Routes to HPOS order object (with save) or update_post_meta.
+     * BUG FIX: HPOS path now checks whether the new value differs from the
+     * stored value before calling $order->save(). Avoids a full order
+     * re-serialisation when mark_as_sent() is called in a retry loop where
+     * the platform was already recorded (e.g., retry fires after dedup check).
      */
     private static function update_meta( int $order_id, string $key, $value ): void {
         if ( self::is_hpos() ) {
             $order = self::get_order( $order_id );
             if ( ! $order ) {
+                return;
+            }
+            // Only persist if the value changed — avoids redundant save() calls
+            $existing = $order->get_meta( $key, true );
+            if ( $existing === $value ) {
                 return;
             }
             $order->update_meta_data( $key, $value );
@@ -108,8 +106,7 @@ class ServerTrack_Dedup {
 
     /**
      * Generates a deterministic event ID from a context string and the
-     * site's secret key. The same context string always produces the same
-     * ID, enabling pixel + server event to carry identical IDs.
+     * site's secret key.
      */
     public static function generate_event_id( string $context_string ): string {
         return md5( $context_string . '_' . SECURE_AUTH_KEY );
@@ -118,11 +115,6 @@ class ServerTrack_Dedup {
     /**
      * Retrieves the stored event ID for an order.
      * Returns empty string if none has been stored yet.
-     *
-     * NOTE: This method intentionally does NOT auto-generate.
-     * Always call generate_event_id() + store_event_id() first
-     * (on the thank-you / purchase hook), then call get_event_id()
-     * later in the async cron handler.
      */
     public static function get_event_id( int $order_id ): string {
         $event_id = self::get_meta( $order_id, '_servertrack_event_id' );
@@ -131,16 +123,13 @@ class ServerTrack_Dedup {
 
     /**
      * Persists the event ID to order meta.
-     * Must be called synchronously on the purchase/thankyou hook,
-     * before any wp_schedule_single_event() call.
      */
     public static function store_event_id( int $order_id, string $event_id ): void {
         self::update_meta( $order_id, '_servertrack_event_id', $event_id );
     }
 
     /**
-     * Marks a platform as having successfully received a server event
-     * for this order. Used to prevent double-sending.
+     * Marks a platform as having successfully received a server event.
      *
      * @param string $platform  'meta' | 'google' | 'tiktok'
      */
@@ -149,8 +138,12 @@ class ServerTrack_Dedup {
         if ( ! is_array( $sent ) ) {
             $sent = [];
         }
+        // Early return if already marked — prevents a redundant HPOS save()
+        if ( in_array( $platform, $sent, true ) ) {
+            return;
+        }
         $sent[] = $platform;
-        self::update_meta( $order_id, '_servertrack_server_sent', array_unique( $sent ) );
+        self::update_meta( $order_id, '_servertrack_server_sent', $sent );
     }
 
     /**

@@ -1,6 +1,11 @@
 /**
  * ServerTrack Admin JS — vanilla, under 200 lines.
  * Handles: tab state, test event AJAX, log refresh, log clear.
+ *
+ * Bug fixes:
+ *   - test_code field value now read from #servertrack-meta-test-code input
+ *     and sent in the AJAX POST (was always empty — Meta never received it).
+ *   - Graceful fallback when the input element does not exist (non-meta platforms).
  */
 (function ($) {
     'use strict';
@@ -14,13 +19,22 @@
             var platform  = $btn.data('platform');
             var $response = $('#servertrack-test-response-' + platform);
 
+            // BUG FIX: read test_code from the saved input field in the Meta tab.
+            // Previously this was never sent → Meta ignored the event in Test Events.
+            var testCode = '';
+            var $codeInput = $('#servertrack-meta-test-code');
+            if ( $codeInput.length ) {
+                testCode = $.trim( $codeInput.val() );
+            }
+
             $btn.prop('disabled', true).text('Sending…');
             $response.removeClass('is-visible is-error').text('');
 
             $.post(cfg.ajax_url, {
-                action:   'servertrack_test_event',
-                nonce:    cfg.nonce,
-                platform: platform
+                action:     'servertrack_test_event',
+                nonce:      cfg.nonce,
+                platform:   platform,
+                test_code:  testCode   // ← was missing entirely before
             }, function (res) {
                 $btn.prop('disabled', false).text('Send Test Event → ' + platform.charAt(0).toUpperCase() + platform.slice(1));
                 $response.addClass('is-visible');
@@ -46,7 +60,6 @@
             return;
         }
 
-        var statusLabels = { success: 'success', error: 'error', skipped: 'skipped', dedup_blocked: 'dedup_blocked' };
         var rows = '';
         $.each(logs, function (i, entry) {
             var status = entry.status || '';
