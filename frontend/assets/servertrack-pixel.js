@@ -69,7 +69,6 @@
         /* eslint-enable */
 
         ttq.load( cfg.tiktok_pixel );
-        ttq.page();
 
         if ( cfg.event_id && cfg.event_name ) {
             var ttEventMap = {

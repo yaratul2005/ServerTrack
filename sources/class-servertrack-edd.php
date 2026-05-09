@@ -17,6 +17,9 @@ class ServerTrack_EDD {
     public static function on_purchase( int $payment_id ) {
         if ( ! get_option( 'servertrack_enabled', 1 ) ) return;
 
+        $event_id = ServerTrack_Dedup::generate_event_id( 'edd_purchase_' . $payment_id );
+        ServerTrack_Dedup::store_event_id( $payment_id, $event_id );
+
         wp_schedule_single_event( time(), 'servertrack_send_edd_purchase', [ $payment_id ] );
     }
 

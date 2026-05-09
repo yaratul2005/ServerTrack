@@ -40,7 +40,8 @@ class ServerTrack_WooCommerce {
         if ( $order->get_meta( '_subscription_renewal' ) ) return;
 
         // Generate + store event_id BEFORE scheduling — dedup depends on this
-        ServerTrack_Dedup::get_event_id( $order_id );
+        $event_id = ServerTrack_Dedup::generate_event_id( 'purchase_' . $order_id );
+        ServerTrack_Dedup::store_event_id( $order_id, $event_id );
 
         // Constraint #7: NEVER fire API calls synchronously on checkout page
         wp_schedule_single_event( time(), 'servertrack_send_woo_purchase', [ $order_id, 'thankyou' ] );
