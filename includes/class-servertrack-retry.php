@@ -4,7 +4,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Retry
+ * ServerTrack_Retry  v2.1
  *
  * Persistent retry queue for failed platform API calls.
  *
@@ -24,6 +24,14 @@ if ( ! defined( 'ABSPATH' ) ) {
  *   Each queued item is stored as a single wp_options row:
  *   Key: servertrack_retry_{$uid}
  *   TTL: 24 hours (cleaned up after final attempt or success)
+ *
+ * CRITICAL FIX (v2.1):
+ *   Previously used add_option() to persist retry payloads.
+ *   add_option() silently does NOTHING if the option key already exists.
+ *   Scenario: a retry fires, fails again, and re-queues with the same UID —
+ *   the updated payload is never written, so the next retry attempt reads
+ *   the stale original payload and loops forever with wrong data.
+ *   Fixed: replaced add_option() with update_option() which always writes.
  *
  * Cron hook: servertrack_process_retry
  * Registered in: ServerTrack_Core::init()
@@ -100,8 +108,12 @@ class ServerTrack_Retry {
             'expires_at' => time() + DAY_IN_SECONDS,
         ];
 
-        // Store payload — autoload:false to avoid loading all retries on every page
-        add_option( self::KEY_PREFIX . $uid, $item, '', 'no' );
+        // CRITICAL FIX: was add_option() which silently does nothing if the key
+        // already exists. If the same event is re-queued (e.g., retry fails again
+        // with the same UID), the updated payload was never written — the retry
+        // loop read stale data and could cycle forever.
+        // update_option() always writes, regardless of whether the key exists.
+        update_option( self::KEY_PREFIX . $uid, $item, false ); // false = no autoload
 
         // Schedule the retry cron
         $delay = self::BACKOFF[ $attempt ] ?? self::BACKOFF[ self::MAX_ATTEMPTS ];
@@ -164,7 +176,6 @@ class ServerTrack_Retry {
         $success   = ( $result['status'] ?? '' ) === 'success';
 
         if ( $success ) {
-            // Mark order as sent now that the retry succeeded
             $order_id = (int) ( $event_args['custom_data']['order_id'] ?? 0 );
             if ( $order_id > 0 ) {
                 ServerTrack_Dedup::mark_as_sent( $order_id, $platform );
@@ -208,9 +219,6 @@ class ServerTrack_Retry {
     /**
      * Serialises a ServerTrack_Event into the flat array format used
      * by the retry queue. Call this immediately after a failed send().
-     *
-     * @param ServerTrack_Event $event
-     * @return array
      */
     public static function event_to_args( ServerTrack_Event $event ): array {
         return [

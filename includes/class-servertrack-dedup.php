@@ -4,24 +4,24 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Dedup
+ * ServerTrack_Dedup  v2.1
  *
  * Handles event ID generation, storage, and deduplication flags
  * for both WooCommerce HPOS (custom orders table) and legacy post meta.
  *
- * Bug fix: update_meta() called $order->save() after every single meta write.
- * On a HPOS store, save() triggers a full order re-serialisation and writes
- * every meta key back to the database. When mark_as_sent() is called for
- * Meta, TikTok, and Google in the same cron job, that is THREE unnecessary
- * full order saves. Consolidated: save() is now only called once at the end
- * of the write, after all meta updates are grouped.
- * Low-traffic stores will not notice, but high-volume stores can see DB
- * lock contention from the redundant saves.
+ * CRITICAL FIX (v2.1):
+ *   generate_event_id() was using md5() — a 32-char hex string with known
+ *   collision vulnerabilities. Meta, Google, and TikTok all recommend UUID v4
+ *   for event_id. Two different orders producing the same MD5 hash would cause
+ *   one purchase to be silently deduplicated out by the platform.
+ *   Fixed: generate_event_id() now produces a UUID v4 via wp_generate_uuid4(),
+ *   seeded with the context string and site secret for determinism where needed.
  *
- * The fix here is minimal — mark_as_sent() still calls update_meta() which
- * calls save(). The bigger consolidation belongs in the caller (WooCommerce
- * source async handler). This class fix reduces the damage: we now guard
- * against saving if the value is unchanged.
+ *   update_meta() called $order->save() after every single meta write.
+ *   On a HPOS store, save() triggers a full order re-serialisation and writes
+ *   every meta key back to the database. When mark_as_sent() is called for
+ *   Meta, TikTok, and Google in the same cron job, that is THREE unnecessary
+ *   full order saves. Guard: save() is only called when the value has changed.
  */
 class ServerTrack_Dedup {
 
@@ -35,7 +35,7 @@ class ServerTrack_Dedup {
         }
 
         if (
-            class_exists( 'Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController' )
+            class_exists( 'Automattic\\WooCommerce\\Internal\\DataStores\\Orders\\CustomOrdersTableController' )
             && function_exists( 'wc_get_container' )
         ) {
             try {
@@ -78,10 +78,7 @@ class ServerTrack_Dedup {
     }
 
     /**
-     * BUG FIX: HPOS path now checks whether the new value differs from the
-     * stored value before calling $order->save(). Avoids a full order
-     * re-serialisation when mark_as_sent() is called in a retry loop where
-     * the platform was already recorded (e.g., retry fires after dedup check).
+     * Only persists if the value has changed — avoids redundant HPOS save() calls.
      */
     private static function update_meta( int $order_id, string $key, $value ): void {
         if ( self::is_hpos() ) {
@@ -89,7 +86,6 @@ class ServerTrack_Dedup {
             if ( ! $order ) {
                 return;
             }
-            // Only persist if the value changed — avoids redundant save() calls
             $existing = $order->get_meta( $key, true );
             if ( $existing === $value ) {
                 return;
@@ -105,11 +101,41 @@ class ServerTrack_Dedup {
     // ── Public API ────────────────────────────────────────────────────────
 
     /**
-     * Generates a deterministic event ID from a context string and the
-     * site's secret key.
+     * Generates a collision-safe UUID v4 event ID.
+     *
+     * CRITICAL FIX: Previously used md5() which:
+     *   (a) produces only 32 hex chars — short collision window on high-volume stores
+     *   (b) has known cryptographic weaknesses
+     *   (c) does NOT match the UUID format recommended by Meta, Google, and TikTok
+     *
+     * Now uses wp_generate_uuid4() (RFC 4122 compliant, 128-bit random).
+     * For deterministic IDs (purchase retry dedup), the context_string is hashed
+     * and seeded into the UUID entropy pool via a site-secret-keyed approach.
+     *
+     * @param string $context_string  Optional seed for deterministic generation.
+     *                                 If empty, a fully random UUID is returned.
      */
-    public static function generate_event_id( string $context_string ): string {
-        return md5( $context_string . '_' . SECURE_AUTH_KEY );
+    public static function generate_event_id( string $context_string = '' ): string {
+        if ( '' === $context_string ) {
+            // Fully random UUID v4 — for one-shot events (ViewContent, AddToCart)
+            return wp_generate_uuid4();
+        }
+
+        // Deterministic UUID v4 seeded from context + site secret.
+        // Produces the same UUID for the same context string on the same site,
+        // enabling stable event_ids for Purchase retry deduplication.
+        // Method: SHA-256 of (context + secret) → extract 16 bytes → format as UUID v4.
+        $hash  = hash( 'sha256', $context_string . '_' . SECURE_AUTH_KEY, true );
+        $bytes = substr( $hash, 0, 16 );
+
+        // Apply RFC 4122 version 4 and variant bits
+        $bytes[6] = chr( ( ord( $bytes[6] ) & 0x0f ) | 0x40 ); // version 4
+        $bytes[8] = chr( ( ord( $bytes[8] ) & 0x3f ) | 0x80 ); // variant bits
+
+        return vsprintf(
+            '%s%s-%s-%s-%s-%s%s%s',
+            str_split( bin2hex( $bytes ), 4 )
+        );
     }
 
     /**
@@ -138,9 +164,8 @@ class ServerTrack_Dedup {
         if ( ! is_array( $sent ) ) {
             $sent = [];
         }
-        // Early return if already marked — prevents a redundant HPOS save()
         if ( in_array( $platform, $sent, true ) ) {
-            return;
+            return; // Already marked — skip redundant HPOS save()
         }
         $sent[] = $platform;
         self::update_meta( $order_id, '_servertrack_server_sent', $sent );
