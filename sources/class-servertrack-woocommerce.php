@@ -4,9 +4,17 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_WooCommerce  v2.0
+ * ServerTrack_WooCommerce  v2.1
  *
  * Handles all WooCommerce server-side CAPI events.
+ *
+ * Changes in v2.1:
+ *   - on_thankyou: now calls ServerTrack_Consent::capture_for_order() while
+ *     the customer's browser is still present. This snapshots consent state
+ *     into order meta (_servertrack_consent) so that the async cron job can
+ *     read authoritative per-order consent instead of bypassing cookie checks.
+ *   - send_purchase_async: all three ServerTrack_Consent::is_granted() calls
+ *     now pass $order_id so the per-order consent record is used in cron context.
  *
  * Fixed bugs (vs v1):
  *   - on_add_to_cart: hook signature was (key,product_id,qty,variation_id) — WC actually
@@ -39,7 +47,7 @@ class ServerTrack_WooCommerce {
     const SYNC_TIMEOUT = 3;
 
     public static function init() {
-        if ( ! get_option( 'servertrack_source_woo_enabled', 1 ) ) {
+        if ( ! get_option( 'servertrack_enabled', 1 ) ) {
             return;
         }
 
@@ -79,6 +87,13 @@ class ServerTrack_WooCommerce {
             ServerTrack_Logger::log( 'skipped', 'all', 'Subscription renewal — handled by renewals source.', '', '', $order_id, 'Purchase' );
             return;
         }
+
+        // ── v2.1: Capture consent while the customer's browser is present ────
+        // This MUST happen before the async cron dispatch. The cron job has no
+        // browser session, so it cannot read cookies. Capturing here stores a
+        // per-order consent snapshot (_servertrack_consent order meta) that the
+        // async send will read via ServerTrack_Consent::is_granted( $platform, $order_id ).
+        ServerTrack_Consent::capture_for_order( $order_id );
 
         // Generate and store a stable event_id for this order (idempotent)
         $event_id = ServerTrack_Dedup::get_event_id( $order_id );
@@ -143,7 +158,8 @@ class ServerTrack_WooCommerce {
         if ( 'thankyou' === $trigger && get_option( 'servertrack_meta_enabled', 0 ) ) {
             if ( ServerTrack_Dedup::was_sent( $order_id, 'meta' ) ) {
                 ServerTrack_Logger::log( 'dedup_blocked', 'meta', 'Already sent', '', $event_id, $order_id, 'Purchase' );
-            } elseif ( ! ServerTrack_Consent::is_granted( 'meta' ) ) {
+            } elseif ( ! ServerTrack_Consent::is_granted( 'meta', $order_id ) ) {
+                // v2.1: pass $order_id — reads per-order consent snapshot in cron context
                 ServerTrack_Logger::log( 'skipped', 'meta', 'Consent not granted', '', $event_id, $order_id, 'Purchase' );
             } else {
                 $e = ( new ServerTrack_Event( 'Purchase', $event_id ) )
@@ -163,7 +179,8 @@ class ServerTrack_WooCommerce {
         if ( 'thankyou' === $trigger && get_option( 'servertrack_tiktok_enabled', 0 ) ) {
             if ( ServerTrack_Dedup::was_sent( $order_id, 'tiktok' ) ) {
                 ServerTrack_Logger::log( 'dedup_blocked', 'tiktok', 'Already sent', '', $event_id, $order_id, 'Purchase' );
-            } elseif ( ! ServerTrack_Consent::is_granted( 'tiktok' ) ) {
+            } elseif ( ! ServerTrack_Consent::is_granted( 'tiktok', $order_id ) ) {
+                // v2.1: pass $order_id — reads per-order consent snapshot in cron context
                 ServerTrack_Logger::log( 'skipped', 'tiktok', 'Consent not granted', '', $event_id, $order_id, 'Purchase' );
             } else {
                 $e = ( new ServerTrack_Event( 'Purchase', $event_id ) )
@@ -182,7 +199,8 @@ class ServerTrack_WooCommerce {
         if ( get_option( 'servertrack_google_enabled', 0 ) ) {
             if ( ServerTrack_Dedup::was_sent( $order_id, 'google' ) ) {
                 ServerTrack_Logger::log( 'dedup_blocked', 'google', 'Already sent (trigger=' . $trigger . ')', '', $event_id, $order_id, 'Purchase' );
-            } elseif ( ! ServerTrack_Consent::is_granted( 'google' ) ) {
+            } elseif ( ! ServerTrack_Consent::is_granted( 'google', $order_id ) ) {
+                // v2.1: pass $order_id — reads per-order consent snapshot in cron context
                 ServerTrack_Logger::log( 'skipped', 'google', 'Consent not granted', '', $event_id, $order_id, 'Purchase' );
             } else {
                 $e = ( new ServerTrack_Event( 'Purchase', $event_id ) )
@@ -239,6 +257,8 @@ class ServerTrack_WooCommerce {
             'content_type' => 'product',
         ] );
 
+        // Note: ViewContent runs in async cron with no order context — uses
+        // cookie-based consent check (no $order_id passed = browser-mode check)
         if ( get_option( 'servertrack_meta_enabled', 0 ) && ServerTrack_Consent::is_granted( 'meta' ) ) {
             $result = ServerTrack_Meta::send( $event );
             ServerTrack_Retry::maybe_queue( 'meta', $result, ServerTrack_Retry::event_to_args( $event ) );
