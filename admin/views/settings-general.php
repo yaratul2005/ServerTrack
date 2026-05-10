@@ -1,12 +1,20 @@
-<?php if ( ! defined( 'ABSPATH' ) ) exit; ?>
+<?php
+if ( ! defined( 'ABSPATH' ) ) exit;
+
+/**
+ * General tab — uses its own option group: servertrack_general_settings
+ * This means saving General NEVER touches Meta / Google / TikTok options.
+ */
+?>
 <form method="post" action="options.php">
-    <?php settings_fields( 'servertrack_settings' ); ?>
+    <?php settings_fields( 'servertrack_general_settings' ); ?>
     <table class="form-table" role="presentation">
         <tr>
             <th scope="row"><?php esc_html_e( 'Enable Plugin', 'servertrack' ); ?></th>
             <td>
                 <label>
-                    <input type="checkbox" name="servertrack_enabled" value="1" <?php checked( 1, get_option( 'servertrack_enabled', 1 ) ); ?> />
+                    <input type="checkbox" name="servertrack_enabled" value="1"
+                        <?php checked( 1, get_option( 'servertrack_enabled', 1 ) ); ?> />
                     <?php esc_html_e( 'Activate server-side event sending', 'servertrack' ); ?>
                 </label>
             </td>
@@ -15,7 +23,8 @@
             <th scope="row"><?php esc_html_e( 'Test Mode', 'servertrack' ); ?></th>
             <td>
                 <label>
-                    <input type="checkbox" name="servertrack_test_mode" value="1" <?php checked( 1, get_option( 'servertrack_test_mode', 0 ) ); ?> />
+                    <input type="checkbox" name="servertrack_test_mode" value="1"
+                        <?php checked( 1, get_option( 'servertrack_test_mode', 0 ) ); ?> />
                     <?php esc_html_e( 'Send events to platform test/sandbox endpoints only', 'servertrack' ); ?>
                 </label>
                 <p class="description"><?php esc_html_e( 'Enable this during development. Disable before going live.', 'servertrack' ); ?></p>
@@ -26,21 +35,21 @@
             <td>
                 <select id="servertrack_consent_mode" name="servertrack_consent_mode">
                     <?php
-                    $servertrack_current = get_option( 'servertrack_consent_mode', 'none' );
-                    $servertrack_options = [
+                    $current = get_option( 'servertrack_consent_mode', 'none' );
+                    $options = [
                         'none'       => __( 'None (send all events, no consent check)', 'servertrack' ),
                         'cookie_yes' => __( 'CookieYes (read cookieyes-consent cookie)', 'servertrack' ),
                         'complianz'  => __( 'Complianz (read cmplz_marketing cookie)', 'servertrack' ),
                         'manual'     => __( 'Manual (use servertrack_consent_granted filter)', 'servertrack' ),
                     ];
-                    foreach ( $servertrack_options as $servertrack_val => $servertrack_label ) {
+                    foreach ( $options as $val => $label ) :
                         printf(
                             '<option value="%s" %s>%s</option>',
-                            esc_attr( $servertrack_val ),
-                            selected( $servertrack_current, $servertrack_val, false ),
-                            esc_html( $servertrack_label )
+                            esc_attr( $val ),
+                            selected( $current, $val, false ),
+                            esc_html( $label )
                         );
-                    }
+                    endforeach;
                     ?>
                 </select>
                 <p class="description"><?php esc_html_e( 'Determines how the plugin checks for user consent before sending PII to ad platforms.', 'servertrack' ); ?></p>

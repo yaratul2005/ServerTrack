@@ -6,19 +6,41 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * ServerTrack_Admin
  *
- * Bug fixes in this file:
- *   - fire_test_event(): TikTok test events were sent as 'Lead' → 'SubmitForm'.
- *     TikTok Events Manager test tool only recognises standard events by their
- *     TikTok name. Changed to 'CompletePayment' (maps from 'Purchase') so the
- *     test event appears in the TikTok test events panel.
- *   - ajax_test_event(): wp_send_json_error path was missing — if platform was
- *     unknown the function fell through silently with no JSON response, causing
- *     a JS parse error and the button staying disabled forever.
- *   - handle_oauth_callback(): missing nonce-equivalent 'state' param check.
- *     Added a deterministic state token (wp_create_nonce) to the OAuth flow
- *     to prevent CSRF on the callback URL.
+ * Bug fixes in this version:
+ *   - SETTINGS RESET BUG (major): All tabs shared one settings group
+ *     'servertrack_settings'. When the General tab was saved, WordPress ran
+ *     its options pipeline for that group, and because Meta / Google / TikTok
+ *     fields were NOT present in the General form, their sanitize_callback was
+ *     called with an empty value — effectively blanking those fields.
+ *
+ *     FIX: Each tab now has its own option group:
+ *       servertrack_general_settings
+ *       servertrack_meta_settings
+ *       servertrack_google_settings
+ *       servertrack_tiktok_settings
+ *       servertrack_sources_settings
+ *     Saving one tab can never touch another tab's options.
+ *
+ *   - fire_test_event(): TikTok test was sending 'Lead' → 'SubmitForm'.
+ *     Changed to 'Purchase' so it appears in all three platforms' test panels.
+ *   - ajax_test_event(): missing wp_send_json_error path caused JS parse error
+ *     leaving the button stuck on 'Sending…'. Fixed.
+ *   - handle_oauth_callback(): missing state/nonce CSRF check. Fixed.
  */
 class ServerTrack_Admin {
+
+    /**
+     * Map: tab slug => option group name.
+     * This is the single source of truth — views call settings_fields() with
+     * the group that matches their tab slug.
+     */
+    const TAB_GROUPS = [
+        'general' => 'servertrack_general_settings',
+        'meta'    => 'servertrack_meta_settings',
+        'google'  => 'servertrack_google_settings',
+        'tiktok'  => 'servertrack_tiktok_settings',
+        'sources' => 'servertrack_sources_settings',
+    ];
 
     public static function init() {
         add_action( 'admin_menu',            [ self::class, 'register_menu' ] );
@@ -27,14 +49,14 @@ class ServerTrack_Admin {
         add_action( 'admin_init',            [ self::class, 'handle_oauth_revoke' ] );
         add_action( 'admin_enqueue_scripts', [ self::class, 'enqueue_assets' ] );
         add_action( 'admin_notices',         [ self::class, 'render_health_notice' ] );
-        add_action( 'wp_ajax_servertrack_clear_log',   [ self::class, 'ajax_clear_log' ] );
-        add_action( 'wp_ajax_servertrack_test_event',  [ self::class, 'ajax_test_event' ] );
-        add_action( 'wp_ajax_servertrack_get_logs',    [ self::class, 'ajax_get_logs' ] );
+        add_action( 'wp_ajax_servertrack_clear_log',  [ self::class, 'ajax_clear_log' ] );
+        add_action( 'wp_ajax_servertrack_test_event', [ self::class, 'ajax_test_event' ] );
+        add_action( 'wp_ajax_servertrack_get_logs',   [ self::class, 'ajax_get_logs' ] );
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────
     // Menu & Assets
-    // ──────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────
 
     public static function register_menu() {
         add_options_page(
@@ -56,62 +78,98 @@ class ServerTrack_Admin {
         ] );
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // Settings Registration
-    // ──────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────
+    // Settings Registration  ← THE FIX IS HERE
+    // ─────────────────────────────────────────────────────────────────────
 
     public static function register_settings() {
 
-        $all_options = [
-            'servertrack_enabled', 'servertrack_test_mode', 'servertrack_consent_mode',
-            'servertrack_meta_enabled', 'servertrack_meta_pixel_id', 'servertrack_meta_access_token', 'servertrack_meta_test_event_code',
-            'servertrack_google_enabled', 'servertrack_google_customer_id', 'servertrack_google_conversion_id',
-            'servertrack_google_developer_token', 'servertrack_google_client_id', 'servertrack_google_client_secret',
-            'servertrack_google_refresh_token',
-            'servertrack_tiktok_enabled', 'servertrack_tiktok_pixel_id', 'servertrack_tiktok_access_token',
-            'servertrack_source_woo_enabled', 'servertrack_source_cf7_enabled', 'servertrack_source_edd_enabled',
-            'servertrack_cf7_mappings',
+        // ── General tab ──────────────────────────────────────────────────
+        $general_options = [
+            'servertrack_enabled'      => [ 'type' => 'integer', 'sanitize' => 'absint',               'default' => 1      ],
+            'servertrack_test_mode'    => [ 'type' => 'integer', 'sanitize' => 'absint',               'default' => 0      ],
+            'servertrack_consent_mode' => [ 'type' => 'string',  'sanitize' => [ self::class, 'sanitize_consent_mode' ], 'default' => 'none' ],
         ];
+        self::register_group( 'servertrack_general_settings', $general_options );
 
-        $bool_options = [
-            'servertrack_enabled', 'servertrack_test_mode',
-            'servertrack_meta_enabled', 'servertrack_google_enabled', 'servertrack_tiktok_enabled',
-            'servertrack_source_woo_enabled', 'servertrack_source_cf7_enabled', 'servertrack_source_edd_enabled',
+        // ── Meta CAPI tab ────────────────────────────────────────────────
+        $meta_options = [
+            'servertrack_meta_enabled'         => [ 'type' => 'integer', 'sanitize' => 'absint',              'default' => 0  ],
+            'servertrack_meta_pixel_id'        => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_meta_access_token'    => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_meta_test_event_code' => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
         ];
+        self::register_group( 'servertrack_meta_settings', $meta_options );
 
-        // Whitelist all options in allowed_options filter (WP 5.5+)
-        add_filter( 'allowed_options', function( $allowed ) use ( $all_options ) {
-            $allowed['servertrack_settings'] = $all_options;
-            return $allowed;
-        } );
+        // ── Google Ads tab ───────────────────────────────────────────────
+        $google_options = [
+            'servertrack_google_enabled'          => [ 'type' => 'integer', 'sanitize' => 'absint',              'default' => 0  ],
+            'servertrack_google_customer_id'      => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_google_conversion_id'    => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_google_developer_token'  => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_google_client_id'        => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_google_client_secret'    => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_google_refresh_token'    => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_google_gtag_id'          => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_google_gtag_label'       => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+        ];
+        self::register_group( 'servertrack_google_settings', $google_options );
 
-        foreach ( $all_options as $option ) {
-            if ( 'servertrack_cf7_mappings' === $option ) continue;
+        // ── TikTok Events tab ────────────────────────────────────────────
+        $tiktok_options = [
+            'servertrack_tiktok_enabled'      => [ 'type' => 'integer', 'sanitize' => 'absint',              'default' => 0  ],
+            'servertrack_tiktok_pixel_id'     => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_tiktok_access_token' => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+        ];
+        self::register_group( 'servertrack_tiktok_settings', $tiktok_options );
 
-            $is_bool = in_array( $option, $bool_options, true );
+        // ── Sources tab ──────────────────────────────────────────────────
+        $sources_options = [
+            'servertrack_source_woo_enabled'   => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1 ],
+            'servertrack_source_cf7_enabled'   => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0 ],
+            'servertrack_source_edd_enabled'   => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0 ],
+            'servertrack_scroll_depth'         => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1 ],
+            'servertrack_video_tracking'       => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1 ],
+            'servertrack_wishlist_tracking'    => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1 ],
+        ];
+        self::register_group( 'servertrack_sources_settings', $sources_options );
 
-            if ( 'servertrack_consent_mode' === $option ) {
-                register_setting( 'servertrack_settings', $option, [
-                    'sanitize_callback' => [ self::class, 'sanitize_consent_mode' ],
-                    'default'           => 'none',
-                ] );
-                continue;
-            }
-
-            register_setting( 'servertrack_settings', $option, [
-                'type'              => $is_bool ? 'integer' : 'string',
-                'sanitize_callback' => $is_bool ? 'absint' : 'sanitize_text_field',
-                'default'           => $is_bool ? 0 : '',
-            ] );
-        }
-
-        register_setting( 'servertrack_settings', 'servertrack_cf7_mappings', [
+        // CF7 mappings live in the Sources group
+        register_setting( 'servertrack_sources_settings', 'servertrack_cf7_mappings', [
             'sanitize_callback' => [ self::class, 'sanitize_cf7_mappings' ],
         ] );
     }
 
+    /**
+     * Register a group of options and add them to allowed_options.
+     *
+     * @param string $group   Option group name (used by settings_fields()).
+     * @param array  $options [ option_name => [ type, sanitize, default ] ]
+     */
+    private static function register_group( string $group, array $options ) {
+        $names = array_keys( $options );
+
+        // Whitelist for options.php
+        add_filter( 'allowed_options', function( array $allowed ) use ( $group, $names ): array {
+            $allowed[ $group ] = $names;
+            return $allowed;
+        } );
+
+        foreach ( $options as $name => $cfg ) {
+            register_setting( $group, $name, [
+                'type'              => $cfg['type'],
+                'sanitize_callback' => $cfg['sanitize'],
+                'default'           => $cfg['default'],
+            ] );
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Sanitizers
+    // ─────────────────────────────────────────────────────────────────────
+
     public static function sanitize_consent_mode( $input ): string {
-        $allowed = [ 'none', 'granted', 'denied' ];
+        $allowed = [ 'none', 'cookie_yes', 'complianz', 'manual' ];
         $val     = sanitize_text_field( (string) $input );
         return in_array( $val, $allowed, true ) ? $val : 'none';
     }
@@ -131,9 +189,9 @@ class ServerTrack_Admin {
         return $clean;
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // Google OAuth 2.0 — Callback handler
-    // ──────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────
+    // Google OAuth 2.0 — Callback
+    // ─────────────────────────────────────────────────────────────────────
 
     public static function handle_oauth_callback() {
         // phpcs:disable WordPress.Security.NonceVerification.Recommended
@@ -148,8 +206,6 @@ class ServerTrack_Admin {
             wp_die( esc_html__( 'Insufficient permissions.', 'servertrack' ) );
         }
 
-        // BUG FIX: Verify the state param to prevent CSRF on the OAuth callback.
-        // The state token is set when generating the OAuth URL in the view file.
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         $state = isset( $_GET['state'] ) ? sanitize_text_field( wp_unslash( $_GET['state'] ) ) : '';
         if ( ! wp_verify_nonce( $state, 'servertrack_google_oauth' ) ) {
@@ -161,7 +217,7 @@ class ServerTrack_Admin {
         $client_secret = get_option( 'servertrack_google_client_secret', '' );
         $redirect_uri  = admin_url( 'options-general.php?page=servertrack&tab=google' );
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-        $code          = sanitize_text_field( wp_unslash( $_GET['code'] ) );
+        $code = sanitize_text_field( wp_unslash( $_GET['code'] ) );
 
         if ( ! $client_id || ! $client_secret ) {
             wp_safe_redirect( admin_url( 'options-general.php?page=servertrack&tab=google&st_notice=oauth_no_creds' ) );
@@ -206,9 +262,9 @@ class ServerTrack_Admin {
         exit;
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // Google OAuth — Revoke / Disconnect handler
-    // ──────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────
+    // Google OAuth — Revoke
+    // ─────────────────────────────────────────────────────────────────────
 
     public static function handle_oauth_revoke() {
         // phpcs:disable WordPress.Security.NonceVerification.Recommended
@@ -231,9 +287,9 @@ class ServerTrack_Admin {
         exit;
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────
     // Page render
-    // ──────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────
 
     public static function render_page() {
         if ( ! current_user_can( 'manage_options' ) ) {
@@ -242,6 +298,7 @@ class ServerTrack_Admin {
 
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         $active_tab = isset( $_GET['tab'] ) ? sanitize_text_field( wp_unslash( $_GET['tab'] ) ) : 'general';
+
         $tabs = [
             'general' => __( 'General', 'servertrack' ),
             'meta'    => __( 'Meta CAPI', 'servertrack' ),
@@ -254,11 +311,11 @@ class ServerTrack_Admin {
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         $st_notice = isset( $_GET['st_notice'] ) ? sanitize_key( wp_unslash( $_GET['st_notice'] ) ) : '';
         $notices = [
-            'oauth_success' => [ 'success', __( 'Google account connected successfully.', 'servertrack' ) ],
-            'oauth_revoked' => [ 'warning', __( 'Google OAuth tokens have been revoked.', 'servertrack' ) ],
-            'oauth_error'   => [ 'error',   __( 'Google OAuth authorisation failed. Check the Debug Log.', 'servertrack' ) ],
-            'oauth_no_creds'=> [ 'error',   __( 'OAuth failed: Client ID and Secret must be saved first.', 'servertrack' ) ],
-            'settings_saved'=> [ 'success', __( 'Settings saved.', 'servertrack' ) ],
+            'oauth_success'  => [ 'success', __( 'Google account connected successfully.', 'servertrack' ) ],
+            'oauth_revoked'  => [ 'warning', __( 'Google OAuth tokens have been revoked.', 'servertrack' ) ],
+            'oauth_error'    => [ 'error',   __( 'Google OAuth authorisation failed. Check the Debug Log.', 'servertrack' ) ],
+            'oauth_no_creds' => [ 'error',   __( 'OAuth failed: Client ID and Secret must be saved first.', 'servertrack' ) ],
+            'settings_saved' => [ 'success', __( 'Settings saved.', 'servertrack' ) ],
         ];
         ?>
         <div class="wrap" id="servertrack-wrap">
@@ -296,9 +353,9 @@ class ServerTrack_Admin {
         <?php
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────
     // Health Notice
-    // ──────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────
 
     public static function render_health_notice() {
         if ( ! current_user_can( 'manage_options' ) ) return;
@@ -312,7 +369,7 @@ class ServerTrack_Admin {
             $settings_url = admin_url( 'options-general.php?page=servertrack&tab=sources' );
             echo '<div class="notice notice-warning is-dismissible"><p>';
             echo '<strong>' . esc_html__( 'ServerTrack:', 'servertrack' ) . '</strong> ';
-            echo esc_html__( 'WooCommerce source is enabled but WooCommerce is not active. No purchase events will fire.', 'servertrack' );
+            echo esc_html__( 'WooCommerce source is enabled but WooCommerce is not active.', 'servertrack' );
             echo ' <a href="' . esc_url( $settings_url ) . '">' . esc_html__( 'Review source settings →', 'servertrack' ) . '</a>';
             echo '</p></div>';
         }
@@ -326,14 +383,14 @@ class ServerTrack_Admin {
         $settings_url = admin_url( 'options-general.php?page=servertrack&tab=meta' );
         echo '<div class="notice notice-warning is-dismissible"><p>';
         echo '<strong>' . esc_html__( 'ServerTrack:', 'servertrack' ) . '</strong> ';
-        echo esc_html__( 'Plugin is active but no ad platforms are configured. Events will not be sent until at least one platform is set up.', 'servertrack' );
+        echo esc_html__( 'Plugin is active but no ad platforms are configured.', 'servertrack' );
         echo ' <a href="' . esc_url( $settings_url ) . '">' . esc_html__( 'Configure now →', 'servertrack' ) . '</a>';
         echo '</p></div>';
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────
     // AJAX handlers
-    // ──────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────
 
     public static function ajax_clear_log() {
         check_ajax_referer( 'servertrack_admin_nonce', 'nonce' );
@@ -355,8 +412,6 @@ class ServerTrack_Admin {
 
         $result = self::fire_test_event( $platform, $test_code );
 
-        // BUG FIX: always send a JSON response — previously fell through with
-        // no output when platform was invalid, leaving the button stuck on 'Sending…'
         if ( isset( $result['status'] ) && 'error' === $result['status'] ) {
             wp_send_json_error( $result );
         }
@@ -370,24 +425,10 @@ class ServerTrack_Admin {
         wp_send_json_success( $logs );
     }
 
-    /**
-     * Builds and fires a dummy test event to the given platform.
-     *
-     * BUG FIX (TikTok): was sending a 'Lead' (→ 'SubmitForm') event.
-     * TikTok's test events panel only shows standard recognised events.
-     * Changed to 'Purchase' (→ 'CompletePayment') which is universally
-     * visible in all three platforms' test panels.
-     *
-     * @param string $platform  'meta' | 'google' | 'tiktok'
-     * @param string $test_code test_event_code (Meta only)
-     */
     private static function fire_test_event( string $platform, string $test_code = '' ): array {
         $event_id = 'test_event_' . time();
+        $event    = new ServerTrack_Event( 'Purchase', $event_id );
 
-        // BUG FIX: use 'Purchase' for all platforms — recognised everywhere
-        $event = new ServerTrack_Event( 'Purchase', $event_id );
-
-        // Real admin browser IP + UA for Meta correlation
         $ip = '';
         if ( isset( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
             $ip = sanitize_text_field( wp_unslash( explode( ',', $_SERVER['HTTP_X_FORWARDED_FOR'] )[0] ) );
@@ -404,15 +445,14 @@ class ServerTrack_Admin {
             'user_agent' => $ua,
         ] );
 
-        // Resolve test_event_code: POST param > saved option
         $resolved_test_code = '' !== $test_code
             ? $test_code
             : trim( (string) get_option( 'servertrack_meta_test_event_code', '' ) );
 
         $custom_data = [
-            'currency' => 'USD',
-            'value'    => 1.00,
-            'contents' => [ [ 'id' => 'TEST-SKU', 'quantity' => 1, 'item_price' => 1.00 ] ],
+            'currency'     => 'USD',
+            'value'        => 1.00,
+            'contents'     => [ [ 'id' => 'TEST-SKU', 'quantity' => 1, 'item_price' => 1.00 ] ],
             'content_type' => 'product',
         ];
 
