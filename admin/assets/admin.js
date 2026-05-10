@@ -6,11 +6,26 @@
  *   - test_code field value now read from #servertrack-meta-test-code input
  *     and sent in the AJAX POST (was always empty — Meta never received it).
  *   - Graceful fallback when the input element does not exist (non-meta platforms).
+ *   - renderLogRows() now renders all 9 columns in the correct order:
+ *     Time, Platform, Event, Event ID, Order ID, Status, HTTP, Message, Response.
+ *     Previously only 5 columns were rendered in the wrong order, causing
+ *     event_name / event_id / order_id / http_code to disappear after every Refresh.
  */
 (function ($) {
     'use strict';
 
     var cfg = window.servertrack_admin || {};
+
+    // ── Escape HTML helper ─────────────────────────────────────────────────
+    function esc(str) {
+        if (!str && str !== 0) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
 
     // ── Test Event Buttons ─────────────────────────────────────────────────
     function bindTestButtons() {
@@ -34,7 +49,7 @@
                 action:     'servertrack_test_event',
                 nonce:      cfg.nonce,
                 platform:   platform,
-                test_code:  testCode   // ← was missing entirely before
+                test_code:  testCode
             }, function (res) {
                 $btn.prop('disabled', false).text('Send Test Event → ' + platform.charAt(0).toUpperCase() + platform.slice(1));
                 $response.addClass('is-visible');
@@ -43,6 +58,8 @@
                 } else {
                     $response.addClass('is-error').text('Error: ' + (res.data || 'Unknown error'));
                 }
+                // Refresh log table after test so new entry appears immediately
+                refreshLog();
             }).fail(function () {
                 $btn.prop('disabled', false);
                 $response.addClass('is-visible is-error').text('Request failed. Check your network.');
@@ -50,28 +67,50 @@
         });
     }
 
-    // ── Log Refresh ────────────────────────────────────────────────────────
+    // ── Log Renderer ───────────────────────────────────────────────────────
+    // BUG FIX: was rendering only 5 columns in wrong order.
+    // Now renders all 9 columns matching the PHP table header:
+    // Time | Platform | Event | Event ID | Order ID | Status | HTTP | Message | Response
     function renderLogRows(logs) {
         var $tbody = $('#servertrack-log-body');
         if (!$tbody.length) return;
 
         if (!logs || !logs.length) {
-            $tbody.html('<tr><td colspan="5">No log entries yet.</td></tr>');
+            $tbody.html('<tr><td colspan="9">No log entries yet.</td></tr>');
             return;
         }
 
         var rows = '';
         $.each(logs, function (i, entry) {
-            var status = entry.status || '';
-            rows += '<tr class="servertrack-log-row servertrack-status-' + status + '">'
-                + '<td>' + (entry.timestamp || '') + '</td>'
-                + '<td><strong>' + (entry.platform || '').toUpperCase() + '</strong></td>'
-                + '<td>' + status + '</td>'
-                + '<td>' + (entry.message || '') + '</td>'
-                + '<td style="max-width:300px;word-break:break-all;">' + (entry['response'] || '') + '</td>'
+            var status   = entry.status   || '';
+            var httpCode = entry.http_code ? String(entry.http_code) : '';
+            var orderId  = entry.order_id  ? String(entry.order_id)  : '';
+
+            rows += '<tr class="servertrack-log-row servertrack-status-' + esc(status) + '">'
+                + '<td>'                                    + esc(entry.timestamp)  + '</td>'
+                + '<td><strong>'                            + esc((entry.platform || '').toUpperCase()) + '</strong></td>'
+                + '<td>'                                    + esc(entry.event_name) + '</td>'
+                + '<td>'                                    + esc(entry.event_id)   + '</td>'
+                + '<td>'                                    + esc(orderId)          + '</td>'
+                + '<td class="servertrack-status-' + esc(status) + '">' + esc(status) + '</td>'
+                + '<td>'                                    + esc(httpCode)         + '</td>'
+                + '<td>'                                    + esc(entry.message)    + '</td>'
+                + '<td class="servertrack-response-cell">' + esc(entry.response)   + '</td>'
                 + '</tr>';
         });
         $tbody.html(rows);
+    }
+
+    // ── Log Refresh ────────────────────────────────────────────────────────
+    function refreshLog() {
+        $.post(cfg.ajax_url, {
+            action: 'servertrack_get_logs',
+            nonce:  cfg.nonce
+        }, function (res) {
+            if (res.success) {
+                renderLogRows(res.data);
+            }
+        });
     }
 
     function bindLogRefresh() {

@@ -26,6 +26,10 @@ if ( ! defined( 'ABSPATH' ) ) {
  *   - ajax_test_event(): missing wp_send_json_error path caused JS parse error
  *     leaving the button stuck on 'Sending…'. Fixed.
  *   - handle_oauth_callback(): missing state/nonce CSRF check. Fixed.
+ *   - fire_test_event(): order_id was never set in custom_data. Logger::log()
+ *     reads $event->custom_data['order_id'] — so test events always logged
+ *     Order ID blank. Added order_id => 0 explicitly and event_source_url
+ *     so test event log rows are fully populated.
  */
 class ServerTrack_Admin {
 
@@ -449,11 +453,17 @@ class ServerTrack_Admin {
             ? $test_code
             : trim( (string) get_option( 'servertrack_meta_test_event_code', '' ) );
 
+        // BUG FIX: order_id was never set here.
+        // Logger::log() reads $event->custom_data['order_id'] — without this key
+        // every test event logged Order ID as blank/0 with no indication it was intentional.
+        // Set to 0 explicitly (correct — test events have no real order).
+        // Also set event_source_url so test log rows show a real URL rather than empty.
         $custom_data = [
-            'currency'     => 'USD',
-            'value'        => 1.00,
-            'contents'     => [ [ 'id' => 'TEST-SKU', 'quantity' => 1, 'item_price' => 1.00 ] ],
-            'content_type' => 'product',
+            'currency'          => 'USD',
+            'value'             => 1.00,
+            'order_id'          => 0,
+            'contents'          => [ [ 'id' => 'TEST-SKU', 'quantity' => 1, 'item_price' => 1.00 ] ],
+            'content_type'      => 'product',
         ];
 
         if ( '' !== $resolved_test_code && 'meta' === $platform ) {
@@ -461,6 +471,11 @@ class ServerTrack_Admin {
         }
 
         $event->set_custom_data( $custom_data );
+
+        // Set event_source_url to home_url() so the log row is not blank.
+        // Real WooCommerce events capture the actual checkout URL; test events
+        // use the site home as a safe meaningful fallback.
+        $event->event_source_url = home_url( '/' );
 
         switch ( $platform ) {
             case 'meta':   return ServerTrack_Meta::send( $event );
