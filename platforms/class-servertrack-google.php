@@ -4,13 +4,34 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Google Ads Enhanced Conversions Sender
- * Depends on: ServerTrack_Event (type-hinted), ServerTrack_Logger
+ * ServerTrack_Google  v2.1
  *
- * Bug fix: API was pinned to v17 of the Google Ads API.
- * Google Ads API v17 reached end-of-life on 2025-04-02.
- * Upgraded to v19 (current stable as of May 2026).
- * Stale API versions return HTTP 400 / 404 and drop all conversions silently.
+ * Google Ads Enhanced Conversions Sender.
+ * Depends on: ServerTrack_Event, ServerTrack_Logger
+ *
+ * Changelog:
+ *   v2.0 — Upgraded Google Ads API from v17 (EOL 2025-04-02) to v19 (current stable).
+ *           Stale API versions return HTTP 400/404 and drop all conversions silently.
+ *   v2.0 — get_valid_access_token() now compares expiry with 60s buffer before every call.
+ *
+ * IMPORTANT FIX (v2.1) — hashed_phone_number missing from user_identifiers:
+ *
+ *   send() built user_identifiers with hashed_email and address_info but never
+ *   included hashed_phone_number. Google Enhanced Conversions uses phone as an
+ *   independent match key — it is especially valuable when the user did not come
+ *   via a Google click (no gclid) and email is absent or not matched.
+ *
+ *   The Google Ads API expects hashed_phone_number to be SHA-256 of the E.164
+ *   string (same format as Meta/TikTok). The $event->user_data['phone'] field
+ *   is already correctly hashed by build_order_user_data() (fixed in v2.1).
+ *
+ *   Fix: user_identifiers now includes { hashed_phone_number: $event->user_data['phone'] }
+ *   as a standalone identifier entry when the field is present.
+ *
+ * Note on address_info city/state/zip/country:
+ *   Google Enhanced Conversions requires these fields UNHASHED (raw plaintext).
+ *   They are intentionally read from user_data['city_raw'] etc, not the hashed
+ *   user_data['city'] fields that Meta/TikTok use. This is correct by design.
  */
 class ServerTrack_Google {
 
@@ -25,15 +46,15 @@ class ServerTrack_Google {
      * @return array { status, http_code, response }
      */
     public static function send( ServerTrack_Event $event ): array {
-        $customer_id   = get_option( 'servertrack_google_customer_id', '' );
-        $conversion_id = get_option( 'servertrack_google_conversion_id', '' );
-        $dev_token     = get_option( 'servertrack_google_developer_token', '' );
+        $customer_id   = trim( (string) get_option( 'servertrack_google_customer_id', '' ) );
+        $conversion_id = trim( (string) get_option( 'servertrack_google_conversion_id', '' ) );
+        $dev_token     = trim( (string) get_option( 'servertrack_google_developer_token', '' ) );
 
-        if ( empty( $customer_id ) || empty( $conversion_id ) || empty( $dev_token ) ) {
+        if ( '' === $customer_id || '' === $conversion_id || '' === $dev_token ) {
             return [ 'status' => 'error', 'message' => 'Google Ads credentials not fully configured.' ];
         }
 
-        // Constraint #4: ALWAYS check token expiry before every API call
+        // Always check token expiry before every API call (60s safety buffer)
         $access_token = self::get_valid_access_token();
         if ( ! $access_token ) {
             return [ 'status' => 'error', 'http_code' => 0, 'message' => 'Google OAuth token refresh failed.' ];
@@ -67,12 +88,23 @@ class ServerTrack_Google {
             $conversion['gclid'] = $gclid;
         }
 
-        // User identifiers for Enhanced Conversions
+        // ── User identifiers for Enhanced Conversions ───────────────────────
+        // Google EC accepts three identifier types as separate array entries:
+        //   { hashed_email }  { hashed_phone_number }  { address_info (raw unhashed) }
         $user_identifiers = [];
+
         if ( ! empty( $event->user_data['email'] ) ) {
             $user_identifiers[] = [ 'hashed_email' => $event->user_data['email'] ];
         }
 
+        // FIX (v2.1): add hashed_phone_number as a standalone identifier.
+        // Google EC uses phone as an independent match key. Already SHA-256 hashed
+        // to E.164 by build_order_user_data() / build_renewal_user_data().
+        if ( ! empty( $event->user_data['phone'] ) ) {
+            $user_identifiers[] = [ 'hashed_phone_number' => $event->user_data['phone'] ];
+        }
+
+        // address_info fields are UNHASHED for Google (intentional — see class docblock)
         $address = [];
         if ( ! empty( $event->user_data['first_name'] ) ) {
             $address['hashed_first_name'] = $event->user_data['first_name'];
@@ -94,6 +126,7 @@ class ServerTrack_Google {
         if ( ! empty( $address ) ) {
             $user_identifiers[] = [ 'address_info' => $address ];
         }
+
         if ( ! empty( $user_identifiers ) ) {
             $conversion['user_identifiers'] = $user_identifiers;
         }
@@ -113,7 +146,13 @@ class ServerTrack_Google {
         ] );
 
         if ( is_wp_error( $response ) ) {
-            ServerTrack_Logger::log( 'error', 'google', $response->get_error_message(), '', $event->event_id, (int) ( $event->custom_data['order_id'] ?? 0 ), $event->event_name, 0 );
+            ServerTrack_Logger::log(
+                'error', 'google',
+                $response->get_error_message(),
+                '', $event->event_id,
+                (int) ( $event->custom_data['order_id'] ?? 0 ),
+                $event->event_name, 0
+            );
             return [ 'status' => 'error', 'http_code' => 0, 'message' => $response->get_error_message() ];
         }
 
@@ -121,13 +160,20 @@ class ServerTrack_Google {
         $body_raw = wp_remote_retrieve_body( $response );
         $status   = ( $code >= 200 && $code < 300 ) ? 'success' : 'error';
 
-        ServerTrack_Logger::log( $status, 'google', (string) $code, $body_raw, $event->event_id, (int) ( $event->custom_data['order_id'] ?? 0 ), $event->event_name, $code );
+        ServerTrack_Logger::log(
+            $status, 'google',
+            (string) $code, $body_raw,
+            $event->event_id,
+            (int) ( $event->custom_data['order_id'] ?? 0 ),
+            $event->event_name, $code
+        );
+
         return [ 'status' => $status, 'http_code' => $code, 'response' => $body_raw ];
     }
 
     /**
-     * Constraint #4: Compare token expiry against time() before EVERY call.
-     * A 60-second buffer prevents edge cases at expiry boundary.
+     * Always compare token expiry against time() before every API call.
+     * A 60-second buffer prevents edge cases at the expiry boundary.
      */
     private static function get_valid_access_token(): string {
         $access_token  = (string) get_option( 'servertrack_google_access_token', '' );
@@ -166,7 +212,10 @@ class ServerTrack_Google {
         $data = json_decode( wp_remote_retrieve_body( $response ), true );
 
         if ( empty( $data['access_token'] ) ) {
-            ServerTrack_Logger::log( 'error', 'google', 'Token refresh returned no access_token. Response: ' . wp_remote_retrieve_body( $response ) );
+            ServerTrack_Logger::log(
+                'error', 'google',
+                'Token refresh returned no access_token. Response: ' . wp_remote_retrieve_body( $response )
+            );
             return '';
         }
 

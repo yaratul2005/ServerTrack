@@ -4,7 +4,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_WooRenewals
+ * ServerTrack_WooRenewals  v2.1
  *
  * Handles WooCommerce Subscriptions renewal orders.
  *
@@ -19,6 +19,26 @@ if ( ! defined( 'ABSPATH' ) ) {
  *   It sends a server-side Purchase event to all enabled platforms
  *   using the renewal child order data, fully async via WP-Cron.
  *
+ * IMPORTANT FIXES (v2.1):
+ *
+ *   1. hash_phone() called without country_code in build_renewal_user_data().
+ *      Same issue as CF7: hash_phone() with no country_code hashes whatever
+ *      raw format is stored — '01712345678', '+880-171...' etc — producing
+ *      inconsistent hashes that Meta/TikTok cannot match across events.
+ *
+ *      Fix: build_renewal_user_data() now resolves the E.164 country dialling
+ *      code from $order->get_billing_country() using the same static table
+ *      used by ServerTrack_WooCommerce::build_order_user_data().
+ *
+ *   2. external_id missing from renewal user_data.
+ *      Meta treats external_id as its highest-signal identifier for
+ *      cross-event customer matching. Renewal orders are the same customer
+ *      — omitting external_id breaks the identity graph for subscribers.
+ *
+ *      Fix: build_renewal_user_data() now adds external_id as
+ *      SHA-256( customer_id ) for logged-in customers, falling back to
+ *      SHA-256( order_id ) for guest/legacy orders.
+ *
  * Dedup:
  *   Renewal events use the child order ID as the dedup key, not the
  *   parent subscription ID. This allows multiple renewals for the same
@@ -30,6 +50,19 @@ if ( ! defined( 'ABSPATH' ) ) {
  *   so there is no risk of double-counting the initial subscription order.
  */
 class ServerTrack_WooRenewals {
+
+    /**
+     * E.164 dialling codes keyed by ISO 3166-1 alpha-2 country code.
+     * Mirrors the static table in ServerTrack_WooCommerce::build_order_user_data().
+     */
+    private static array $country_codes = [
+        'US'=>'1','CA'=>'1','GB'=>'44','AU'=>'61','DE'=>'49','FR'=>'33',
+        'IT'=>'39','ES'=>'34','NL'=>'31','SE'=>'46','NO'=>'47','DK'=>'45',
+        'FI'=>'358','CH'=>'41','AT'=>'43','IE'=>'353','NZ'=>'64','ZA'=>'27',
+        'IN'=>'91','BR'=>'55','BD'=>'880','PK'=>'92','NG'=>'234','MX'=>'52',
+        'JP'=>'81','KR'=>'82','SG'=>'65','MY'=>'60','TH'=>'66','PH'=>'63',
+        'ID'=>'62','VN'=>'84','HK'=>'852','TW'=>'886','AE'=>'971','SA'=>'966',
+    ];
 
     public static function init() {
         if ( ! get_option( 'servertrack_source_woo_enabled', 1 ) ) return;
@@ -171,8 +204,14 @@ class ServerTrack_WooRenewals {
         $email = $order->get_billing_email();
         if ( ! empty( $email ) ) $data['email'] = ServerTrack_Hasher::hash_email( $email );
 
+        // FIX (v2.1): resolve country_code for E.164 normalisation.
+        // Previously passed no country_code — hashed raw stored format, not E.164.
         $phone = $order->get_billing_phone();
-        if ( ! empty( $phone ) ) $data['phone'] = ServerTrack_Hasher::hash_phone( $phone );
+        if ( ! empty( $phone ) ) {
+            $iso = strtoupper( (string) $order->get_billing_country() );
+            $cc  = ! empty( $iso ) ? ( self::$country_codes[ $iso ] ?? '' ) : '';
+            $data['phone'] = ServerTrack_Hasher::hash_phone( $phone, $cc );
+        }
 
         $pii_map = [
             'first_name' => $order->get_billing_first_name(),
@@ -186,7 +225,7 @@ class ServerTrack_WooRenewals {
             if ( ! empty( $val ) ) $data[ $key ] = ServerTrack_Hasher::hash( $val );
         }
 
-        // Raw geo fields for Google (unhashed)
+        // Raw geo fields for Google Enhanced Conversions (unhashed)
         $raw_map = [
             'city_raw'    => $order->get_billing_city(),
             'state_raw'   => $order->get_billing_state(),
@@ -198,8 +237,15 @@ class ServerTrack_WooRenewals {
         }
 
         // IP from the original order record (no live session in renewal)
-        $order_ip = $order->get_customer_ip_address();
+        $order_ip = (string) $order->get_customer_ip_address();
+        // Strip IPv4-mapped IPv6 prefix if present
+        if ( substr( $order_ip, 0, 7 ) === '::ffff:' ) $order_ip = substr( $order_ip, 7 );
         if ( ! empty( $order_ip ) ) $data['ip'] = $order_ip;
+
+        // FIX (v2.1): add external_id for Advanced Matching.
+        // SHA-256( customer_id ) for logged-in users; SHA-256( order_id ) for guests.
+        $customer_id = $order->get_customer_id();
+        $data['external_id'] = ServerTrack_Hasher::hash( (string) ( $customer_id ?: $order->get_id() ) );
 
         return $data;
     }
@@ -211,7 +257,7 @@ class ServerTrack_WooRenewals {
         foreach ( $order->get_items() as $item ) {
             $product    = $item->get_product();
             $sku        = ( $product && $product->get_sku() ) ? $product->get_sku() : (string) $item->get_product_id();
-            $qty        = $item->get_quantity();
+            $qty        = (int) $item->get_quantity();
             $contents[] = [
                 'id'         => $sku,
                 'quantity'   => $qty,
