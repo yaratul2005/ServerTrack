@@ -5,7 +5,7 @@
  * Description:     High-performance server-side tracking for WordPress. Sends events to Meta CAPI, Google Ads, and TikTok Events API — completely bypassing ad blockers and iOS restrictions.
  * Text Domain:     servertrack
  * Domain Path:     /languages
- * Version:         2.0.0
+ * Version:         3.0.0
  * Requires WP:     6.0
  * Requires PHP:    7.4
  * License:         GPLv2 or later
@@ -17,7 +17,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'SERVERTRACK_VERSION', '2.0.0' );
+define( 'SERVERTRACK_VERSION', '3.0.0' );
 define( 'SERVERTRACK_FILE',    __FILE__ );
 define( 'SERVERTRACK_DIR',     plugin_dir_path( __FILE__ ) );
 define( 'SERVERTRACK_URL',     plugin_dir_url( __FILE__ ) );
@@ -66,11 +66,9 @@ function servertrack_activate() {
         'servertrack_source_edd_enabled'   => 0,
         'servertrack_debug_log'            => [],
         'servertrack_cf7_mappings'         => [],
-        // FIX: missing engagement tracking defaults
         'servertrack_scroll_depth'         => 1,
         'servertrack_video_tracking'       => 1,
         'servertrack_wishlist_tracking'    => 1,
-        // Google gtag settings (missing in v1)
         'servertrack_google_gtag_id'       => '',
         'servertrack_google_gtag_label'    => '',
     ];
