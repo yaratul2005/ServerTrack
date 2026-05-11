@@ -4,7 +4,19 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Dashboard  v2.3
+ * ServerTrack_Dashboard  v2.4
+ *
+ * FIX in v2.4:
+ *   ROOT CAUSE: enqueue_assets() was loading admin-dashboard.css which has
+ *   been an intentionally empty stub since v2.3 (all styles merged into
+ *   admin.css). This caused the Dashboard page to render with zero CSS —
+ *   no KPI cards, no panels, no layout, no colours.
+ *
+ *   CHANGES:
+ *   1. enqueue_assets(): Now enqueues admin.css (the real stylesheet) instead
+ *      of the empty admin-dashboard.css stub.
+ *   2. admin-dashboard.css stub is safe to delete; this class no longer
+ *      references it.
  *
  * FIX in v2.3:
  *   ROOT CAUSE: WordPress auto-redirects the parent menu slug to the first
@@ -110,8 +122,9 @@ class ServerTrack_Dashboard {
     /**
      * Enqueue Chart.js + dashboard stylesheet for all ServerTrack admin pages.
      *
-     * BUG-13 FIX: Dashboard CSS is now a proper enqueued stylesheet
-     * (admin/assets/admin-dashboard.css) instead of an inline <style> block.
+     * v2.4 FIX: admin-dashboard.css has been an empty stub since v2.3 — all
+     * styles were merged into admin.css at that point. Switch to admin.css so
+     * the Dashboard page actually receives its styles.
      */
     public static function enqueue_assets( string $hook ): void {
         if ( strpos( $hook, 'servertrack' ) === false ) return;
@@ -124,10 +137,11 @@ class ServerTrack_Dashboard {
             true
         );
 
-        // BUG-13 FIX: Enqueue dashboard styles via WordPress asset pipeline.
+        // v2.4 FIX: Load admin.css (the real stylesheet). admin-dashboard.css
+        // is intentionally empty since v2.3 and has no styles to apply.
         wp_enqueue_style(
             'servertrack-dashboard',
-            SERVERTRACK_URL . 'admin/assets/admin-dashboard.css',
+            SERVERTRACK_URL . 'admin/assets/admin.css',
             [],
             SERVERTRACK_VERSION
         );
