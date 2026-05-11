@@ -4,7 +4,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Retry  v2.1
+ * ServerTrack_Retry  v2.2
  *
  * Persistent retry queue for failed platform API calls.
  *
@@ -33,8 +33,17 @@ if ( ! defined( 'ABSPATH' ) ) {
  *   the stale original payload and loops forever with wrong data.
  *   Fixed: replaced add_option() with update_option() which always writes.
  *
+ * CRITICAL FIX (v2.2):
+ *   event_to_args() was not serialising event_source_url into the retry payload.
+ *   When a Purchase event failed and was retried, the rebuilt ServerTrack_Event
+ *   DTO had an empty event_source_url. Meta CAPI then received '/wp-cron.php'
+ *   for attribution on the retry — the exact bug fixed for first-sends in v2.1
+ *   but left broken in the retry path.
+ *   Fixed: event_to_args() now includes event_source_url, and process() restores
+ *   it via set_source_url() when rebuilding the DTO.
+ *
  * Cron hook: servertrack_process_retry
- * Registered in: ServerTrack_Core::init()
+ * Registered in: ServerTrack_Core::init() via ServerTrack_Retry::init()
  */
 class ServerTrack_Retry {
 
@@ -72,7 +81,7 @@ class ServerTrack_Retry {
      *
      * @param string $platform   'meta' | 'google' | 'tiktok'
      * @param array  $result     Return value from the platform send() method.
-     * @param array  $event_args [ event_name, event_id, user_data, custom_data ]
+     * @param array  $event_args [ event_name, event_id, user_data, custom_data, event_source_url ]
      * @param int    $attempt    Current attempt number (1 = first retry queue).
      */
     public static function maybe_queue(
@@ -108,7 +117,7 @@ class ServerTrack_Retry {
             'expires_at' => time() + DAY_IN_SECONDS,
         ];
 
-        // CRITICAL FIX: was add_option() which silently does nothing if the key
+        // CRITICAL FIX (v2.1): was add_option() which silently does nothing if the key
         // already exists. If the same event is re-queued (e.g., retry fails again
         // with the same UID), the updated payload was never written — the retry
         // loop read stale data and could cycle forever.
@@ -169,6 +178,12 @@ class ServerTrack_Retry {
         $event->set_user_data(   $event_args['user_data']   ?? [] );
         $event->set_custom_data( $event_args['custom_data'] ?? [] );
 
+        // FIX (v2.2): restore event_source_url so Meta gets the real checkout
+        // page URL, not '/wp-cron.php', on the retry send.
+        if ( ! empty( $event_args['event_source_url'] ) ) {
+            $event->set_source_url( $event_args['event_source_url'] );
+        }
+
         // Re-attempt the send
         $result = self::send_to_platform( $platform, $event );
 
@@ -219,13 +234,17 @@ class ServerTrack_Retry {
     /**
      * Serialises a ServerTrack_Event into the flat array format used
      * by the retry queue. Call this immediately after a failed send().
+     *
+     * FIX (v2.2): now includes event_source_url so that the retry cron
+     * can restore it on the rebuilt DTO — preventing wp-cron.php attribution.
      */
     public static function event_to_args( ServerTrack_Event $event ): array {
         return [
-            'event_name'  => $event->event_name,
-            'event_id'    => $event->event_id,
-            'user_data'   => $event->user_data,
-            'custom_data' => $event->custom_data,
+            'event_name'       => $event->event_name,
+            'event_id'         => $event->event_id,
+            'user_data'        => $event->user_data,
+            'custom_data'      => $event->custom_data,
+            'event_source_url' => $event->event_source_url,
         ];
     }
 

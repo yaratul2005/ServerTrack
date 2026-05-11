@@ -4,10 +4,17 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Core  v3.0
+ * ServerTrack_Core  v3.1
  *
  * Central bootstrap — loads all platform drivers, sources, and the frontend.
  * Only loads what is needed per context (admin vs front-end vs cron).
+ *
+ * Changes in v3.1:
+ *   - CRITICAL FIX: replaced mismatched add_action( 'servertrack_retry_failed_events', ... )
+ *     with ServerTrack_Retry::init(). The old hook name 'servertrack_retry_failed_events'
+ *     never matched the actual hook 'servertrack_process_retry' registered inside
+ *     ServerTrack_Retry::init() — meaning the retry processor was never wired up
+ *     from the core bootstrap. All retry cron jobs were scheduled but never executed.
  *
  * Changes in v3.0:
  *   - Added ServerTrack_CustomEvents initialisation
@@ -47,7 +54,11 @@ class ServerTrack_Core {
         ServerTrack_CustomEvents::init();
 
         // ── Retry processor ─────────────────────────────────────────────────
-        add_action( 'servertrack_retry_failed_events', [ 'ServerTrack_Retry', 'process_queue' ] );
+        // FIX (v3.1): ServerTrack_Retry::init() registers the correct hook
+        // 'servertrack_process_retry' → ServerTrack_Retry::process().
+        // Previously this was a mismatched add_action( 'servertrack_retry_failed_events', ... )
+        // pointing to a non-existent method — retries were never processed.
+        ServerTrack_Retry::init();
 
         // ── Admin ────────────────────────────────────────────────────────────
         if ( is_admin() ) {
