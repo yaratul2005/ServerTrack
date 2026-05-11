@@ -4,39 +4,26 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Admin
+ * ServerTrack_Admin — v2.0 (Dashboard overhaul)
  *
- * Bug fixes in this version:
- *   - SETTINGS RESET BUG (major): All tabs shared one settings group
- *     'servertrack_settings'. When the General tab was saved, WordPress ran
- *     its options pipeline for that group, and because Meta / Google / TikTok
- *     fields were NOT present in the General form, their sanitize_callback was
- *     called with an empty value — effectively blanking those fields.
+ * Changes from v1:
+ *   - New 'dashboard' tab (overview with KPIs, platform health, activity feed)
+ *   - New AJAX handler: servertrack_get_dashboard_stats
+ *   - New render_page_header() — dark gradient header strip with platform badges
+ *   - Tab nav now uses .st-tab-nav CSS class for the new pill-style navigation
  *
- *     FIX: Each tab now has its own option group:
- *       servertrack_general_settings
- *       servertrack_meta_settings
- *       servertrack_google_settings
- *       servertrack_tiktok_settings
- *       servertrack_sources_settings
- *     Saving one tab can never touch another tab's options.
- *
- *   - fire_test_event(): TikTok test was sending 'Lead' → 'SubmitForm'.
- *     Changed to 'Purchase' so it appears in all three platforms' test panels.
- *   - ajax_test_event(): missing wp_send_json_error path caused JS parse error
- *     leaving the button stuck on 'Sending…'. Fixed.
- *   - handle_oauth_callback(): missing state/nonce CSRF check. Fixed.
- *   - fire_test_event(): order_id was never set in custom_data. Logger::log()
- *     reads $event->custom_data['order_id'] — so test events always logged
- *     Order ID blank. Added order_id => 0 explicitly and event_source_url
- *     so test event log rows are fully populated.
+ * Bug fixes carried from v1:
+ *   - All tabs still have independent option groups (see TAB_GROUPS)
+ *   - fire_test_event(): TikTok test sends 'Purchase' not 'Lead'
+ *   - ajax_test_event(): proper wp_send_json_error on failure path
+ *   - handle_oauth_callback(): state/nonce CSRF check
+ *   - fire_test_event(): order_id => 0 and event_source_url set
  */
 class ServerTrack_Admin {
 
     /**
      * Map: tab slug => option group name.
-     * This is the single source of truth — views call settings_fields() with
-     * the group that matches their tab slug.
+     * Single source of truth — views call settings_fields() with the matching group.
      */
     const TAB_GROUPS = [
         'general' => 'servertrack_general_settings',
@@ -53,14 +40,15 @@ class ServerTrack_Admin {
         add_action( 'admin_init',            [ self::class, 'handle_oauth_revoke' ] );
         add_action( 'admin_enqueue_scripts', [ self::class, 'enqueue_assets' ] );
         add_action( 'admin_notices',         [ self::class, 'render_health_notice' ] );
-        add_action( 'wp_ajax_servertrack_clear_log',  [ self::class, 'ajax_clear_log' ] );
-        add_action( 'wp_ajax_servertrack_test_event', [ self::class, 'ajax_test_event' ] );
-        add_action( 'wp_ajax_servertrack_get_logs',   [ self::class, 'ajax_get_logs' ] );
+        add_action( 'wp_ajax_servertrack_clear_log',          [ self::class, 'ajax_clear_log' ] );
+        add_action( 'wp_ajax_servertrack_test_event',         [ self::class, 'ajax_test_event' ] );
+        add_action( 'wp_ajax_servertrack_get_logs',           [ self::class, 'ajax_get_logs' ] );
+        add_action( 'wp_ajax_servertrack_get_dashboard_stats',[ self::class, 'ajax_get_dashboard_stats' ] );
     }
 
-    // ─────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────
     // Menu & Assets
-    // ─────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────
 
     public static function register_menu() {
         add_options_page(
@@ -74,21 +62,52 @@ class ServerTrack_Admin {
 
     public static function enqueue_assets( string $hook ) {
         if ( 'settings_page_servertrack' !== $hook ) return;
-        wp_enqueue_style( 'servertrack-admin', SERVERTRACK_URL . 'admin/assets/admin.css', [], SERVERTRACK_VERSION );
-        wp_enqueue_script( 'servertrack-admin', SERVERTRACK_URL . 'admin/assets/admin.js', [ 'jquery' ], SERVERTRACK_VERSION, true );
+        wp_enqueue_style(
+            'servertrack-admin',
+            SERVERTRACK_URL . 'admin/assets/admin.css',
+            [],
+            SERVERTRACK_VERSION
+        );
+        wp_enqueue_script(
+            'servertrack-admin',
+            SERVERTRACK_URL . 'admin/assets/admin.js',
+            [ 'jquery' ],
+            SERVERTRACK_VERSION,
+            true
+        );
         wp_localize_script( 'servertrack-admin', 'servertrack_admin', [
             'ajax_url' => admin_url( 'admin-ajax.php' ),
             'nonce'    => wp_create_nonce( 'servertrack_admin_nonce' ),
+            'platforms' => [
+                'meta'   => [
+                    'enabled'    => (bool) get_option( 'servertrack_meta_enabled', 0 ),
+                    'configured' => (bool) (
+                        get_option( 'servertrack_meta_pixel_id', '' ) &&
+                        get_option( 'servertrack_meta_access_token', '' )
+                    ),
+                ],
+                'google' => [
+                    'enabled'    => (bool) get_option( 'servertrack_google_enabled', 0 ),
+                    'configured' => (bool) get_option( 'servertrack_google_refresh_token', '' ),
+                ],
+                'tiktok' => [
+                    'enabled'    => (bool) get_option( 'servertrack_tiktok_enabled', 0 ),
+                    'configured' => (bool) (
+                        get_option( 'servertrack_tiktok_pixel_id', '' ) &&
+                        get_option( 'servertrack_tiktok_access_token', '' )
+                    ),
+                ],
+            ],
         ] );
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Settings Registration  ← THE FIX IS HERE
-    // ─────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────
+    // Settings Registration
+    // ─────────────────────────────────────────────────────────────────
 
     public static function register_settings() {
 
-        // ── General tab ──────────────────────────────────────────────────
+        // ── General tab ──────────────────────────────────────────
         $general_options = [
             'servertrack_enabled'      => [ 'type' => 'integer', 'sanitize' => 'absint',               'default' => 1      ],
             'servertrack_test_mode'    => [ 'type' => 'integer', 'sanitize' => 'absint',               'default' => 0      ],
@@ -96,7 +115,7 @@ class ServerTrack_Admin {
         ];
         self::register_group( 'servertrack_general_settings', $general_options );
 
-        // ── Meta CAPI tab ────────────────────────────────────────────────
+        // ── Meta CAPI tab ─────────────────────────────────────────
         $meta_options = [
             'servertrack_meta_enabled'         => [ 'type' => 'integer', 'sanitize' => 'absint',              'default' => 0  ],
             'servertrack_meta_pixel_id'        => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
@@ -105,7 +124,7 @@ class ServerTrack_Admin {
         ];
         self::register_group( 'servertrack_meta_settings', $meta_options );
 
-        // ── Google Ads tab ───────────────────────────────────────────────
+        // ── Google Ads tab ────────────────────────────────────────
         $google_options = [
             'servertrack_google_enabled'          => [ 'type' => 'integer', 'sanitize' => 'absint',              'default' => 0  ],
             'servertrack_google_customer_id'      => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
@@ -119,7 +138,7 @@ class ServerTrack_Admin {
         ];
         self::register_group( 'servertrack_google_settings', $google_options );
 
-        // ── TikTok Events tab ────────────────────────────────────────────
+        // ── TikTok Events tab ─────────────────────────────────────
         $tiktok_options = [
             'servertrack_tiktok_enabled'      => [ 'type' => 'integer', 'sanitize' => 'absint',              'default' => 0  ],
             'servertrack_tiktok_pixel_id'     => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
@@ -127,7 +146,7 @@ class ServerTrack_Admin {
         ];
         self::register_group( 'servertrack_tiktok_settings', $tiktok_options );
 
-        // ── Sources tab ──────────────────────────────────────────────────
+        // ── Sources tab ──────────────────────────────────────────
         $sources_options = [
             'servertrack_source_woo_enabled'   => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1 ],
             'servertrack_source_cf7_enabled'   => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0 ],
@@ -138,27 +157,17 @@ class ServerTrack_Admin {
         ];
         self::register_group( 'servertrack_sources_settings', $sources_options );
 
-        // CF7 mappings live in the Sources group
         register_setting( 'servertrack_sources_settings', 'servertrack_cf7_mappings', [
             'sanitize_callback' => [ self::class, 'sanitize_cf7_mappings' ],
         ] );
     }
 
-    /**
-     * Register a group of options and add them to allowed_options.
-     *
-     * @param string $group   Option group name (used by settings_fields()).
-     * @param array  $options [ option_name => [ type, sanitize, default ] ]
-     */
     private static function register_group( string $group, array $options ) {
         $names = array_keys( $options );
-
-        // Whitelist for options.php
         add_filter( 'allowed_options', function( array $allowed ) use ( $group, $names ): array {
             $allowed[ $group ] = $names;
             return $allowed;
         } );
-
         foreach ( $options as $name => $cfg ) {
             register_setting( $group, $name, [
                 'type'              => $cfg['type'],
@@ -168,9 +177,9 @@ class ServerTrack_Admin {
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────
     // Sanitizers
-    // ─────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────
 
     public static function sanitize_consent_mode( $input ): string {
         $allowed = [ 'none', 'cookie_yes', 'complianz', 'manual' ];
@@ -193,9 +202,9 @@ class ServerTrack_Admin {
         return $clean;
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Google OAuth 2.0 — Callback
-    // ─────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────
+    // Google OAuth 2.0
+    // ─────────────────────────────────────────────────────────────────
 
     public static function handle_oauth_callback() {
         // phpcs:disable WordPress.Security.NonceVerification.Recommended
@@ -266,10 +275,6 @@ class ServerTrack_Admin {
         exit;
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Google OAuth — Revoke
-    // ─────────────────────────────────────────────────────────────────────
-
     public static function handle_oauth_revoke() {
         // phpcs:disable WordPress.Security.NonceVerification.Recommended
         if ( empty( $_GET['st_google_action'] ) || 'revoke' !== $_GET['st_google_action'] ) return;
@@ -291,9 +296,9 @@ class ServerTrack_Admin {
         exit;
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Page render
-    // ─────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────
+    // Page Render
+    // ─────────────────────────────────────────────────────────────────
 
     public static function render_page() {
         if ( ! current_user_can( 'manage_options' ) ) {
@@ -301,15 +306,16 @@ class ServerTrack_Admin {
         }
 
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-        $active_tab = isset( $_GET['tab'] ) ? sanitize_text_field( wp_unslash( $_GET['tab'] ) ) : 'general';
+        $active_tab = isset( $_GET['tab'] ) ? sanitize_text_field( wp_unslash( $_GET['tab'] ) ) : 'dashboard';
 
         $tabs = [
-            'general' => __( 'General', 'servertrack' ),
-            'meta'    => __( 'Meta CAPI', 'servertrack' ),
-            'google'  => __( 'Google Ads', 'servertrack' ),
-            'tiktok'  => __( 'TikTok Events', 'servertrack' ),
-            'sources' => __( 'Sources', 'servertrack' ),
-            'debug'   => __( 'Debug Log', 'servertrack' ),
+            'dashboard' => __( 'Dashboard', 'servertrack' ),
+            'general'   => __( 'General', 'servertrack' ),
+            'meta'      => __( 'Meta CAPI', 'servertrack' ),
+            'google'    => __( 'Google Ads', 'servertrack' ),
+            'tiktok'    => __( 'TikTok Events', 'servertrack' ),
+            'sources'   => __( 'Sources', 'servertrack' ),
+            'debug'     => __( 'Debug Log', 'servertrack' ),
         ];
 
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
@@ -323,19 +329,17 @@ class ServerTrack_Admin {
         ];
         ?>
         <div class="wrap" id="servertrack-wrap">
-            <h1 class="servertrack-page-title">
-                <span class="servertrack-logo-mark">&#9654;</span>
-                <?php esc_html_e( 'ServerTrack — Server-Side Events', 'servertrack' ); ?>
-            </h1>
+
+            <?php self::render_page_header(); ?>
 
             <?php if ( $st_notice && isset( $notices[ $st_notice ] ) ) :
                 [ $type, $msg ] = $notices[ $st_notice ]; ?>
-                <div class="notice notice-<?php echo esc_attr( $type ); ?> is-dismissible inline">
+                <div class="notice notice-<?php echo esc_attr( $type ); ?> is-dismissible inline" style="margin-bottom:16px">
                     <p><?php echo esc_html( $msg ); ?></p>
                 </div>
             <?php endif; ?>
 
-            <nav class="nav-tab-wrapper servertrack-tabs" id="servertrack-tab-nav">
+            <nav class="nav-tab-wrapper st-tab-nav" id="servertrack-tab-nav">
                 <?php foreach ( $tabs as $slug => $label ) : ?>
                     <a href="?page=servertrack&tab=<?php echo esc_attr( $slug ); ?>"
                        class="nav-tab <?php echo $active_tab === $slug ? 'nav-tab-active' : ''; ?>"
@@ -347,7 +351,17 @@ class ServerTrack_Admin {
 
             <div class="servertrack-tab-content">
                 <?php
-                $view_file = SERVERTRACK_DIR . 'admin/views/settings-' . $active_tab . '.php';
+                $view_map = [
+                    'dashboard' => 'dashboard',
+                    'general'   => 'settings-general',
+                    'meta'      => 'settings-meta',
+                    'google'    => 'settings-google',
+                    'tiktok'    => 'settings-tiktok',
+                    'sources'   => 'settings-sources',
+                    'debug'     => 'settings-debug',
+                ];
+                $view_slug = $view_map[ $active_tab ] ?? 'dashboard';
+                $view_file = SERVERTRACK_DIR . 'admin/views/' . $view_slug . '.php';
                 if ( file_exists( $view_file ) ) {
                     include $view_file;
                 }
@@ -357,16 +371,61 @@ class ServerTrack_Admin {
         <?php
     }
 
-    // ─────────────────────────────────────────────────────────────────────
+    /**
+     * Render the dark gradient header strip above the tab nav.
+     * Shows plugin name, description tagline, and per-platform active badges.
+     */
+    private static function render_page_header() {
+        $meta_ok   = get_option( 'servertrack_meta_enabled', 0 ) && get_option( 'servertrack_meta_pixel_id', '' ) && get_option( 'servertrack_meta_access_token', '' );
+        $google_ok = get_option( 'servertrack_google_enabled', 0 ) && get_option( 'servertrack_google_refresh_token', '' );
+        $tiktok_ok = get_option( 'servertrack_tiktok_enabled', 0 ) && get_option( 'servertrack_tiktok_pixel_id', '' ) && get_option( 'servertrack_tiktok_access_token', '' );
+        ?>
+        <div class="st-page-header">
+            <div class="st-page-header-left">
+                <div class="st-logo-icon">
+                    <svg viewBox="0 0 24 24">
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                    </svg>
+                </div>
+                <div class="st-page-title-group">
+                    <h1><?php esc_html_e( 'ServerTrack', 'servertrack' ); ?></h1>
+                    <p><?php esc_html_e( 'Server-side event tracking — Meta CAPI • Google Ads • TikTok Events', 'servertrack' ); ?></p>
+                </div>
+            </div>
+            <div class="st-header-badges">
+                <?php if ( $meta_ok ) : ?>
+                    <span class="st-badge st-badge-meta">
+                        <span class="st-badge-dot"></span> Meta
+                    </span>
+                <?php endif; ?>
+                <?php if ( $google_ok ) : ?>
+                    <span class="st-badge st-badge-google">
+                        <span class="st-badge-dot"></span> Google
+                    </span>
+                <?php endif; ?>
+                <?php if ( $tiktok_ok ) : ?>
+                    <span class="st-badge st-badge-tiktok">
+                        <span class="st-badge-dot"></span> TikTok
+                    </span>
+                <?php endif; ?>
+                <?php if ( ! $meta_ok && ! $google_ok && ! $tiktok_ok ) : ?>
+                    <span class="st-badge" style="background:rgba(255,255,255,.1);color:rgba(255,255,255,.5)">
+                        <?php esc_html_e( 'No platforms active', 'servertrack' ); ?>
+                    </span>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php
+    }
+
+    // ─────────────────────────────────────────────────────────────────
     // Health Notice
-    // ─────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────
 
     public static function render_health_notice() {
         if ( ! current_user_can( 'manage_options' ) ) return;
-
         $screen = get_current_screen();
         if ( $screen && 'settings_page_servertrack' === $screen->id ) return;
-
         if ( ! get_option( 'servertrack_enabled', 1 ) ) return;
 
         if ( get_option( 'servertrack_source_woo_enabled', 1 ) && ! class_exists( 'WooCommerce' ) ) {
@@ -392,9 +451,9 @@ class ServerTrack_Admin {
         echo '</p></div>';
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // AJAX handlers
-    // ─────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────
+    // AJAX Handlers
+    // ─────────────────────────────────────────────────────────────────
 
     public static function ajax_clear_log() {
         check_ajax_referer( 'servertrack_admin_nonce', 'nonce' );
@@ -412,6 +471,7 @@ class ServerTrack_Admin {
 
         if ( empty( $platform ) ) {
             wp_send_json_error( 'Platform not specified.' );
+            return;
         }
 
         $result = self::fire_test_event( $platform, $test_code );
@@ -428,6 +488,86 @@ class ServerTrack_Admin {
         $logs = get_option( 'servertrack_debug_log', [] );
         wp_send_json_success( $logs );
     }
+
+    /**
+     * Dashboard stats AJAX handler.
+     *
+     * Returns:
+     *   total_today    int   — number of log entries from today (UTC)
+     *   success_today  int   — entries with status=success today
+     *   failed_today   int   — entries with status=error today
+     *   success_rate   int   — % of successful vs total (0–100)
+     *   recent         array — last 8 log entries (newest first)
+     *   platforms      array — per-platform { enabled, configured, last_send }
+     */
+    public static function ajax_get_dashboard_stats() {
+        check_ajax_referer( 'servertrack_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Unauthorized' );
+
+        $logs  = get_option( 'servertrack_debug_log', [] );
+        $today = gmdate( 'Y-m-d' );
+
+        $total   = 0;
+        $success = 0;
+        $failed  = 0;
+
+        // Per-platform tracking
+        $platforms = [
+            'meta'   => [ 'last_send' => null ],
+            'google' => [ 'last_send' => null ],
+            'tiktok' => [ 'last_send' => null ],
+        ];
+
+        // Process in newest-first order (logs are appended, reverse for display)
+        $sorted = array_reverse( $logs );
+
+        foreach ( $sorted as $entry ) {
+            $ts       = $entry['timestamp']  ?? '';
+            $platform = strtolower( $entry['platform'] ?? '' );
+            $status   = $entry['status']     ?? '';
+
+            // Today's stats (compare YYYY-MM-DD prefix)
+            if ( substr( $ts, 0, 10 ) === $today ) {
+                $total++;
+                if ( 'success' === $status ) $success++;
+                if ( 'error'   === $status ) $failed++;
+            }
+
+            // Last-send per platform (first match = most recent, since we're iterating newest-first)
+            if ( isset( $platforms[ $platform ] ) && null === $platforms[ $platform ]['last_send'] ) {
+                $platforms[ $platform ]['last_send'] = $ts;
+            }
+        }
+
+        $rate = $total > 0 ? (int) round( ( $success / $total ) * 100 ) : 0;
+
+        // Add configured/enabled flags per platform
+        $platforms['meta']['enabled']    = (bool) get_option( 'servertrack_meta_enabled', 0 );
+        $platforms['meta']['configured'] = (bool) (
+            get_option( 'servertrack_meta_pixel_id', '' ) &&
+            get_option( 'servertrack_meta_access_token', '' )
+        );
+        $platforms['google']['enabled']    = (bool) get_option( 'servertrack_google_enabled', 0 );
+        $platforms['google']['configured'] = (bool) get_option( 'servertrack_google_refresh_token', '' );
+        $platforms['tiktok']['enabled']    = (bool) get_option( 'servertrack_tiktok_enabled', 0 );
+        $platforms['tiktok']['configured'] = (bool) (
+            get_option( 'servertrack_tiktok_pixel_id', '' ) &&
+            get_option( 'servertrack_tiktok_access_token', '' )
+        );
+
+        wp_send_json_success( [
+            'total_today'   => $total,
+            'success_today' => $success,
+            'failed_today'  => $failed,
+            'success_rate'  => $rate,
+            'recent'        => array_slice( $sorted, 0, 8 ),
+            'platforms'     => $platforms,
+        ] );
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Test Event
+    // ─────────────────────────────────────────────────────────────────
 
     private static function fire_test_event( string $platform, string $test_code = '' ): array {
         $event_id = 'test_event_' . time();
@@ -453,17 +593,12 @@ class ServerTrack_Admin {
             ? $test_code
             : trim( (string) get_option( 'servertrack_meta_test_event_code', '' ) );
 
-        // BUG FIX: order_id was never set here.
-        // Logger::log() reads $event->custom_data['order_id'] — without this key
-        // every test event logged Order ID as blank/0 with no indication it was intentional.
-        // Set to 0 explicitly (correct — test events have no real order).
-        // Also set event_source_url so test log rows show a real URL rather than empty.
         $custom_data = [
-            'currency'          => 'USD',
-            'value'             => 1.00,
-            'order_id'          => 0,
-            'contents'          => [ [ 'id' => 'TEST-SKU', 'quantity' => 1, 'item_price' => 1.00 ] ],
-            'content_type'      => 'product',
+            'currency'     => 'USD',
+            'value'        => 1.00,
+            'order_id'     => 0,
+            'contents'     => [ [ 'id' => 'TEST-SKU', 'quantity' => 1, 'item_price' => 1.00 ] ],
+            'content_type' => 'product',
         ];
 
         if ( '' !== $resolved_test_code && 'meta' === $platform ) {
@@ -471,10 +606,6 @@ class ServerTrack_Admin {
         }
 
         $event->set_custom_data( $custom_data );
-
-        // Set event_source_url to home_url() so the log row is not blank.
-        // Real WooCommerce events capture the actual checkout URL; test events
-        // use the site home as a safe meaningful fallback.
         $event->event_source_url = home_url( '/' );
 
         switch ( $platform ) {
