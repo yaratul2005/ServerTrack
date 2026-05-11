@@ -1,105 +1,75 @@
 <?php
 /**
- * Plugin Name:     ServerTrack
- * Plugin URI:      https://yaratul.com/servertrack
- * Description:     High-performance server-side tracking for WordPress. Sends events to Meta CAPI, Google Ads, and TikTok Events API — completely bypassing ad blockers and iOS restrictions.
- * Text Domain:     servertrack
- * Domain Path:     /languages
- * Version:         3.0.0
- * Requires WP:     6.0
- * Requires PHP:    7.4
- * License:         GPLv2 or later
- * Author:          Yaser Ahmmed Ratul
- * Author URI:      https://yaratul.com
+ * Plugin Name:       ServerTrack
+ * Plugin URI:        https://github.com/yaratul2005/ServerTrack
+ * Description:       Server-side Conversion API tracking for Meta, Google, and TikTok — WooCommerce, CF7, EDD, cart abandonment, subscription renewals, and refunds. Full admin dashboard with live log.
+ * Version:           4.0.0
+ * Requires at least: 6.0
+ * Requires PHP:      8.0
+ * Author:            YASER AHMMED RATUL
+ * Author URI:        https://github.com/yaratul2005
+ * License:           GPL-2.0-or-later
+ * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
+ * Text Domain:       servertrack
+ * Domain Path:       /languages
+ *
+ * @package ServerTrack
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'SERVERTRACK_VERSION', '3.0.0' );
-define( 'SERVERTRACK_FILE',    __FILE__ );
+// ── Constants ────────────────────────────────────────────────────────────────
+define( 'SERVERTRACK_VERSION', '4.0.0' );
 define( 'SERVERTRACK_DIR',     plugin_dir_path( __FILE__ ) );
 define( 'SERVERTRACK_URL',     plugin_dir_url( __FILE__ ) );
 
-// ── Core — always loaded (required in every context including cron) ───────────
+// ── Autoload core utilities (always needed, even in cron) ────────────────────
+require_once SERVERTRACK_DIR . 'includes/class-servertrack-event.php';
 require_once SERVERTRACK_DIR . 'includes/class-servertrack-hasher.php';
 require_once SERVERTRACK_DIR . 'includes/class-servertrack-logger.php';
 require_once SERVERTRACK_DIR . 'includes/class-servertrack-dedup.php';
 require_once SERVERTRACK_DIR . 'includes/class-servertrack-consent.php';
-require_once SERVERTRACK_DIR . 'includes/class-servertrack-event.php';
 require_once SERVERTRACK_DIR . 'includes/class-servertrack-retry.php';
+
+// ── Bootstrap ────────────────────────────────────────────────────────────────
 require_once SERVERTRACK_DIR . 'includes/class-servertrack-core.php';
+add_action( 'plugins_loaded', [ 'ServerTrack_Core', 'init' ], 5 );
 
-// ── Lifecycle hooks ───────────────────────────────────────────────────────────
-register_activation_hook( SERVERTRACK_FILE,   'servertrack_activate' );
-register_deactivation_hook( SERVERTRACK_FILE, 'servertrack_deactivate' );
-
-function servertrack_activate() {
-    if ( version_compare( PHP_VERSION, '7.4', '<' ) ) {
-        deactivate_plugins( plugin_basename( SERVERTRACK_FILE ) );
-        wp_die(
-            esc_html__( 'ServerTrack requires PHP 7.4 or higher.', 'servertrack' ),
-            esc_html__( 'Plugin Activation Error', 'servertrack' ),
-            [ 'back_link' => true ]
-        );
-    }
-    if ( version_compare( get_bloginfo( 'version' ), '6.0', '<' ) ) {
-        deactivate_plugins( plugin_basename( SERVERTRACK_FILE ) );
-        wp_die(
-            esc_html__( 'ServerTrack requires WordPress 6.0 or higher.', 'servertrack' ),
-            esc_html__( 'Plugin Activation Error', 'servertrack' ),
-            [ 'back_link' => true ]
-        );
-    }
-
-    // Set safe defaults on first activation — never overwrite existing values
-    $defaults = [
-        'servertrack_enabled'              => 1,
-        'servertrack_test_mode'            => 0,
-        'servertrack_consent_mode'         => 'none',
-        'servertrack_meta_enabled'         => 0,
-        'servertrack_google_enabled'       => 0,
-        'servertrack_tiktok_enabled'       => 0,
-        'servertrack_source_woo_enabled'   => 1,
-        'servertrack_source_cf7_enabled'   => 0,
-        'servertrack_source_edd_enabled'   => 0,
-        'servertrack_debug_log'            => [],
-        'servertrack_cf7_mappings'         => [],
-        'servertrack_scroll_depth'         => 1,
-        'servertrack_video_tracking'       => 1,
-        'servertrack_wishlist_tracking'    => 1,
-        'servertrack_google_gtag_id'       => '',
-        'servertrack_google_gtag_label'    => '',
-    ];
-    foreach ( $defaults as $key => $value ) {
-        if ( false === get_option( $key ) ) {
-            add_option( $key, $value );
+// ── Activation / deactivation ────────────────────────────────────────────────
+register_activation_hook(
+    __FILE__,
+    function () {
+        // Ensure default option values exist on first activation
+        $defaults = [
+            'servertrack_enabled'                     => 1,
+            'servertrack_meta_enabled'                => 0,
+            'servertrack_google_enabled'              => 0,
+            'servertrack_tiktok_enabled'              => 0,
+            'servertrack_source_woo_enabled'          => 1,
+            'servertrack_source_cf7_enabled'          => 0,
+            'servertrack_source_edd_enabled'          => 0,
+            'servertrack_source_abandonment_enabled'  => 0,
+            'servertrack_abandonment_window_minutes'  => 60,
+            'servertrack_dedup_ttl_days'              => 30,
+            'servertrack_log_max_entries'             => 200,
+            'servertrack_scroll_depth'                => 1,
+            'servertrack_video_tracking'              => 1,
+            'servertrack_wishlist_tracking'           => 1,
+        ];
+        foreach ( $defaults as $key => $value ) {
+            if ( false === get_option( $key ) ) {
+                add_option( $key, $value );
+            }
         }
     }
+);
 
-    // Schedule recurring retry processor if not already scheduled
-    if ( ! wp_next_scheduled( 'servertrack_retry_failed_events' ) ) {
-        wp_schedule_event( time() + 300, 'hourly', 'servertrack_retry_failed_events' );
+register_deactivation_hook(
+    __FILE__,
+    function () {
+        wp_clear_scheduled_hook( 'servertrack_process_retry' );
+        wp_clear_scheduled_hook( 'servertrack_check_abandonments' );
     }
-}
-
-function servertrack_deactivate() {
-    $hooks = [
-        'servertrack_send_woo_purchase',
-        'servertrack_send_edd_purchase',
-        'servertrack_send_renewal_purchase',
-        'servertrack_retry_failed_events',
-    ];
-    foreach ( $hooks as $hook ) {
-        wp_clear_scheduled_hook( $hook );
-        wp_unschedule_hook( $hook );
-    }
-}
-
-// ── Bootstrap ─────────────────────────────────────────────────────────────────
-function servertrack_native_init() {
-    load_plugin_textdomain( 'servertrack', false, dirname( plugin_basename( SERVERTRACK_FILE ) ) . '/languages' );
-    ServerTrack_Core::init();
-}
-add_action( 'plugins_loaded', 'servertrack_native_init' );
+);
