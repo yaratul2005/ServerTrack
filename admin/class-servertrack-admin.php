@@ -4,7 +4,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Admin — v2.4
+ * ServerTrack_Admin — v2.5
+ *
+ * Changes in v2.5:
+ *   - render_page_header() changed from private to public so that
+ *     ServerTrack_Dashboard::render_page() can call it cross-class.
+ *     Private visibility caused a PHP Fatal Error on the Dashboard page.
  *
  * Changes in v2.4:
  *   - render_page_header(): SVG placeholder icon replaced with the real
@@ -12,7 +17,6 @@ if ( ! defined( 'ABSPATH' ) ) {
  *     An onerror JS handler falls back to .st-logo-icon-fallback if the
  *     image cannot be fetched (e.g. during local dev with no assets).
  *   - Header now shows SERVERTRACK_VERSION as a small version badge.
- *   - No logic or settings changes — pure frontend/branding fix.
  *
  * Changes in v2.3 (previous):
  *   - admin-dashboard.css styles merged into admin.css.
@@ -411,9 +415,10 @@ class ServerTrack_Admin {
 
     // ─────────────────────────────────────────────────────────────────
     // Page Header — v2.4: bglogo.png replaces SVG placeholder
+    // v2.5: changed from private to public (called by ServerTrack_Dashboard)
     // ─────────────────────────────────────────────────────────────────
 
-    private static function render_page_header() {
+    public static function render_page_header() {
         $meta_ok   = get_option( 'servertrack_meta_enabled', 0 ) && get_option( 'servertrack_meta_pixel_id', '' ) && get_option( 'servertrack_meta_access_token', '' );
         $google_ok = get_option( 'servertrack_google_enabled', 0 ) && get_option( 'servertrack_google_refresh_token', '' );
         $tiktok_ok = get_option( 'servertrack_tiktok_enabled', 0 ) && get_option( 'servertrack_tiktok_pixel_id', '' ) && get_option( 'servertrack_tiktok_access_token', '' );

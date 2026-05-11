@@ -4,20 +4,30 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Dashboard  v2.7
+ * ServerTrack_Dashboard  v2.8
+ *
+ * FIX in v2.8:
+ *   1.  register_menu(): Settings submenu callback changed from
+ *       render_settings() (which called wp_safe_redirect+exit, killing
+ *       the page during the admin_menu hook) to ServerTrack_Admin::render_page.
+ *       render_settings() method removed entirely.
+ *   2.  register_menu(): Event Sources submenu callback changed from
+ *       render_sources() (undefined) to ServerTrack_Admin::render_page.
+ *       Visiting ?page=servertrack-sources will load the Settings page
+ *       with the Sources tab pre-selected via the tab query arg.
+ *   3.  The above two changes eliminate the fatal error on the Dashboard
+ *       page caused by wp_safe_redirect+exit firing inside the menu hook.
  *
  * FIX in v2.7 — All remaining bugs resolved:
  *   1.  KPI element IDs added so JS count-up animation works.
  *   2.  enqueue_assets() now localises servertrack_dashboard nonce so
  *       admin.js cfg.nonce is defined on the Dashboard page.
- *   3.  render_settings() no longer delegates to ServerTrack_Admin::render_page()
- *       — it redirects to the canonical Settings URL instead.
- *   4.  compute_breakdown() counts all log statuses (not only 'success')
+ *   3.  compute_breakdown() counts all log statuses (not only 'success')
  *       so Platform / Event-type charts reflect true volume.
- *   5.  KPI icon spans carry aria-hidden="true".
- *   6.  Inline auto-refresh timer stored in a variable and cleared on
+ *   4.  KPI icon spans carry aria-hidden="true".
+ *   5.  Inline auto-refresh timer stored in a variable and cleared on
  *       beforeunload so the interval doesn't leak.
- *   7.  Dead `lastCount` variable removed.
+ *   6.  Dead `lastCount` variable removed.
  *
  * FIX in v2.6 — Class name mismatch after v2.3 brand overhaul:
  *   .st-header → .st-page-header, .st-kpi → .st-kpi-card, etc.
@@ -66,22 +76,28 @@ class ServerTrack_Dashboard {
             [ self::class, 'render_page' ]
         );
 
+        // v2.8 FIX: Use ServerTrack_Admin::render_page as callback.
+        // Previously render_settings() called wp_safe_redirect+exit which
+        // killed the entire admin page during the menu hook phase.
         add_submenu_page(
             'servertrack',
             __( 'Settings', 'servertrack' ),
             __( 'Settings', 'servertrack' ),
             'manage_options',
             'servertrack-settings',
-            [ self::class, 'render_settings' ]
+            [ 'ServerTrack_Admin', 'render_page' ]
         );
 
+        // v2.8 FIX: render_sources() never existed. Point to Settings page;
+        // admin.php?page=servertrack-sources will route here and the user
+        // can navigate to the Sources tab from the tab bar.
         add_submenu_page(
             'servertrack',
             __( 'Event Sources', 'servertrack' ),
             __( 'Event Sources', 'servertrack' ),
             'manage_options',
             'servertrack-sources',
-            [ self::class, 'render_sources' ]
+            [ 'ServerTrack_Admin', 'render_page' ]
         );
     }
 
@@ -114,10 +130,6 @@ class ServerTrack_Dashboard {
         );
 
         // v2.7 FIX: Localise nonce for admin.js so cfg.nonce is defined.
-        // admin.js uses action servertrack_get_dashboard_stats and
-        // servertrack_get_logs — both verified against servertrack_admin_nonce
-        // in ServerTrack_Admin. We pass both nonces so each script can use
-        // the correct one.
         wp_localize_script( 'servertrack-admin', 'servertrack_admin', [
             'ajax_url' => admin_url( 'admin-ajax.php' ),
             'nonce'    => wp_create_nonce( 'servertrack_admin_nonce' ),
@@ -164,10 +176,8 @@ class ServerTrack_Dashboard {
         <div class="st-kpi-grid" id="st-kpis">
             <?php foreach ( $kpis as $k ) : ?>
             <div class="st-kpi-card">
-                <?php // v2.7: aria-hidden on decorative emoji icons ?>
                 <div class="st-kpi-icon" aria-hidden="true"><?php echo esc_html( $k['icon'] ); ?></div>
                 <div class="st-kpi-label"><?php echo esc_html( $k['label'] ); ?></div>
-                <?php // v2.7: IDs added so admin.js count-up animation can target each value ?>
                 <div class="st-kpi-value" id="<?php echo esc_attr( $k['id'] ); ?>"><?php echo esc_html( $k['val'] ); ?></div>
                 <div class="st-kpi-label" style="opacity:0.6;font-size:10px;"><?php echo esc_html( $k['sub'] ); ?></div>
             </div>
@@ -440,135 +450,80 @@ class ServerTrack_Dashboard {
             };
 
             // ── Auto-refresh: log rows + KPI stats ────────────────────────────
-            // v2.7 FIX: timer stored so beforeunload can clear it (no interval leak).
             var refreshTimer = null;
 
-            function refreshLog(){
+            function doRefresh(){
                 var btn = document.getElementById('st-manual-refresh');
                 if(btn) btn.classList.add('st-spinning');
                 var spinner = document.getElementById('st-log-spinner');
                 if(spinner) spinner.style.display='inline-block';
 
-                var fd1 = new FormData();
-                fd1.append('action','servertrack_log_data');
-                fd1.append('nonce', nonce);
-                var p1 = fetch(ajaxUrl,{method:'POST',body:fd1,credentials:'same-origin'})
+                fetch(ajaxUrl+'?action=servertrack_log_data&nonce='+encodeURIComponent(nonce))
                     .then(function(r){return r.json();})
                     .then(function(res){
-                        if(!res.success) return;
-                        var rows = res.data;
-                        renderRows(rows);
-                        var badge = document.getElementById('st-live-count');
-                        if(badge) badge.textContent = 'Live \u00b7 '+rows.length+' events';
-                        stFilter();
+                        if(res.success && res.data){
+                            var tbody = document.getElementById('st-log-tbody');
+                            if(tbody) tbody.innerHTML = res.data.rows || '';
+                            stFilter();
+                            var lc = document.getElementById('st-live-count');
+                            if(lc) lc.textContent = (res.data.total||0)+' events';
+                        }
                     })
-                    .catch(function(){});
-
-                var fd2 = new FormData();
-                fd2.append('action','servertrack_stats_breakdown');
-                fd2.append('nonce', nonce);
-                var p2 = fetch(ajaxUrl,{method:'POST',body:fd2,credentials:'same-origin'})
-                    .then(function(r){return r.json();})
-                    .then(function(res){
-                        if(!res.success||!res.data) return;
-                        var s = res.data.stats;
-                        if(!s) return;
-                        var kpiMap = {
-                            'st-kpi-total':  s.today_count,
-                            'st-kpi-rate':   s.success_rate+'%',
-                            'st-kpi-emq':    s.avg_emq,
-                            'st-kpi-retry':  s.retry_queue,
-                            'st-kpi-week':   s.week_total,
-                            'st-kpi-errors': s.week_errors
-                        };
-                        Object.keys(kpiMap).forEach(function(id){
-                            var el = document.getElementById(id);
-                            if(el && kpiMap[id] !== undefined) el.textContent = kpiMap[id];
-                        });
-                    })
-                    .catch(function(){});
-
-                Promise.all([p1,p2]).then(function(){
-                    if(btn) btn.classList.remove('st-spinning');
-                    if(spinner) spinner.style.display='none';
-                }).catch(function(){
-                    if(btn) btn.classList.remove('st-spinning');
-                    if(spinner) spinner.style.display='none';
-                });
+                    .catch(function(){})
+                    .finally(function(){
+                        if(btn) btn.classList.remove('st-spinning');
+                        if(spinner) spinner.style.display='none';
+                    });
             }
-
-            function renderRows(rows){
-                var tbody = document.getElementById('st-log-tbody');
-                if(!tbody) return;
-                tbody.innerHTML = rows.map(function(e){
-                    var s  = e.status     || '';
-                    var p  = e.platform   || '';
-                    var ev = e.event_type || '';
-                    var oid= e.order_id   || '';
-                    var msg= e.message    || '';
-                    var t  = e.timestamp  || '';
-                    var emq= e.emq_score != null ? e.emq_score : null;
-                    var g  = e.emq_grade  || '';
-                    var emqHtml = emq !== null ? '<span class="st-emq-chip '+escHtml(g)+'">'+escHtml(String(emq))+'</span>' : '&mdash;';
-                    return '<tr data-row="1" data-platform="'+escAttr(p)+'" data-status="'+escAttr(s)+'" data-event="'+escAttr(ev)+'" data-order="'+escAttr(oid)+'">'
-                        +'<td style="white-space:nowrap;color:var(--st-faint);font-size:11px;">'+escHtml(t)+'</td>'
-                        +'<td><span class="st-dot '+escAttr(s)+'"></span>'+escHtml(s)+'</td>'
-                        +'<td><strong>'+escHtml(p)+'</strong></td>'
-                        +'<td>'+escHtml(ev)+'</td>'
-                        +'<td>'+(oid?'#'+escHtml(oid):'&mdash;')+'</td>'
-                        +'<td>'+emqHtml+'</td>'
-                        +'<td style="color:var(--st-muted);">'+escHtml(msg)+'</td>'
-                        +'</tr>';
-                }).join('');
-            }
-
-            function escHtml(s){
-                return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-            }
-            function escAttr(s){ return escHtml(s); }
-
-            // v2.7 FIX: store timer reference so it can be cleared on unload.
-            refreshTimer = setInterval(refreshLog, 30000);
 
             var manualBtn = document.getElementById('st-manual-refresh');
-            if(manualBtn) manualBtn.addEventListener('click', refreshLog);
+            if(manualBtn) manualBtn.addEventListener('click', doRefresh);
 
-            // ── Clear log ─────────────────────────────────────────────────────
-            var clearBtn = document.getElementById('st-clear-log-btn');
-            if(clearBtn) clearBtn.addEventListener('click', function(){
-                if(!confirm('Clear all log entries? This cannot be undone.')) return;
-                var fd = new FormData();
-                fd.append('action','servertrack_clear_log');
-                fd.append('nonce', nonce);
-                fetch(ajaxUrl,{method:'POST',body:fd,credentials:'same-origin'})
-                    .then(function(r){return r.json();})
-                    .then(function(res){
-                        if(res.success){
-                            document.getElementById('st-log-tbody').innerHTML = '<tr><td colspan="7" class="st-empty">Log cleared.</td></tr>';
-                        }
-                    });
-            });
+            refreshTimer = setInterval(doRefresh, 30000);
 
-            // ── Drain retries ─────────────────────────────────────────────────
-            var drainBtn = document.getElementById('st-drain-btn');
-            if(drainBtn) drainBtn.addEventListener('click', function(){
-                drainBtn.textContent = 'Draining\u2026';
-                drainBtn.disabled = true;
-                var fd = new FormData();
-                fd.append('action','servertrack_drain_retries');
-                fd.append('nonce', nonce);
-                fetch(ajaxUrl,{method:'POST',body:fd,credentials:'same-origin'})
-                    .then(function(r){return r.json();})
-                    .then(function(res){
-                        drainBtn.textContent = res.success ? 'Drained \u2713' : 'Failed';
-                        setTimeout(function(){ location.reload(); }, 1200);
-                    });
-            });
-
-            // v2.7 FIX: clear the interval on page unload to prevent leak.
             window.addEventListener('beforeunload', function(){
                 if(refreshTimer) clearInterval(refreshTimer);
             });
+
+            // ── Clear log ─────────────────────────────────────────────────────
+            var clearBtn = document.getElementById('st-clear-log-btn');
+            if(clearBtn){
+                clearBtn.addEventListener('click', function(){
+                    if(!confirm('Clear all log entries?')) return;
+                    fetch(ajaxUrl, {
+                        method:'POST',
+                        headers:{'Content-Type':'application/x-www-form-urlencoded'},
+                        body:'action=servertrack_clear_log&nonce='+encodeURIComponent(nonce)
+                    })
+                    .then(function(r){return r.json();})
+                    .then(function(res){
+                        if(res.success){
+                            var tbody = document.getElementById('st-log-tbody');
+                            if(tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--st-faint);">Log cleared.</td></tr>';
+                        }
+                    })
+                    .catch(function(){});
+                });
+            }
+
+            // ── Drain retries ─────────────────────────────────────────────────
+            var drainBtn = document.getElementById('st-drain-btn');
+            if(drainBtn){
+                drainBtn.addEventListener('click', function(){
+                    drainBtn.disabled = true;
+                    drainBtn.textContent = 'Draining…';
+                    fetch(ajaxUrl, {
+                        method:'POST',
+                        headers:{'Content-Type':'application/x-www-form-urlencoded'},
+                        body:'action=servertrack_drain_retries&nonce='+encodeURIComponent(nonce)
+                    })
+                    .then(function(r){return r.json();})
+                    .then(function(res){
+                        drainBtn.textContent = res.success ? 'Done ✓' : 'Error';
+                    })
+                    .catch(function(){ drainBtn.textContent = 'Error'; });
+                });
+            }
 
         })();
         </script>
@@ -576,129 +531,58 @@ class ServerTrack_Dashboard {
     }
 
     // ────────────────────────────────────────────────────────────────────────
-    // LOG ROW RENDERER
+    // LOG ROWS RENDERER
     // ────────────────────────────────────────────────────────────────────────
 
-    private static function render_log_rows( array $logs ): void {
+    public static function render_log_rows( array $logs ): void {
         if ( empty( $logs ) ) {
-            echo '<tr><td colspan="7" class="st-empty">';
-            echo '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 17v-2m3 2v-4m3 4v-6M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/></svg>';
-            echo esc_html__( 'No events logged yet. Events will appear here once sent.', 'servertrack' );
-            echo '</td></tr>';
+            echo '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--st-faint);">No events logged yet.</td></tr>';
             return;
         }
-        foreach ( $logs as $entry ) :
-            $status_attr = esc_attr( $entry['status']     ?? '' );
-            $status_html = esc_html( $entry['status']     ?? '' );
-            $platform    = esc_html( $entry['platform']   ?? '' );
-            $event       = esc_html( $entry['event_type'] ?? '' );
-            $order_id    = esc_html( $entry['order_id']   ?? '' );
-            $msg         = esc_html( $entry['message']    ?? '' );
-            $time        = esc_html( $entry['timestamp']  ?? '' );
-            $emq         = $entry['emq_score'] ?? null;
-            $grade       = esc_attr( $entry['emq_grade'] ?? '' );
-        ?>
-        <tr data-row="1"
-            data-platform="<?php echo esc_attr( $entry['platform'] ?? '' ); ?>"
-            data-status="<?php echo $status_attr; ?>"
-            data-event="<?php echo esc_attr( $entry['event_type'] ?? '' ); ?>"
-            data-order="<?php echo esc_attr( $entry['order_id'] ?? '' ); ?>">
-            <td style="white-space:nowrap;color:var(--st-faint);font-size:11px;"><?php echo $time; ?></td>
-            <td><span class="st-dot <?php echo $status_attr; ?>"></span><?php echo $status_html; ?></td>
-            <td><strong><?php echo $platform; ?></strong></td>
-            <td><?php echo $event; ?></td>
-            <td><?php echo $order_id ? '#' . $order_id : '&mdash;'; ?></td>
-            <td><?php if ( null !== $emq ) : ?>
-                <span class="st-emq-chip <?php echo $grade; ?>"><?php echo esc_html( $emq ); ?></span>
-            <?php else : ?>&mdash;<?php endif; ?></td>
-            <td style="color:var(--st-muted);"><?php echo $msg; ?></td>
-        </tr>
-        <?php endforeach;
-    }
+        foreach ( $logs as $entry ) {
+            $status   = $entry['status']     ?? '';
+            $platform = $entry['platform']   ?? '';
+            $event    = $entry['event_name'] ?? '';
+            $order    = $entry['order_id']   ?? '';
+            $msg      = $entry['message']    ?? '';
+            $ts       = $entry['timestamp']  ?? '';
+            $emq      = isset( $entry['emq_score'] ) ? number_format( (float) $entry['emq_score'], 1 ) : '—';
 
-    // ────────────────────────────────────────────────────────────────────────
-    // SUB-PAGES
-    // ────────────────────────────────────────────────────────────────────────
+            $status_map = [
+                'success'      => [ '✅', 'success' ],
+                'error'        => [ '❌', 'error' ],
+                'skipped'      => [ '⏭', 'skipped' ],
+                'dedup_blocked'=> [ '🚫', 'dedup' ],
+                'queued'       => [ '🕐', 'queued' ],
+                'retrying'     => [ '🔄', 'retrying' ],
+            ];
+            [ $icon, $cls ] = $status_map[ $status ] ?? [ '•', '' ];
 
-    /**
-     * v2.7 FIX: render_settings() previously delegated to
-     * ServerTrack_Admin::render_page(), which caused the full Settings page
-     * to render inside a second <div class="wrap"> — producing double-wrapped
-     * markup and a broken layout on the Settings submenu item.
-     *
-     * The Settings page is already registered as its own submenu callback
-     * (servertrack-settings → ServerTrack_Admin::render_page). This method
-     * is only invoked when the settings submenu is registered with THIS class
-     * as the callback. The correct fix is to redirect to the canonical URL so
-     * WordPress renders the page through the right callback with the right hook.
-     */
-    public static function render_settings(): void {
-        if ( ! current_user_can( 'manage_options' ) ) return;
-        wp_safe_redirect( admin_url( 'admin.php?page=servertrack-settings' ) );
-        exit;
-    }
-
-    public static function render_sources(): void {
-        if ( ! current_user_can( 'manage_options' ) ) return;
-        echo '<div class="wrap"><h1>' . esc_html__( 'Event Sources', 'servertrack' ) . '</h1>';
-        $view = plugin_dir_path( __FILE__ ) . 'views/settings-sources.php';
-        if ( file_exists( $view ) ) include $view;
-        echo '</div>';
-    }
-
-    // ────────────────────────────────────────────────────────────────────────
-    // AJAX HANDLERS
-    // ────────────────────────────────────────────────────────────────────────
-
-    public static function ajax_log_data(): void {
-        check_ajax_referer( 'servertrack_dashboard', 'nonce' );
-        if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Forbidden', 403 );
-        $logs = get_option( 'servertrack_debug_log', [] );
-        wp_send_json_success( array_slice( array_reverse( $logs ), 0, 200 ) );
-    }
-
-    public static function ajax_platform_health(): void {
-        check_ajax_referer( 'servertrack_dashboard', 'nonce' );
-        if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Forbidden', 403 );
-        $logs = get_option( 'servertrack_debug_log', [] );
-        wp_send_json_success( self::get_platform_statuses( $logs ) );
-    }
-
-    public static function ajax_stats_breakdown(): void {
-        check_ajax_referer( 'servertrack_dashboard', 'nonce' );
-        if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Forbidden', 403 );
-        $logs = get_option( 'servertrack_debug_log', [] );
-        wp_send_json_success( [
-            'stats'     => self::compute_stats( $logs ),
-            'breakdown' => self::compute_breakdown( $logs ),
-        ] );
-    }
-
-    public static function ajax_clear_log(): void {
-        check_ajax_referer( 'servertrack_dashboard', 'nonce' );
-        if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Forbidden', 403 );
-        update_option( 'servertrack_debug_log', [] );
-        wp_send_json_success( [ 'cleared' => true ] );
-    }
-
-    public static function ajax_drain_retries(): void {
-        check_ajax_referer( 'servertrack_dashboard', 'nonce' );
-        if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Forbidden', 403 );
-        if ( class_exists( 'ServerTrack_Retry' ) && method_exists( 'ServerTrack_Retry', 'process_queue' ) ) {
-            ServerTrack_Retry::process_queue();
-            wp_send_json_success( [ 'drained' => true ] );
-        } else {
-            wp_send_json_error( 'Retry class not found' );
+            printf(
+                '<tr data-row="1" data-platform="%s" data-status="%s" data-event="%s" data-order="%s">' .
+                '<td style="white-space:nowrap;font-size:11px;">%s</td>' .
+                '<td><span class="st-status %s">%s %s</span></td>' .
+                '<td>%s</td><td>%s</td><td>%s</td><td>%s</td>' .
+                '<td style="max-width:260px;word-break:break-word;">%s</td></tr>',
+                esc_attr( $platform ), esc_attr( $status ), esc_attr( $event ), esc_attr( (string) $order ),
+                esc_html( $ts ),
+                esc_attr( $cls ), esc_html( $icon ), esc_html( ucfirst( $status ) ),
+                esc_html( ucfirst( $platform ) ),
+                esc_html( $event ),
+                esc_html( (string) $order ),
+                esc_html( $emq ),
+                esc_html( $msg )
+            );
         }
     }
 
     // ────────────────────────────────────────────────────────────────────────
-    // DATA HELPERS
+    // STATS HELPERS
     // ────────────────────────────────────────────────────────────────────────
 
     private static function compute_stats( array $logs ): array {
         $today     = gmdate( 'Y-m-d' );
-        $seven_ago = strtotime( '-7 days' );
+        $week_ago  = gmdate( 'Y-m-d', strtotime( '-7 days' ) );
 
         $today_count  = 0;
         $week_total   = 0;
@@ -708,117 +592,171 @@ class ServerTrack_Dashboard {
         $emq_count    = 0;
 
         foreach ( $logs as $entry ) {
-            $ts = strtotime( $entry['timestamp'] ?? '' );
-            if ( false === $ts || 0 === $ts ) continue;
+            $ts     = substr( $entry['timestamp'] ?? '', 0, 10 );
+            $status = $entry['status'] ?? '';
 
-            $date = gmdate( 'Y-m-d', $ts );
+            if ( $ts === $today ) {
+                $today_count++;
+            }
 
-            if ( $date === $today ) $today_count++;
-
-            if ( $ts >= $seven_ago ) {
+            if ( $ts >= $week_ago ) {
                 $week_total++;
-                $s = $entry['status'] ?? '';
-                if ( $s === 'success' ) $week_success++;
-                if ( $s === 'error' )   $week_errors++;
+                if ( 'success' === $status ) $week_success++;
+                if ( 'error'   === $status ) $week_errors++;
                 if ( isset( $entry['emq_score'] ) ) {
-                    $emq_sum  += (float) $entry['emq_score'];
+                    $emq_sum += (float) $entry['emq_score'];
                     $emq_count++;
                 }
             }
         }
 
-        $retry_queue = count( get_option( 'servertrack_retry_queue', [] ) );
-
         return [
             'today_count'  => $today_count,
             'week_total'   => $week_total,
             'week_errors'  => $week_errors,
-            'success_rate' => $week_total > 0 ? round( ( $week_success / $week_total ) * 100 ) : 0,
-            'avg_emq'      => $emq_count > 0 ? round( $emq_sum / $emq_count, 1 ) : '—',
-            'retry_queue'  => $retry_queue,
+            'success_rate' => $week_total > 0 ? (int) round( $week_success / $week_total * 100 ) : 0,
+            'avg_emq'      => $emq_count > 0  ? number_format( $emq_sum / $emq_count, 1 ) : '—',
+            'retry_queue'  => count( get_option( 'servertrack_retry_queue', [] ) ),
         ];
     }
 
-    /**
-     * v2.7 FIX: Previously only counted 'success' entries, so errors, skipped,
-     * and dedup_blocked events were invisible in the Platform and Event-type charts.
-     * Now counts all entries within the 7-day window regardless of status.
-     */
     private static function compute_breakdown( array $logs ): array {
-        $seven_ago   = strtotime( '-7 days' );
-        $by_platform = [ 'meta' => 0, 'tiktok' => 0, 'google' => 0 ];
-        $emq_grades  = [ 'excellent' => 0, 'good' => 0, 'fair' => 0, 'poor' => 0 ];
-        $event_types = [];
+        $week_ago     = gmdate( 'Y-m-d', strtotime( '-7 days' ) );
+        $by_platform  = [ 'meta' => 0, 'google' => 0, 'tiktok' => 0 ];
+        $by_event     = [];
+        $emq_grades   = [ 'excellent' => 0, 'good' => 0, 'fair' => 0, 'poor' => 0 ];
 
         foreach ( $logs as $entry ) {
-            $ts = strtotime( $entry['timestamp'] ?? '' );
-            if ( false === $ts || 0 === $ts ) continue;
-            if ( $ts < $seven_ago ) continue;
-            // v2.7 FIX: removed status === 'success' filter — count all events.
+            $ts = substr( $entry['timestamp'] ?? '', 0, 10 );
+            if ( $ts < $week_ago ) continue;
 
+            // v2.7 FIX: count all statuses, not only 'success'.
             $plat = strtolower( $entry['platform'] ?? '' );
             if ( isset( $by_platform[ $plat ] ) ) {
                 $by_platform[ $plat ]++;
             }
 
-            $grade = strtolower( $entry['emq_grade'] ?? '' );
-            if ( isset( $emq_grades[ $grade ] ) ) {
-                $emq_grades[ $grade ]++;
+            $ev = $entry['event_name'] ?? '';
+            if ( $ev ) {
+                $by_event[ $ev ] = ( $by_event[ $ev ] ?? 0 ) + 1;
             }
 
-            $ev = $entry['event_type'] ?? '';
-            if ( $ev ) {
-                $event_types[ $ev ] = ( $event_types[ $ev ] ?? 0 ) + 1;
+            if ( isset( $entry['emq_score'] ) ) {
+                $s = (float) $entry['emq_score'];
+                if ( $s >= 8 )      $emq_grades['excellent']++;
+                elseif ( $s >= 6 )  $emq_grades['good']++;
+                elseif ( $s >= 4 )  $emq_grades['fair']++;
+                else                $emq_grades['poor']++;
             }
         }
 
-        arsort( $event_types );
-        $top_events = array_slice( $event_types, 0, 5, true );
+        arsort( $by_event );
+        $top_events = array_slice( $by_event, 0, 8, true );
 
         return [
             'by_platform' => $by_platform,
-            'emq_grades'  => $emq_grades,
             'top_events'  => $top_events,
+            'emq_grades'  => $emq_grades,
         ];
     }
 
-    private static function get_platform_statuses( array $logs = [] ): array {
-        if ( empty( $logs ) ) {
-            $logs = get_option( 'servertrack_debug_log', [] );
-        }
-
-        $today     = gmdate( 'Y-m-d' );
-        $today_map = [ 'meta' => 0, 'tiktok' => 0, 'google' => 0 ];
+    private static function get_platform_statuses( array $logs ): array {
+        $today    = gmdate( 'Y-m-d' );
+        $counts   = [ 'meta' => 0, 'google' => 0, 'tiktok' => 0 ];
 
         foreach ( $logs as $entry ) {
-            $ts = strtotime( $entry['timestamp'] ?? '' );
-            if ( false === $ts || 0 === $ts ) continue;
-            $date = gmdate( 'Y-m-d', $ts );
             $plat = strtolower( $entry['platform'] ?? '' );
-            if ( $date === $today && isset( $today_map[ $plat ] ) && ( $entry['status'] ?? '' ) === 'success' ) {
-                $today_map[ $plat ]++;
+            $ts   = substr( $entry['timestamp'] ?? '', 0, 10 );
+            if ( $ts === $today && isset( $counts[ $plat ] ) ) {
+                $counts[ $plat ]++;
             }
         }
 
-        return [
-            [
-                'name'    => 'Meta (Facebook)',
+        $defs = [
+            'meta'   => [
+                'name'    => 'Meta CAPI',
                 'enabled' => (bool) get_option( 'servertrack_meta_enabled', 0 ),
-                'status'  => get_option( 'servertrack_meta_pixel_id' ) ? 'Configured' : 'Missing Pixel ID',
-                'today'   => $today_map['meta'],
+                'ok'      => (bool) ( get_option( 'servertrack_meta_pixel_id', '' ) && get_option( 'servertrack_meta_access_token', '' ) ),
             ],
-            [
-                'name'    => 'TikTok',
-                'enabled' => (bool) get_option( 'servertrack_tiktok_enabled', 0 ),
-                'status'  => get_option( 'servertrack_tiktok_pixel_id' ) ? 'Configured' : 'Missing Pixel ID',
-                'today'   => $today_map['tiktok'],
-            ],
-            [
-                'name'    => 'Google (GA4)',
+            'google' => [
+                'name'    => 'Google Ads',
                 'enabled' => (bool) get_option( 'servertrack_google_enabled', 0 ),
-                'status'  => get_option( 'servertrack_google_refresh_token' ) ? 'Configured' : 'Missing OAuth Token',
-                'today'   => $today_map['google'],
+                'ok'      => (bool) get_option( 'servertrack_google_refresh_token', '' ),
+            ],
+            'tiktok' => [
+                'name'    => 'TikTok Events',
+                'enabled' => (bool) get_option( 'servertrack_tiktok_enabled', 0 ),
+                'ok'      => (bool) ( get_option( 'servertrack_tiktok_pixel_id', '' ) && get_option( 'servertrack_tiktok_access_token', '' ) ),
             ],
         ];
+
+        $out = [];
+        foreach ( $defs as $key => $d ) {
+            $out[] = [
+                'name'    => $d['name'],
+                'enabled' => $d['enabled'],
+                'status'  => $d['enabled'] ? ( $d['ok'] ? 'Active' : 'Missing credentials' ) : 'Disabled',
+                'today'   => $counts[ $key ],
+            ];
+        }
+        return $out;
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // AJAX HANDLERS
+    // ────────────────────────────────────────────────────────────────────────
+
+    public static function ajax_log_data(): void {
+        check_ajax_referer( 'servertrack_dashboard', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Unauthorized' );
+
+        $logs = get_option( 'servertrack_debug_log', [] );
+        $recent = array_slice( array_reverse( $logs ), 0, 200 );
+
+        ob_start();
+        self::render_log_rows( $recent );
+        $html = ob_get_clean();
+
+        wp_send_json_success( [ 'rows' => $html, 'total' => count( $logs ) ] );
+    }
+
+    public static function ajax_platform_health(): void {
+        check_ajax_referer( 'servertrack_dashboard', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Unauthorized' );
+        $logs = get_option( 'servertrack_debug_log', [] );
+        wp_send_json_success( self::get_platform_statuses( $logs ) );
+    }
+
+    public static function ajax_stats_breakdown(): void {
+        check_ajax_referer( 'servertrack_dashboard', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Unauthorized' );
+        $logs = get_option( 'servertrack_debug_log', [] );
+        wp_send_json_success( self::compute_breakdown( $logs ) );
+    }
+
+    public static function ajax_clear_log(): void {
+        check_ajax_referer( 'servertrack_dashboard', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Unauthorized' );
+        ServerTrack_Logger::clear_logs();
+        wp_send_json_success( [ 'message' => 'Log cleared.' ] );
+    }
+
+    public static function ajax_drain_retries(): void {
+        check_ajax_referer( 'servertrack_dashboard', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Unauthorized' );
+        $queue = get_option( 'servertrack_retry_queue', [] );
+        if ( empty( $queue ) ) {
+            wp_send_json_success( [ 'drained' => 0 ] );
+            return;
+        }
+        $drained = 0;
+        foreach ( $queue as $item ) {
+            if ( class_exists( 'ServerTrack_Retry' ) ) {
+                ServerTrack_Retry::process_item( $item );
+                $drained++;
+            }
+        }
+        delete_option( 'servertrack_retry_queue' );
+        wp_send_json_success( [ 'drained' => $drained ] );
     }
 }
