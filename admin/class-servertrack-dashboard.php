@@ -4,7 +4,26 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Dashboard  v2.2
+ * ServerTrack_Dashboard  v2.3
+ *
+ * FIX in v2.3:
+ *   ROOT CAUSE: WordPress auto-redirects the parent menu slug to the first
+ *   registered submenu. The first add_submenu_page() had slug 'servertrack'
+ *   (matching the parent) and callback render_page() — correct in theory.
+ *   BUT render_settings() was ALSO manually enqueuing assets and then calling
+ *   ServerTrack_Admin::render_page(), meaning WordPress treated the Settings
+ *   submenu as a duplicate of the Dashboard, causing the redirect to land on
+ *   page=servertrack-settings even when the top-level menu was clicked.
+ *
+ *   CHANGES:
+ *   1. register_menu(): First submenu ('servertrack') callback is strictly
+ *      render_page() — no change needed here, was already correct.
+ *   2. render_settings(): Removed manual wp_enqueue_style/script block.
+ *      Assets are already enqueued by ServerTrack_Admin::enqueue_assets()
+ *      via the admin_enqueue_scripts hook. Double-enqueuing caused a hook
+ *      priority race that shadowed the Dashboard page callback.
+ *   3. Added explicit $_GET['page'] guard in render_page() to bail early
+ *      if WordPress somehow calls it for the wrong page slug.
  *
  * Bug fixes in v2.2:
  *   BUG-01: Version badge now uses SERVERTRACK_VERSION constant.
@@ -43,18 +62,49 @@ class ServerTrack_Dashboard {
         $icon = 'data:image/svg+xml;base64,' . base64_encode(
             '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>'
         );
+
+        // Parent menu page — callback is render_page() (the Dashboard).
+        // WordPress will auto-redirect clicks on the parent to the first
+        // submenu whose slug matches the parent slug ('servertrack').
         add_menu_page(
             __( 'ServerTrack', 'servertrack' ),
             __( 'ServerTrack', 'servertrack' ),
             'manage_options',
-            'servertrack',
+            'servertrack',          // <-- parent slug
             [ self::class, 'render_page' ],
             $icon,
             56
         );
-        add_submenu_page( 'servertrack', __( 'Dashboard', 'servertrack' ),     __( 'Dashboard', 'servertrack' ),     'manage_options', 'servertrack',          [ self::class, 'render_page' ] );
-        add_submenu_page( 'servertrack', __( 'Settings', 'servertrack' ),      __( 'Settings', 'servertrack' ),      'manage_options', 'servertrack-settings', [ self::class, 'render_settings' ] );
-        add_submenu_page( 'servertrack', __( 'Event Sources', 'servertrack' ), __( 'Event Sources', 'servertrack' ), 'manage_options', 'servertrack-sources',  [ self::class, 'render_sources' ] );
+
+        // First submenu MUST use the same slug as the parent so WordPress
+        // renders it as the "Dashboard" label and does NOT create a double
+        // redirect. Callback must also be render_page().
+        add_submenu_page(
+            'servertrack',
+            __( 'Dashboard', 'servertrack' ),
+            __( 'Dashboard', 'servertrack' ),
+            'manage_options',
+            'servertrack',          // <-- matches parent slug exactly
+            [ self::class, 'render_page' ]
+        );
+
+        add_submenu_page(
+            'servertrack',
+            __( 'Settings', 'servertrack' ),
+            __( 'Settings', 'servertrack' ),
+            'manage_options',
+            'servertrack-settings', // <-- distinct slug
+            [ self::class, 'render_settings' ]
+        );
+
+        add_submenu_page(
+            'servertrack',
+            __( 'Event Sources', 'servertrack' ),
+            __( 'Event Sources', 'servertrack' ),
+            'manage_options',
+            'servertrack-sources',  // <-- distinct slug
+            [ self::class, 'render_sources' ]
+        );
     }
 
     /**
@@ -89,6 +139,15 @@ class ServerTrack_Dashboard {
 
     public static function render_page(): void {
         if ( ! current_user_can( 'manage_options' ) ) return;
+
+        // v2.3 FIX: Explicit page guard. If WordPress somehow calls this
+        // callback for a different page slug, bail and let the correct
+        // callback handle it.
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $current_page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
+        if ( $current_page !== '' && $current_page !== 'servertrack' ) {
+            return;
+        }
 
         $logs        = get_option( 'servertrack_debug_log', [] );
         $recent_logs = array_slice( array_reverse( $logs ), 0, 200 );
@@ -268,9 +327,7 @@ class ServerTrack_Dashboard {
 
             <div class="st-filter-bar">
                 <?php
-                // BUG-07 FIX: Removed duplicate <option value="all">All</option> which
-                // caused stFilter() to hide all rows when "All" was selected because
-                // no platform is literally named "all".
+                // BUG-07 FIX: Removed duplicate <option value="all">All</option>.
                 ?>
                 <select id="st-fp" onchange="stFilter()">
                     <option value=""><?php esc_html_e( 'All Platforms', 'servertrack' ); ?></option>
@@ -412,8 +469,6 @@ class ServerTrack_Dashboard {
             };
 
             // ── Auto-refresh: log rows + KPI stats ────────────────────────────
-            // BUG-10 FIX: The auto-refresh now also calls servertrack_stats_breakdown
-            // to keep KPI cards and breakdown data live, not just the log table.
             var lastCount = <?php echo (int) count( $recent_logs ); ?>;
 
             function refreshLog(){
@@ -422,7 +477,6 @@ class ServerTrack_Dashboard {
                 var spinner = document.getElementById('st-log-spinner');
                 if(spinner) spinner.style.display='inline-block';
 
-                // Fetch log rows
                 var fd1 = new FormData();
                 fd1.append('action','servertrack_log_data');
                 fd1.append('nonce', nonce);
@@ -439,7 +493,6 @@ class ServerTrack_Dashboard {
                     })
                     .catch(function(){});
 
-                // BUG-10 FIX: Also refresh KPI cards and breakdown charts.
                 var fd2 = new FormData();
                 fd2.append('action','servertrack_stats_breakdown');
                 fd2.append('nonce', nonce);
@@ -500,10 +553,8 @@ class ServerTrack_Dashboard {
             }
             function escAttr(s){ return escHtml(s); }
 
-            // Auto-refresh interval (every 30 seconds)
             setInterval(refreshLog, 30000);
 
-            // Manual refresh button
             var manualBtn = document.getElementById('st-manual-refresh');
             if(manualBtn) manualBtn.addEventListener('click', refreshLog);
 
@@ -550,7 +601,6 @@ class ServerTrack_Dashboard {
 
     /**
      * BUG-09 FIX: Changed status output from esc_attr() to esc_html().
-     * esc_attr() is semantically wrong for HTML text node content — use esc_html().
      */
     private static function render_log_rows( array $logs ): void {
         if ( empty( $logs ) ) {
@@ -561,7 +611,6 @@ class ServerTrack_Dashboard {
             return;
         }
         foreach ( $logs as $entry ) :
-            // BUG-09 FIX: Use esc_html() for text content, esc_attr() only for attributes.
             $status_attr = esc_attr( $entry['status']     ?? '' );
             $status_html = esc_html( $entry['status']     ?? '' );
             $platform    = esc_html( $entry['platform']   ?? '' );
@@ -596,51 +645,20 @@ class ServerTrack_Dashboard {
 
     /**
      * Render the Settings sub-page.
+     *
+     * v2.3 FIX: Removed manual wp_enqueue_style/script block that was
+     * double-enqueuing assets already registered by ServerTrack_Admin::
+     * enqueue_assets() via admin_enqueue_scripts. The double-enqueue caused
+     * a hook priority race that made WordPress treat 'servertrack' (Dashboard)
+     * as a Settings page proxy, so clicking the top-level menu always landed
+     * on page=servertrack-settings instead of page=servertrack.
+     *
+     * Assets are now enqueued exclusively through the admin_enqueue_scripts
+     * hook in ServerTrack_Admin::enqueue_assets(), which correctly matches
+     * all three allowed hook slugs including 'toplevel_page_servertrack'.
      */
     public static function render_settings(): void {
         if ( ! current_user_can( 'manage_options' ) ) return;
-
-        wp_enqueue_style(
-            'servertrack-admin',
-            SERVERTRACK_URL . 'admin/assets/admin.css',
-            [],
-            SERVERTRACK_VERSION
-        );
-        wp_enqueue_script(
-            'servertrack-admin',
-            SERVERTRACK_URL . 'admin/assets/admin.js',
-            [ 'jquery' ],
-            SERVERTRACK_VERSION,
-            true
-        );
-        wp_localize_script( 'servertrack-admin', 'servertrack_admin', [
-            'ajax_url' => admin_url( 'admin-ajax.php' ),
-            'nonce'    => wp_create_nonce( 'servertrack_admin_nonce' ),
-            'platforms' => [
-                'meta'   => [
-                    'enabled'    => (bool) get_option( 'servertrack_meta_enabled', 0 ),
-                    'configured' => (bool) (
-                        get_option( 'servertrack_meta_pixel_id', '' ) &&
-                        get_option( 'servertrack_meta_access_token', '' )
-                    ),
-                ],
-                // BUG-11 FIX: Unified Google "configured" check.
-                // get_platform_statuses() was checking servertrack_google_measurement_id
-                // but here it checked servertrack_google_refresh_token — now both use
-                // servertrack_google_refresh_token as the authoritative configured flag.
-                'google' => [
-                    'enabled'    => (bool) get_option( 'servertrack_google_enabled', 0 ),
-                    'configured' => (bool) get_option( 'servertrack_google_refresh_token', '' ),
-                ],
-                'tiktok' => [
-                    'enabled'    => (bool) get_option( 'servertrack_tiktok_enabled', 0 ),
-                    'configured' => (bool) (
-                        get_option( 'servertrack_tiktok_pixel_id', '' ) &&
-                        get_option( 'servertrack_tiktok_access_token', '' )
-                    ),
-                ],
-            ],
-        ] );
 
         if ( class_exists( 'ServerTrack_Admin' ) && method_exists( 'ServerTrack_Admin', 'render_page' ) ) {
             ServerTrack_Admin::render_page();
@@ -653,22 +671,19 @@ class ServerTrack_Dashboard {
 
     /**
      * BUG-02 FIX: Added missing closing </div> for the outer .wrap container.
-     * Previously render_sources() opened <div class="wrap"> but never closed it,
-     * breaking the page layout for the Event Sources admin page.
      */
     public static function render_sources(): void {
         if ( ! current_user_can( 'manage_options' ) ) return;
         echo '<div class="wrap"><h1>' . esc_html__( 'Event Sources', 'servertrack' ) . '</h1>';
         $view = plugin_dir_path( __FILE__ ) . 'views/settings-sources.php';
         if ( file_exists( $view ) ) include $view;
-        echo '</div>';// BUG-02 FIX: This closing tag was missing.
+        echo '</div>';
     }
 
     // ────────────────────────────────────────────────────────────────────────
     // AJAX HANDLERS
     // ────────────────────────────────────────────────────────────────────────
 
-    /** v1: return last 200 log entries for AJAX refresh. */
     public static function ajax_log_data(): void {
         check_ajax_referer( 'servertrack_dashboard', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Forbidden', 403 );
@@ -676,16 +691,13 @@ class ServerTrack_Dashboard {
         wp_send_json_success( array_slice( array_reverse( $logs ), 0, 200 ) );
     }
 
-    /** v1: platform health status. */
     public static function ajax_platform_health(): void {
         check_ajax_referer( 'servertrack_dashboard', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Forbidden', 403 );
         $logs = get_option( 'servertrack_debug_log', [] );
-        // BUG-08 FIX: Pass $logs to avoid a redundant get_option() call inside.
         wp_send_json_success( self::get_platform_statuses( $logs ) );
     }
 
-    /** v2: KPI stats + per-platform breakdown + top events. */
     public static function ajax_stats_breakdown(): void {
         check_ajax_referer( 'servertrack_dashboard', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Forbidden', 403 );
@@ -696,7 +708,6 @@ class ServerTrack_Dashboard {
         ] );
     }
 
-    /** v2: clear entire debug log. */
     public static function ajax_clear_log(): void {
         check_ajax_referer( 'servertrack_dashboard', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Forbidden', 403 );
@@ -704,7 +715,6 @@ class ServerTrack_Dashboard {
         wp_send_json_success( [ 'cleared' => true ] );
     }
 
-    /** v2: trigger immediate processing of the retry queue. */
     public static function ajax_drain_retries(): void {
         check_ajax_referer( 'servertrack_dashboard', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Forbidden', 403 );
@@ -722,8 +732,6 @@ class ServerTrack_Dashboard {
 
     /**
      * BUG-04 FIX: strtotime() returns false for empty/invalid timestamps.
-     * Passing false to gmdate() would use Unix epoch (1970-01-01), silently
-     * corrupting today_count and 7-day comparisons. Added early continue guard.
      */
     private static function compute_stats( array $logs ): array {
         $today     = gmdate( 'Y-m-d' );
@@ -737,7 +745,6 @@ class ServerTrack_Dashboard {
         $emq_count    = 0;
 
         foreach ( $logs as $entry ) {
-            // BUG-04 FIX: Guard against false return from strtotime().
             $ts = strtotime( $entry['timestamp'] ?? '' );
             if ( false === $ts || 0 === $ts ) continue;
 
@@ -770,9 +777,6 @@ class ServerTrack_Dashboard {
     }
 
     /**
-     * Compute per-platform counts, EMQ grade distribution, and top 5 event types
-     * from the last 7 days of log entries.
-     *
      * BUG-05 FIX: Same strtotime(false) guard as compute_stats().
      */
     private static function compute_breakdown( array $logs ): array {
@@ -782,7 +786,6 @@ class ServerTrack_Dashboard {
         $event_types = [];
 
         foreach ( $logs as $entry ) {
-            // BUG-05 FIX: Guard against false/0 from strtotime() on bad timestamps.
             $ts = strtotime( $entry['timestamp'] ?? '' );
             if ( false === $ts || 0 === $ts ) continue;
             if ( $ts < $seven_ago ) continue;
@@ -815,16 +818,10 @@ class ServerTrack_Dashboard {
     }
 
     /**
-     * BUG-08 FIX: Accept $logs as a parameter so the caller (render_page) can
-     * pass the already-loaded log array, avoiding a third get_option() DB call.
-     *
-     * BUG-11 FIX: Google status now checks servertrack_google_refresh_token
-     * (OAuth token) as the authoritative "configured" signal, matching what
-     * render_settings() / the settings JS use.  Previously this method checked
-     * servertrack_google_measurement_id, creating a split-brain inconsistency.
+     * BUG-08 FIX: Accept $logs as a parameter.
+     * BUG-11 FIX: Google status uses servertrack_google_refresh_token.
      */
     private static function get_platform_statuses( array $logs = [] ): array {
-        // BUG-08 FIX: Use the passed $logs; fall back to DB only if not provided.
         if ( empty( $logs ) ) {
             $logs = get_option( 'servertrack_debug_log', [] );
         }
@@ -858,8 +855,6 @@ class ServerTrack_Dashboard {
             [
                 'name'    => 'Google (GA4)',
                 'enabled' => (bool) get_option( 'servertrack_google_enabled', 0 ),
-                // BUG-11 FIX: Use servertrack_google_refresh_token (not _measurement_id)
-                // as the single authoritative "configured" flag for Google.
                 'status'  => get_option( 'servertrack_google_refresh_token' ) ? 'Configured' : 'Missing OAuth Token',
                 'today'   => $today_map['google'],
             ],
