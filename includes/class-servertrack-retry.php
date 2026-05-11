@@ -4,9 +4,22 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Retry  v2.1
+ * ServerTrack_Retry  v2.2
  *
  * Queues failed CAPI events for exponential-backoff retry via WP-Cron.
+ *
+ * v2.2 changes (dashboard integration patch):
+ *   1. process_queue() public alias added so the admin dashboard drain-all
+ *      AJAX action (servertrack_drain_retries) can call
+ *      ServerTrack_Retry::process_queue() without knowing the internal
+ *      method name.  Delegates directly to process().
+ *
+ *   2. maybe_queue() now stores 'event_name' and 'last_attempt' at the top
+ *      level of each queue item (alongside platform, attempts, etc.) so the
+ *      dashboard retry panel can display them without digging into event_args.
+ *
+ *   3. process() updates 'last_attempt' to time() on every attempt (success
+ *      or failure) so the timestamp shown in the dashboard stays accurate.
  *
  * v2.1 changes (BUG-08 fix):
  *   process() called Dedup::mark_as_sent( $order_id, $platform ) only when
@@ -45,8 +58,11 @@ class ServerTrack_Retry {
      * Only queues if the result indicates a transient failure (network error,
      * 5xx, 429). Hard failures (4xx except 429) are not retried.
      *
-     * @param string $platform  'meta' | 'tiktok' | 'google'
-     * @param array  $result    Result array from platform sender
+     * v2.2: also stores 'event_name' and 'last_attempt' at the queue item's
+     * top level so the dashboard panel can display them without parsing event_args.
+     *
+     * @param string $platform   'meta' | 'tiktok' | 'google'
+     * @param array  $result     Result array from platform sender
      * @param array  $event_args Serialisable event arguments
      */
     public static function maybe_queue( string $platform, array $result, array $event_args ): void {
@@ -74,11 +90,13 @@ class ServerTrack_Retry {
         $delay    = self::BACKOFF_BASE;
 
         $queue[ $uid ] = [
-            'platform'   => $platform,
-            'event_args' => $event_args,
-            'attempts'   => $attempts,
-            'next_retry' => time() + $delay,
-            'queued_at'  => time(),
+            'platform'     => $platform,
+            'event_name'   => $event_args['event_name'] ?? 'Unknown',   // v2.2: top-level for dashboard
+            'event_args'   => $event_args,
+            'attempts'     => $attempts,
+            'next_retry'   => time() + $delay,
+            'queued_at'    => time(),
+            'last_attempt' => null,                                       // v2.2: set on first attempt
         ];
 
         update_option( self::QUEUE_OPTION, $queue, false );
@@ -115,12 +133,15 @@ class ServerTrack_Retry {
             $event_args = $item['event_args'];
             $result     = self::dispatch_retry( $platform, $event_args );
 
+            // v2.2: always stamp last_attempt
+            $item['last_attempt'] = gmdate( 'Y-m-d H:i:s' );
+
             if ( ( $result['status'] ?? '' ) === 'success' ) {
                 unset( $queue[ $uid ] );
                 $updated = true;
 
                 /*
-                 * BUG-08 FIX:
+                 * BUG-08 FIX (v2.1):
                  *   Previously only called Dedup::mark_as_sent() for integer order IDs.
                  *   Non-order events (subscriptions, cart abandonment) carry order_id = 0
                  *   and a string 'dedup_key' in event_args. Without marking them as sent,
@@ -156,6 +177,17 @@ class ServerTrack_Retry {
         if ( $updated ) {
             update_option( self::QUEUE_OPTION, $queue, false );
         }
+    }
+
+    /**
+     * Public alias for process() — called by the dashboard drain-all AJAX action.
+     *
+     * Added in v2.2 so ServerTrack_Dashboard::ajax_drain_retries() can call
+     * ServerTrack_Retry::process_queue() via the stable public API, while
+     * WP-Cron continues to invoke process() via its registered action hook.
+     */
+    public static function process_queue(): void {
+        self::process();
     }
 
     /**
