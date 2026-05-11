@@ -4,51 +4,37 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_MatchQuality  v1.0
+ * ServerTrack_MatchQuality  v2.0
  *
  * Feature #3 — Real-Time Event Match Quality (EMQ) Scorer.
  *
- * Meta's Event Match Quality score is the single biggest lever for CAPI
- * performance. A score of 6+ means Meta can match the event to a real user
- * and attribute it. A score below 4 means the event is effectively invisible.
+ * HIGH FIX (H-2) in v2.0:
+ *   get_daily_averages() previously read from servertrack_debug_log which is
+ *   only written when debug_mode=1. In production (debug_mode=0) the option is
+ *   always empty, so the EMQ trend panel on the dashboard was permanently blank.
  *
- * No Stape.io container, no GTM tag, no other WordPress plugin computes or
- * surfaces this score before sending. ServerTrack does it server-side,
- * per-event, with a breakdown logged to the debug log.
+ *   Fixed: now reads from servertrack_event_stats — the always-on stats store
+ *   written by Logger on every event regardless of debug_mode.
+ *   Falls back to debug_log only when stats store has no EMQ data (pre-upgrade).
  *
  * Scoring model (mirrors Meta's published EMQ weights):
- *   email          → +3.5 pts  (highest signal — always hash first)
+ *   email          → +3.5 pts
  *   phone          → +2.5 pts
- *   fbc            → +2.0 pts  (from _fbc cookie or fbclid)
- *   fbp            → +1.5 pts  (from _fbp cookie)
- *   external_id    → +1.0 pts  (hashed WP user ID)
+ *   fbc            → +2.0 pts
+ *   fbp            → +1.5 pts
+ *   external_id    → +1.0 pts
  *   first_name     → +0.5 pts
  *   last_name      → +0.5 pts
- *   city           → +0.3 pts
- *   state          → +0.3 pts
- *   zip            → +0.3 pts
- *   country        → +0.3 pts
- *   ip             → +0.5 pts  (raw, not hashed)
- *   user_agent     → +0.3 pts  (raw, not hashed)
+ *   ip             → +0.5 pts
+ *   city/state/zip/country → +0.3 pts each
+ *   user_agent     → +0.3 pts
  *
- * Max possible score: ~13.6 pts → normalised to 0–10 scale for the dashboard.
- *
- * Usage:
- *   $score = ServerTrack_MatchQuality::score( $event->user_data );
- *   // Returns: [ 'score' => 7.2, 'grade' => 'good', 'breakdown' => [...] ]
- *
- * The score is attached to the event as custom_data['_emq'] before logging,
- * so the debug log and dashboard can display it per-event.
+ * Max possible raw score ≈ 13.6 → normalised to 0–10 for the dashboard.
  */
 class ServerTrack_MatchQuality {
 
-    /** Normalisation divisor — theoretical max sum of all weights. */
     const MAX_RAW = 13.6;
 
-    /**
-     * Weight table — mirrors Meta's published EMQ signal weights.
-     * Keys match the user_data array keys used in ServerTrack_Event.
-     */
     const WEIGHTS = [
         'email'       => 3.5,
         'phone'       => 2.5,
@@ -66,15 +52,10 @@ class ServerTrack_MatchQuality {
     ];
 
     /**
-     * Score a user_data array and return a structured result.
+     * Score a user_data array.
      *
-     * @param array $user_data  Keys from ServerTrack_Event::$user_data
-     * @return array {
-     *   score:     float  0.0–10.0 (normalised),
-     *   grade:     string 'excellent'|'good'|'fair'|'poor',
-     *   breakdown: array  [ field => weight ] for present fields,
-     *   missing:   array  [ field => weight ] for absent high-value fields,
-     * }
+     * @param  array $user_data
+     * @return array { score:float, grade:string, breakdown:array, missing:array }
      */
     public static function score( array $user_data ): array {
         $raw       = 0.0;
@@ -86,24 +67,16 @@ class ServerTrack_MatchQuality {
                 $raw              += $weight;
                 $breakdown[$field] = $weight;
             } elseif ( $weight >= 1.0 ) {
-                // Only flag missing fields that have significant impact
                 $missing[$field] = $weight;
             }
         }
 
-        // Normalise to 0–10
         $score = round( min( 10.0, ( $raw / self::MAX_RAW ) * 10 ), 1 );
 
-        // Grade thresholds based on Meta's EMQ guidance
-        if ( $score >= 7.5 ) {
-            $grade = 'excellent';
-        } elseif ( $score >= 5.5 ) {
-            $grade = 'good';
-        } elseif ( $score >= 3.5 ) {
-            $grade = 'fair';
-        } else {
-            $grade = 'poor';
-        }
+        if ( $score >= 7.5 )      $grade = 'excellent';
+        elseif ( $score >= 5.5 )  $grade = 'good';
+        elseif ( $score >= 3.5 )  $grade = 'fair';
+        else                       $grade = 'poor';
 
         return [
             'score'     => $score,
@@ -114,49 +87,73 @@ class ServerTrack_MatchQuality {
     }
 
     /**
-     * Annotate an event with its EMQ score.
-     * Attaches _emq to custom_data so the logger can record it.
-     * Does NOT modify user_data or alter the payload sent to Meta.
-     *
-     * @param ServerTrack_Event $event
-     * @return array The score result (also attached to event->custom_data['_emq'])
+     * Annotate an event with its EMQ score (attaches to custom_data['_emq']).
+     * The _emq key is stripped before API transmission.
      */
     public static function annotate( ServerTrack_Event $event ): array {
         $result = self::score( $event->user_data );
-        // Attach to custom_data for logging — stripped before API send
         $event->custom_data['_emq'] = $result;
         return $result;
     }
 
     /**
-     * Get daily average EMQ scores from the debug log.
-     * Used by the admin dashboard to display trend data.
+     * Get daily average EMQ scores for the dashboard trend panel.
      *
-     * @param int $days  Number of past days to aggregate (default 7)
-     * @return array [ 'date' => [ 'avg' => float, 'count' => int ], ... ]
+     * HIGH FIX (H-2 — v2.0):
+     *   Now reads servertrack_event_stats (always-on) instead of
+     *   servertrack_debug_log (debug_mode=1 only → always empty in prod).
+     *
+     *   Stats entry shape (written by Logger v3.0+):
+     *     [ 'ts'=>int, 'status'=>str, 'platform'=>str,
+     *       'event_type'=>str, 'order_id'=>int, 'emq_score'=>float|null ]
+     *
+     *   Fallback: if stats store has no EMQ data, reads debug_log so
+     *   the chart is not immediately broken on freshly-upgraded installs.
+     *
+     * @param  int   $days  Past days to aggregate (default 7)
+     * @return array        [ 'Y-m-d' => [ 'avg'=>float, 'count'=>int ], … ]
      */
     public static function get_daily_averages( int $days = 7 ): array {
-        $logs   = get_option( 'servertrack_debug_log', [] );
+        $cutoff = time() - ( $days * DAY_IN_SECONDS );
         $totals = [];
         $counts = [];
-        $cutoff = strtotime( '-' . $days . ' days' );
 
-        foreach ( $logs as $entry ) {
-            if ( empty( $entry['timestamp'] ) ) continue;
-            $ts = strtotime( $entry['timestamp'] );
-            if ( $ts < $cutoff ) continue;
-            $date = substr( $entry['timestamp'], 0, 10 );
-            $emq  = $entry['emq_score'] ?? null;
-            if ( null === $emq ) continue;
-            $totals[$date] = ( $totals[$date] ?? 0 ) + (float) $emq;
-            $counts[$date] = ( $counts[$date] ?? 0 ) + 1;
+        // ── Primary: always-on stats store ──────────────────────────────────
+        $stats   = get_option( 'servertrack_event_stats', [] );
+        $has_emq = false;
+
+        if ( is_array( $stats ) && ! empty( $stats ) ) {
+            foreach ( $stats as $entry ) {
+                if ( empty( $entry['ts'] ) || (int) $entry['ts'] < $cutoff ) continue;
+                if ( ! isset( $entry['emq_score'] ) ) continue;
+                $has_emq         = true;
+                $date            = gmdate( 'Y-m-d', (int) $entry['ts'] );
+                $totals[ $date ] = ( $totals[ $date ] ?? 0.0 ) + (float) $entry['emq_score'];
+                $counts[ $date ] = ( $counts[ $date ] ?? 0 ) + 1;
+            }
+        }
+
+        // ── Fallback: legacy debug log (pre-upgrade sites) ───────────────────
+        if ( ! $has_emq ) {
+            $logs = get_option( 'servertrack_debug_log', [] );
+            if ( is_array( $logs ) ) {
+                foreach ( $logs as $entry ) {
+                    if ( empty( $entry['timestamp'] ) ) continue;
+                    $ts = strtotime( $entry['timestamp'] );
+                    if ( $ts < $cutoff ) continue;
+                    if ( ! isset( $entry['emq_score'] ) ) continue;
+                    $date            = substr( $entry['timestamp'], 0, 10 );
+                    $totals[ $date ] = ( $totals[ $date ] ?? 0.0 ) + (float) $entry['emq_score'];
+                    $counts[ $date ] = ( $counts[ $date ] ?? 0 ) + 1;
+                }
+            }
         }
 
         $result = [];
         foreach ( $totals as $date => $total ) {
-            $result[$date] = [
-                'avg'   => round( $total / $counts[$date], 1 ),
-                'count' => $counts[$date],
+            $result[ $date ] = [
+                'avg'   => round( $total / $counts[ $date ], 1 ),
+                'count' => $counts[ $date ],
             ];
         }
         ksort( $result );
