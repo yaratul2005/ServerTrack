@@ -6,27 +6,40 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * ServerTrack_Admin — v2.3
  *
- * Changes in v2.3 (Branding Overhaul):
- *   - render_page_header(): Replaced generic SVG lightning-bolt icon with
- *     the actual bglogo.png via <img> tag inside .st-logo-wrap.
- *     Falls back gracefully to the SVG icon if the file is missing.
- *   - enqueue_assets(): Added 'servertrack-logo' image preload hint so the
- *     logo loads without a render-blocking delay in the header strip.
- *   - Brand colour updated from #6c63ff (purple) to #0ea5e9 (teal/sky) in
- *     admin.css — consistent with the logo palette.
+ * Changes in v2.3:
+ *   - render_page_header(): Replaced generic SVG lightning-bolt icon with the
+ *     actual brand logo (assets/logo/bglogo.png, transparent-background PNG).
+ *     Uses <img> with onerror fallback to the SVG icon in case the file is
+ *     missing or the path cannot be resolved at runtime.
+ *   - enqueue_assets(): Added servertrack-admin-dashboard CSS handle registration
+ *     for the (now empty) admin-dashboard.css stub, so any legacy calls that
+ *     reference that handle do not produce a PHP notice.
+ *   - Brand colours updated in admin.css (teal/amber token system).
  *
  * Changes in v2.2:
- *   - CRITICAL FIX: All internal URLs updated from options-general.php?page=servertrack
- *     to admin.php?page=servertrack-settings.
- *   - register_menu() removed — handled by ServerTrack_Dashboard.
- *   - enqueue_assets() hook updated.
- *   - handle_oauth_callback() / handle_oauth_revoke() redirect URLs updated.
- *   - render_page() tab hrefs updated.
- *   - render_health_notice() URLs updated.
- *   - Added ST_SETTINGS_URL helper.
+ *   - CRITICAL FIX: All internal URLs updated from
+ *     options-general.php?page=servertrack  (old Settings submenu)
+ *     to admin.php?page=servertrack-settings  (current top-level submenu).
+ *   - register_menu(): Removed stale add_options_page() registration.
+ *   - enqueue_assets(): Hook check updated to match the new page hook.
+ *   - handle_oauth_callback() / handle_oauth_revoke(): All wp_safe_redirect()
+ *     calls updated.
+ *   - render_page(): Tab hrefs updated.
+ *   - render_health_notice(): All settings URLs updated.
+ *   - Added ST_SETTINGS_URL helper constant for DRY URL construction.
+ *
+ * Changes in v2.1:
+ *   - register_settings(): added servertrack_source_abandonment_enabled and
+ *     servertrack_abandonment_window_minutes to the sources option group.
+ *
+ * Changes from v1 → v2.0 (Dashboard overhaul):
+ *   - New 'dashboard' tab, AJAX handler, dark gradient header strip.
  */
 class ServerTrack_Admin {
 
+    /**
+     * Map: tab slug => option group name.
+     */
     const TAB_GROUPS = [
         'general' => 'servertrack_general_settings',
         'meta'    => 'servertrack_meta_settings',
@@ -35,6 +48,9 @@ class ServerTrack_Admin {
         'sources' => 'servertrack_sources_settings',
     ];
 
+    /**
+     * Base URL for the Settings sub-page.
+     */
     private static function settings_url( string $tab = '', array $extra = [] ): string {
         $args = array_merge( [ 'page' => 'servertrack-settings' ], $extra );
         if ( $tab !== '' ) {
@@ -74,9 +90,15 @@ class ServerTrack_Admin {
             SERVERTRACK_VERSION
         );
 
-        // Preload the logo so it's ready before the header renders
-        $logo_url = SERVERTRACK_URL . 'assets/logo/bglogo.png';
-        echo '<link rel="preload" as="image" href="' . esc_url( $logo_url ) . '">' . "\n";
+        // Register the legacy dashboard CSS handle as an empty stub so any
+        // existing wp_enqueue_style( 'servertrack-admin-dashboard' ) calls
+        // (from older code paths or 3rd-party snippets) don't produce notices.
+        wp_register_style(
+            'servertrack-admin-dashboard',
+            SERVERTRACK_URL . 'admin/assets/admin-dashboard.css',
+            [ 'servertrack-admin' ],
+            SERVERTRACK_VERSION
+        );
 
         wp_enqueue_script(
             'servertrack-admin',
@@ -88,7 +110,6 @@ class ServerTrack_Admin {
         wp_localize_script( 'servertrack-admin', 'servertrack_admin', [
             'ajax_url' => admin_url( 'admin-ajax.php' ),
             'nonce'    => wp_create_nonce( 'servertrack_admin_nonce' ),
-            'logo_url' => esc_url( $logo_url ),
             'platforms' => [
                 'meta'   => [
                     'enabled'    => (bool) get_option( 'servertrack_meta_enabled', 0 ),
@@ -121,7 +142,7 @@ class ServerTrack_Admin {
         $general_options = [
             'servertrack_enabled'      => [ 'type' => 'integer', 'sanitize' => 'absint',                                  'default' => 1      ],
             'servertrack_test_mode'    => [ 'type' => 'integer', 'sanitize' => 'absint',                                  'default' => 0      ],
-            'servertrack_consent_mode' => [ 'type' => 'string',  'sanitize' => [ self::class, 'sanitize_consent_mode' ],  'default' => 'none' ],
+            'servertrack_consent_mode' => [ 'type' => 'string',  'sanitize' => [ self::class, 'sanitize_consent_mode' ], 'default' => 'none' ],
         ];
         self::register_group( 'servertrack_general_settings', $general_options );
 
@@ -382,7 +403,7 @@ class ServerTrack_Admin {
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // Page Header — v2.3: uses bglogo.png for branding
+    // Page Header — v2.3: uses actual bglogo.png with SVG fallback
     // ─────────────────────────────────────────────────────────────────
 
     private static function render_page_header() {
@@ -390,34 +411,34 @@ class ServerTrack_Admin {
         $google_ok = get_option( 'servertrack_google_enabled', 0 ) && get_option( 'servertrack_google_refresh_token', '' );
         $tiktok_ok = get_option( 'servertrack_tiktok_enabled', 0 ) && get_option( 'servertrack_tiktok_pixel_id', '' ) && get_option( 'servertrack_tiktok_access_token', '' );
 
-        // Resolve the logo image URL and check the file actually exists on disk.
-        $logo_url  = SERVERTRACK_URL . 'assets/logo/bglogo.png';
-        $logo_file = SERVERTRACK_DIR . 'assets/logo/bglogo.png';
-        $has_logo  = file_exists( $logo_file );
+        // Build the logo URL using the registered plugin URL constant.
+        // bglogo.png is the transparent-background branding asset at assets/logo/bglogo.png.
+        $logo_url = defined( 'SERVERTRACK_URL' )
+            ? esc_url( SERVERTRACK_URL . 'assets/logo/bglogo.png' )
+            : '';
         ?>
         <div class="st-page-header">
             <div class="st-page-header-left">
 
-                <?php if ( $has_logo ) : ?>
-                    <!-- Branding: transparent-background logo from assets/logo/bglogo.png -->
-                    <div class="st-logo-wrap">
-                        <img
-                            src="<?php echo esc_url( $logo_url ); ?>"
-                            alt="<?php esc_attr_e( 'ServerTrack logo', 'servertrack' ); ?>"
-                            width="36"
-                            height="36"
-                            loading="eager"
-                            decoding="async"
-                        />
-                    </div>
-                <?php else : ?>
-                    <!-- Fallback SVG icon if bglogo.png is missing -->
-                    <div class="st-logo-icon">
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-                        </svg>
-                    </div>
+                <?php if ( $logo_url ) : ?>
+                    <img
+                        src="<?php echo $logo_url; ?>"
+                        alt="ServerTrack"
+                        width="44"
+                        height="44"
+                        class="st-logo-img"
+                        loading="eager"
+                        decoding="sync"
+                        onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"
+                    />
                 <?php endif; ?>
+
+                <!-- Fallback icon: shown only if the PNG fails to load -->
+                <div class="st-logo-icon-fallback" style="<?php echo $logo_url ? 'display:none;' : 'display:flex;'; ?>">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                    </svg>
+                </div>
 
                 <div class="st-page-title-group">
                     <h1><?php esc_html_e( 'ServerTrack', 'servertrack' ); ?></h1>

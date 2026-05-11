@@ -1,67 +1,68 @@
 /*
- * ServerTrack Admin Styles — v2.3 Branding Overhaul
- * - New brand palette derived from bglogo.png identity
- * - Merged admin-dashboard.css concerns
- * - Fixed responsive two-column dashboard grid
- * - Logo image integration tokens
+ * ServerTrack Admin Styles — v2.3 Rebrand
+ *
+ * Full rebrand: dark navy header, teal primary accent, amber highlight.
+ * Logo: assets/logo/bglogo.png (transparent background PNG).
+ *
+ * Token prefix: --st-  (isolated from WP admin globals)
  */
 
 /* ─────────────────────────────────────────────────────────────────
    0. TOKENS
 ───────────────────────────────────────────────────────────────── */
 :root {
-    /* Brand — ServerTrack teal/slate identity */
-    --st-brand:          #0ea5e9;
-    --st-brand-hover:    #0284c7;
-    --st-brand-dark:     #0369a1;
-    --st-brand-light:    #e0f2fe;
-    --st-brand-glow:     rgba(14,165,233,.18);
-
-    /* Header gradient */
-    --st-header-from:    #0f172a;
-    --st-header-to:      #1e293b;
+    /* Brand — Teal primary, Amber accent */
+    --st-brand:           #0ea5a0;
+    --st-brand-light:     #e0f5f4;
+    --st-brand-dark:      #0b7a76;
+    --st-accent:          #f59e0b;
+    --st-accent-light:    #fef3c7;
 
     /* Surfaces */
-    --st-bg:             #f1f5f9;
-    --st-surface:        #ffffff;
-    --st-surface-2:      #f8fafc;
-    --st-border:         rgba(15,23,42,.08);
-    --st-divider:        #e2e8f0;
+    --st-bg:              #f1f4f8;
+    --st-surface:         #ffffff;
+    --st-surface-2:       #f8fafc;
+    --st-border:          rgba(0,0,0,.07);
+    --st-divider:         #e4e8ee;
 
     /* Text */
-    --st-text:           #0f172a;
-    --st-text-muted:     #64748b;
-    --st-text-faint:     #94a3b8;
+    --st-text:            #0f1923;
+    --st-text-muted:      #5a6478;
+    --st-text-faint:      #9aa3b2;
 
     /* Status */
-    --st-success:        #22c55e;
-    --st-success-bg:     #f0fdf4;
-    --st-success-text:   #15803d;
-    --st-error:          #ef4444;
-    --st-error-bg:       #fef2f2;
-    --st-error-text:     #b91c1c;
-    --st-warning:        #f59e0b;
-    --st-warning-bg:     #fffbeb;
-    --st-warning-text:   #92400e;
-    --st-info:           #0ea5e9;
-    --st-info-bg:        #f0f9ff;
-    --st-info-text:      #0369a1;
+    --st-success:         #16a34a;
+    --st-success-bg:      #f0fdf4;
+    --st-success-text:    #15803d;
+    --st-error:           #dc2626;
+    --st-error-bg:        #fef2f2;
+    --st-error-text:      #b91c1c;
+    --st-warning:         #d97706;
+    --st-warning-bg:      #fffbeb;
+    --st-warning-text:    #92400e;
+    --st-info:            #2563eb;
+    --st-info-bg:         #eff6ff;
+    --st-info-text:       #1d4ed8;
 
     /* Platforms */
-    --st-meta-color:     #1877f2;
-    --st-meta-bg:        #e7f0fd;
-    --st-google-color:   #ea4335;
-    --st-google-bg:      #fde8e7;
-    --st-tiktok-color:   #010101;
-    --st-tiktok-bg:      #e8e8e8;
+    --st-meta-color:      #1877f2;
+    --st-meta-bg:         #e7f0fd;
+    --st-google-color:    #ea4335;
+    --st-google-bg:       #fde8e7;
+    --st-tiktok-color:    #010101;
+    --st-tiktok-bg:       #e8e8e8;
+
+    /* Header gradient — deep navy */
+    --st-header-from:     #0b1220;
+    --st-header-to:       #0f2233;
 
     /* Layout */
-    --st-radius:         10px;
-    --st-radius-sm:      6px;
-    --st-radius-lg:      14px;
-    --st-shadow:         0 1px 3px rgba(15,23,42,.06), 0 4px 16px rgba(15,23,42,.04);
-    --st-shadow-md:      0 4px 12px rgba(15,23,42,.08), 0 12px 32px rgba(15,23,42,.06);
-    --st-transition:     180ms cubic-bezier(0.16,1,0.3,1);
+    --st-radius:          10px;
+    --st-radius-sm:       6px;
+    --st-radius-lg:       14px;
+    --st-shadow:          0 1px 3px rgba(0,0,0,.05), 0 4px 16px rgba(0,0,0,.04);
+    --st-shadow-md:       0 4px 12px rgba(0,0,0,.08), 0 12px 32px rgba(0,0,0,.05);
+    --st-transition:      180ms cubic-bezier(0.16,1,0.3,1);
 }
 
 /* ─────────────────────────────────────────────────────────────────
@@ -78,14 +79,15 @@
 .st-page-header {
     background: linear-gradient(135deg, var(--st-header-from) 0%, var(--st-header-to) 100%);
     border-radius: var(--st-radius-lg);
-    padding: 22px 28px;
+    padding: 20px 28px;
     margin-bottom: 24px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 16px;
-    box-shadow: 0 4px 24px rgba(0,0,0,.18);
+    border: 1px solid rgba(14,165,160,.18);
+    box-shadow: 0 8px 32px rgba(11,18,32,.35), inset 0 1px 0 rgba(255,255,255,.04);
     position: relative;
     overflow: hidden;
 }
@@ -94,58 +96,48 @@
 .st-page-header::before {
     content: '';
     position: absolute;
-    top: -40px;
+    top: -60px;
     right: -40px;
-    width: 200px;
-    height: 200px;
-    background: radial-gradient(circle, rgba(14,165,233,.15) 0%, transparent 70%);
+    width: 260px;
+    height: 260px;
+    background: radial-gradient(circle, rgba(14,165,160,.12) 0%, transparent 70%);
     pointer-events: none;
 }
 
 .st-page-header-left {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 16px;
     position: relative;
-    z-index: 1;
 }
 
-/* Logo image container — replaces the old SVG icon box */
-.st-logo-wrap {
-    width: 46px;
-    height: 46px;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(255,255,255,.06);
-    border: 1px solid rgba(255,255,255,.12);
-    border-radius: 12px;
-    padding: 5px;
-    box-shadow: 0 2px 8px rgba(0,0,0,.25), 0 0 0 1px rgba(14,165,233,.2);
-}
-
-.st-logo-wrap img {
-    width: 100%;
-    height: 100%;
+/* Logo image — transparent PNG from assets/logo/bglogo.png */
+.st-logo-img {
+    width: 44px;
+    height: 44px;
     object-fit: contain;
-    display: block;
+    object-position: center;
+    flex-shrink: 0;
+    filter: drop-shadow(0 2px 8px rgba(14,165,160,.4));
+    /* Ensure it renders crisply on retina */
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
 }
 
-/* Legacy SVG icon fallback (kept for safety) */
-.st-logo-icon {
-    width: 46px;
-    height: 46px;
+/* Fallback icon (shown if img fails to load) */
+.st-logo-icon-fallback {
+    display: none;
+    width: 44px;
+    height: 44px;
     background: linear-gradient(135deg, var(--st-brand), var(--st-brand-dark));
-    border-radius: 12px;
-    display: flex;
+    border-radius: 10px;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    box-shadow: 0 4px 12px var(--st-brand-glow);
+    box-shadow: 0 4px 12px rgba(14,165,160,.35);
 }
 
-.st-logo-icon svg {
+.st-logo-icon-fallback svg {
     width: 22px;
     height: 22px;
     color: #fff;
@@ -156,27 +148,27 @@
     stroke-linejoin: round;
 }
 
-.st-page-title-group {
-    position: relative;
-    z-index: 1;
-}
-
 .st-page-title-group h1 {
-    color: #fff;
+    color: #ffffff;
     font-size: 1.25rem;
     font-weight: 700;
     margin: 0;
     padding: 0;
     line-height: 1.2;
     border: none;
-    letter-spacing: -0.01em;
+    letter-spacing: -.01em;
 }
 
 .st-page-title-group p {
-    color: rgba(255,255,255,.5);
-    font-size: .8125rem;
-    margin: 3px 0 0;
-    letter-spacing: 0;
+    color: rgba(255,255,255,.45);
+    font-size: .8rem;
+    margin: 4px 0 0;
+    letter-spacing: .01em;
+}
+
+/* Teal divider line under brand name */
+.st-page-title-group h1::after {
+    content: none;
 }
 
 .st-header-badges {
@@ -184,25 +176,23 @@
     gap: 8px;
     flex-wrap: wrap;
     position: relative;
-    z-index: 1;
 }
 
 .st-badge {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    padding: 4px 11px;
+    padding: 5px 11px;
     border-radius: var(--st-radius-sm);
-    font-size: .75rem;
+    font-size: .72rem;
     font-weight: 600;
     line-height: 1;
     border: 1px solid transparent;
 }
 
-.st-badge-meta   { background: rgba(24,119,242,.2);  color: #93c5fd; border-color: rgba(24,119,242,.3); }
-.st-badge-google { background: rgba(234,67,53,.2);   color: #fca5a5; border-color: rgba(234,67,53,.3); }
-.st-badge-tiktok { background: rgba(255,255,255,.1); color: rgba(255,255,255,.7); border-color: rgba(255,255,255,.15); }
-
+.st-badge-meta   { background: rgba(24,119,242,.2);  color: #93c5fd; border-color: rgba(24,119,242,.25); }
+.st-badge-google { background: rgba(234,67,53,.2);   color: #fca5a5; border-color: rgba(234,67,53,.25); }
+.st-badge-tiktok { background: rgba(255,255,255,.08); color: rgba(255,255,255,.65); border-color: rgba(255,255,255,.12); }
 .st-badge-dot {
     width: 6px;
     height: 6px;
@@ -318,11 +308,13 @@
     stroke-linejoin: round;
 }
 
-.st-kpi-icon-brand  { background: var(--st-brand-light); color: var(--st-brand); }
-.st-kpi-icon-purple { background: #ede9ff;               color: #6c63ff; }
-.st-kpi-icon-green  { background: var(--st-success-bg);  color: var(--st-success-text); }
-.st-kpi-icon-red    { background: var(--st-error-bg);    color: var(--st-error-text); }
-.st-kpi-icon-blue   { background: var(--st-info-bg);     color: var(--st-info-text); }
+.st-kpi-icon-teal   { background: var(--st-brand-light);  color: var(--st-brand); }
+.st-kpi-icon-green  { background: var(--st-success-bg);   color: var(--st-success-text); }
+.st-kpi-icon-red    { background: var(--st-error-bg);     color: var(--st-error-text); }
+.st-kpi-icon-amber  { background: var(--st-accent-light); color: var(--st-accent); }
+/* Legacy purple alias — keep for any existing markup */
+.st-kpi-icon-purple { background: var(--st-brand-light);  color: var(--st-brand); }
+.st-kpi-icon-blue   { background: var(--st-info-bg);      color: var(--st-info-text); }
 
 .st-kpi-value {
     font-size: 1.875rem;
@@ -331,7 +323,6 @@
     line-height: 1;
     margin-bottom: 4px;
     font-variant-numeric: tabular-nums;
-    letter-spacing: -0.02em;
 }
 
 .st-kpi-label {
@@ -351,15 +342,16 @@
     border-radius: 0 0 var(--st-radius) var(--st-radius);
 }
 .st-kpi-trend-success { background: linear-gradient(90deg, var(--st-success), transparent); }
-.st-kpi-trend-error   { background: linear-gradient(90deg, var(--st-error), transparent); }
-.st-kpi-trend-info    { background: linear-gradient(90deg, var(--st-brand), transparent); }
+.st-kpi-trend-error   { background: linear-gradient(90deg, var(--st-error),   transparent); }
+.st-kpi-trend-info    { background: linear-gradient(90deg, var(--st-brand),   transparent); }
+.st-kpi-trend-amber   { background: linear-gradient(90deg, var(--st-accent),  transparent); }
 
 /* ─────────────────────────────────────────────────────────────────
    5. PLATFORM HEALTH CARDS
 ───────────────────────────────────────────────────────────────── */
 .st-platform-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 14px;
     margin-bottom: 20px;
 }
@@ -421,7 +413,6 @@
     margin-top: 1px;
 }
 
-/* Status pill */
 .st-status-pill {
     display: inline-flex;
     align-items: center;
@@ -606,12 +597,12 @@
 .st-btn:hover {
     background: var(--st-bg);
     color: var(--st-text);
-    border-color: rgba(15,23,42,.15);
+    border-color: rgba(0,0,0,.15);
 }
 
 .st-btn-danger {
     color: var(--st-error-text);
-    border-color: rgba(239,68,68,.2);
+    border-color: rgba(220,38,38,.2);
 }
 
 .st-btn-danger:hover {
@@ -692,8 +683,13 @@
     transition: background var(--st-transition);
 }
 
-.st-log-table tbody tr:last-child { border-bottom: none; }
-.st-log-table tbody tr:hover      { background: var(--st-bg); }
+.st-log-table tbody tr:last-child {
+    border-bottom: none;
+}
+
+.st-log-table tbody tr:hover {
+    background: var(--st-bg);
+}
 
 .st-log-table td {
     padding: 10px 14px;
@@ -812,19 +808,21 @@
     align-items: flex-start;
     gap: 10px;
     padding: 12px 16px;
-    background: #0f172a;
+    background: var(--st-header-from);
     color: #fff;
     border-radius: var(--st-radius);
-    box-shadow: 0 8px 24px rgba(0,0,0,.25);
+    box-shadow: 0 8px 24px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.06);
     font-size: .8125rem;
     min-width: 260px;
     max-width: 360px;
     pointer-events: all;
+    border: 1px solid rgba(14,165,160,.2);
     animation: st-toast-in .25s cubic-bezier(0.16,1,0.3,1) forwards;
-    border: 1px solid rgba(255,255,255,.06);
 }
 
-.st-toast.is-leaving { animation: st-toast-out .2s ease-in forwards; }
+.st-toast.is-leaving {
+    animation: st-toast-out .2s ease-in forwards;
+}
 
 .st-toast-icon {
     width: 16px;
@@ -838,8 +836,8 @@
     stroke-linejoin: round;
 }
 
-.st-toast-success .st-toast-icon { color: var(--st-success); }
-.st-toast-error   .st-toast-icon { color: var(--st-error); }
+.st-toast-success .st-toast-icon { color: #34d399; }
+.st-toast-error   .st-toast-icon { color: #f87171; }
 .st-toast-info    .st-toast-icon { color: var(--st-brand); }
 
 .st-toast-body  { flex: 1; }
@@ -850,6 +848,7 @@
     from { opacity: 0; transform: translateY(12px) scale(.96); }
     to   { opacity: 1; transform: translateY(0)     scale(1); }
 }
+
 @keyframes st-toast-out {
     from { opacity: 1; transform: translateY(0); }
     to   { opacity: 0; transform: translateY(8px); }
@@ -1031,10 +1030,10 @@
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   14. DASHBOARD TWO-COLUMN GRID
-   (was inline style — moved here so responsive breakpoint works)
+   14. DASHBOARD TWO-COLUMN LAYOUT
+   (replaces the inline style on the grid wrapper in dashboard.php)
 ───────────────────────────────────────────────────────────────── */
-.st-dashboard-layout {
+.st-dashboard-grid {
     display: grid;
     grid-template-columns: 1fr 320px;
     gap: 16px;
@@ -1056,7 +1055,8 @@
    16. RESPONSIVE
 ───────────────────────────────────────────────────────────────── */
 @media screen and (max-width: 1024px) {
-    .st-dashboard-layout {
+    /* Stack the dashboard grid on medium screens */
+    .st-dashboard-grid {
         grid-template-columns: 1fr;
     }
 }
@@ -1065,14 +1065,14 @@
     .st-kpi-grid          { grid-template-columns: repeat(2, 1fr); }
     .st-platform-grid     { grid-template-columns: 1fr; }
     .st-page-header       { padding: 16px 18px; }
+    .st-logo-img          { width: 36px; height: 36px; }
     .st-log-filters       { display: none; }
     #servertrack-wrap     { margin-right: 10px; }
-    .st-dashboard-layout  { grid-template-columns: 1fr; }
-    .st-logo-wrap         { width: 38px; height: 38px; }
+    .st-dashboard-grid    { grid-template-columns: 1fr; }
 }
 
 @media screen and (max-width: 480px) {
-    .st-kpi-grid { grid-template-columns: 1fr; }
-    .st-page-title-group h1 { font-size: 1.1rem; }
-    .st-header-badges { display: none; }
+    .st-kpi-grid          { grid-template-columns: 1fr; }
+    .st-page-title-group h1 { font-size: 1.05rem; }
+    .st-header-badges     { display: none; }
 }

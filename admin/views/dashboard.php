@@ -2,11 +2,17 @@
 /**
  * ServerTrack — Dashboard Overview Tab
  *
- * All live data is fetched client-side via AJAX.
- * This file renders the skeleton HTML only.
+ * Shown as the first tab when the plugin admin page loads.
+ * All live data (KPIs, activity) is fetched client-side via
+ * AJAX (servertrack_get_dashboard_stats) so this file only
+ * renders the skeleton HTML — no PHP data loops needed.
+ *
+ * v2.3: Replaced inline grid style with .st-dashboard-grid class
+ *        so the responsive breakpoint in admin.css fires correctly.
  */
 if ( ! defined( 'ABSPATH' ) ) exit;
 
+// Quick config check for header badges
 $st_meta_configured   = get_option( 'servertrack_meta_enabled', 0 )
                         && get_option( 'servertrack_meta_pixel_id', '' )
                         && get_option( 'servertrack_meta_access_token', '' );
@@ -21,7 +27,7 @@ $st_tiktok_configured = get_option( 'servertrack_tiktok_enabled', 0 )
 <div class="st-kpi-grid" id="st-kpi-grid">
 
     <div class="st-kpi-card">
-        <div class="st-kpi-icon st-kpi-icon-blue">
+        <div class="st-kpi-icon st-kpi-icon-teal">
             <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
         </div>
         <div class="st-kpi-value" id="st-kpi-total">
@@ -60,7 +66,7 @@ $st_tiktok_configured = get_option( 'servertrack_tiktok_enabled', 0 )
     </div>
 
     <div class="st-kpi-card">
-        <div class="st-kpi-icon st-kpi-icon-blue">
+        <div class="st-kpi-icon st-kpi-icon-amber">
             <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
         </div>
         <div class="st-kpi-value" id="st-kpi-rate">
@@ -69,14 +75,15 @@ $st_tiktok_configured = get_option( 'servertrack_tiktok_enabled', 0 )
         <div class="st-kpi-label" id="st-kpi-label-rate">
             <div class="st-skeleton st-skeleton-kpi-label"></div>
         </div>
-        <div class="st-kpi-trend st-kpi-trend-info"></div>
+        <div class="st-kpi-trend st-kpi-trend-amber"></div>
     </div>
 
 </div><!-- /.st-kpi-grid -->
 
 <!-- Two-column layout: Platform Health + Activity Feed -->
-<!-- NOTE: Layout handled by .st-dashboard-layout in admin.css (responsive-ready) -->
-<div class="st-dashboard-layout">
+<!-- v2.3 FIX: use .st-dashboard-grid class (responsive breakpoints in admin.css)
+     instead of the previous raw inline style that had no mobile fallback -->
+<div class="st-dashboard-grid">
 
     <!-- Platform Health Cards -->
     <div>
@@ -202,4 +209,4 @@ $st_tiktok_configured = get_option( 'servertrack_tiktok_enabled', 0 )
         </ul>
     </div>
 
-</div><!-- /.st-dashboard-layout -->
+</div><!-- /.st-dashboard-grid -->
