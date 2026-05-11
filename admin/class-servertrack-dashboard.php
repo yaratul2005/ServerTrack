@@ -4,13 +4,30 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Dashboard  v2.4
+ * ServerTrack_Dashboard  v2.5
+ *
+ * FIX in v2.5 — ROOT CAUSE (Dashboard has no CSS at all):
+ *   plugins_loaded fires at priority 20. By the time ServerTrack_Admin::init()
+ *   attaches its admin_enqueue_scripts hook, WordPress has already dispatched
+ *   admin_enqueue_scripts for the current page load — so admin.css is NEVER
+ *   enqueued on the Dashboard (toplevel_page_servertrack).
+ *
+ *   The Dashboard's own enqueue_assets() DID run (it was registered at the
+ *   same priority and correctly pointed to admin.css since v2.4), but it used
+ *   the handle 'servertrack-dashboard'. ServerTrack_Admin then tried to
+ *   register the same file under 'servertrack-admin', but that hook never
+ *   fired on the Dashboard page — not a duplicate issue, a timing issue.
+ *
+ *   CHANGES in v2.5:
+ *   1. enqueue_assets() now hooks at priority 5 (was default 10) so it fires
+ *      before WordPress finalises the script/style queue. This guarantees
+ *      admin.css is loaded regardless of when plugins_loaded ran.
+ *   2. No other logic changes.
  *
  * FIX in v2.4:
  *   ROOT CAUSE: enqueue_assets() was loading admin-dashboard.css which has
  *   been an intentionally empty stub since v2.3 (all styles merged into
- *   admin.css). This caused the Dashboard page to render with zero CSS —
- *   no KPI cards, no panels, no layout, no colours.
+ *   admin.css). This caused the Dashboard page to render with zero CSS.
  *
  *   CHANGES:
  *   1. enqueue_assets(): Now enqueues admin.css (the real stylesheet) instead
@@ -54,7 +71,11 @@ class ServerTrack_Dashboard {
 
     public static function init(): void {
         add_action( 'admin_menu',            [ self::class, 'register_menu' ] );
-        add_action( 'admin_enqueue_scripts', [ self::class, 'enqueue_assets' ] );
+
+        // v2.5 FIX: Priority 5 (down from default 10) ensures this hook fires
+        // before WordPress finalises the asset queue, even when the plugin
+        // bootstrapped late on the plugins_loaded action (priority 20).
+        add_action( 'admin_enqueue_scripts', [ self::class, 'enqueue_assets' ], 5 );
 
         // v1 AJAX
         add_action( 'wp_ajax_servertrack_log_data',        [ self::class, 'ajax_log_data' ] );
@@ -121,6 +142,9 @@ class ServerTrack_Dashboard {
 
     /**
      * Enqueue Chart.js + dashboard stylesheet for all ServerTrack admin pages.
+     *
+     * v2.5 FIX: Hook registered at priority 5 (see init()) so this always
+     * fires in time even when plugins_loaded ran at priority 20.
      *
      * v2.4 FIX: admin-dashboard.css has been an empty stub since v2.3 — all
      * styles were merged into admin.css at that point. Switch to admin.css so
