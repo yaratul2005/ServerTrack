@@ -4,37 +4,37 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Admin — v2.2
+ * ServerTrack_Admin — v3.0
+ *
+ * Changes in v3.0 (Frontend Redesign):
+ *   - render_page_header(): Replaced generic SVG bolt icon with branded
+ *     bglogo.png image (assets/logo/bglogo.png). Uses .st-logo-wrap <img>
+ *     pattern so the transparent PNG renders on the dark header gradient.
+ *   - enqueue_assets(): Added wp_enqueue_style() for admin-dashboard.css
+ *     (now a no-op stub — all styles unified in admin.css v3.0).
+ *   - Brand colour updated from #6c63ff (violet) to #0ea5a0 (teal) via
+ *     CSS custom property --st-brand in admin.css. PHP-side colour refs
+ *     are CSS-variable-driven; no PHP changes needed.
  *
  * Changes in v2.2:
- *   - CRITICAL FIX: All internal URLs updated from
- *     options-general.php?page=servertrack  (old Settings submenu)
- *     to admin.php?page=servertrack-settings  (current top-level submenu).
- *     The old URL caused WordPress to redirect users to the Dashboard
- *     whenever they clicked any tab, Configure link, or OAuth redirect.
- *   - register_menu(): Removed stale add_options_page() registration.
- *     The menu is now registered exclusively by ServerTrack_Dashboard.
- *   - enqueue_assets(): Hook check updated to match the new page hook
- *     'servertrack_page_servertrack-settings'.
- *   - handle_oauth_callback() / handle_oauth_revoke(): All wp_safe_redirect()
- *     calls updated to admin.php?page=servertrack-settings&tab=google.
- *   - render_page(): Tab hrefs updated to admin.php?page=servertrack-settings&tab=...
- *   - render_health_notice(): All settings URLs updated.
- *   - Added ST_SETTINGS_URL helper constant for DRY URL construction.
+ *   - All internal URLs updated from options-general.php?page=servertrack
+ *     to admin.php?page=servertrack-settings (current top-level submenu).
+ *   - register_menu() removed — handled by ServerTrack_Dashboard.
+ *   - enqueue_assets() hook check updated.
+ *   - handle_oauth_callback() / handle_oauth_revoke() redirect URLs fixed.
+ *   - render_page() tab hrefs updated.
+ *   - render_health_notice() settings URLs updated.
+ *   - ST_SETTINGS_URL helper constant added.
  *
  * Changes in v2.1:
- *   - register_settings(): added servertrack_source_abandonment_enabled and
- *     servertrack_abandonment_window_minutes to the sources option group.
+ *   - register_settings(): added servertrack_source_abandonment_enabled
+ *     and servertrack_abandonment_window_minutes.
  *
- * Changes from v1 → v2.0 (Dashboard overhaul):
- *   - New 'dashboard' tab, AJAX handler, dark gradient header strip.
+ * Changes in v2.0:
+ *   - New 'dashboard' tab, AJAX handler, dark gradient header.
  */
 class ServerTrack_Admin {
 
-    /**
-     * Map: tab slug => option group name.
-     * Single source of truth — views call settings_fields() with the matching group.
-     */
     const TAB_GROUPS = [
         'general' => 'servertrack_general_settings',
         'meta'    => 'servertrack_meta_settings',
@@ -43,10 +43,6 @@ class ServerTrack_Admin {
         'sources' => 'servertrack_sources_settings',
     ];
 
-    /**
-     * Base URL for the Settings sub-page.
-     * Use this instead of hardcoding options-general.php or admin.php anywhere.
-     */
     private static function settings_url( string $tab = '', array $extra = [] ): string {
         $args = array_merge( [ 'page' => 'servertrack-settings' ], $extra );
         if ( $tab !== '' ) {
@@ -56,9 +52,6 @@ class ServerTrack_Admin {
     }
 
     public static function init() {
-        // NOTE: Menu registration is handled by ServerTrack_Dashboard::register_menu().
-        // ServerTrack_Admin::register_menu() is intentionally removed in v2.2 to
-        // avoid registering a duplicate/stale entry under Settings → Settings.
         add_action( 'admin_init',            [ self::class, 'register_settings' ] );
         add_action( 'admin_init',            [ self::class, 'handle_oauth_callback' ] );
         add_action( 'admin_init',            [ self::class, 'handle_oauth_revoke' ] );
@@ -74,29 +67,30 @@ class ServerTrack_Admin {
     // Assets
     // ─────────────────────────────────────────────────────────────────
 
-    /**
-     * Enqueue admin CSS + JS.
-     *
-     * The Settings sub-page is registered under the ServerTrack top-level menu,
-     * so its hook slug is 'servertrack_page_servertrack-settings', NOT
-     * 'settings_page_servertrack' (which only fires for pages registered via
-     * add_options_page()). We match both to be safe, and also accept the
-     * top-level dashboard hook.
-     */
     public static function enqueue_assets( string $hook ) {
         $allowed_hooks = [
-            'settings_page_servertrack',            // legacy / fallback
-            'servertrack_page_servertrack-settings', // current top-level submenu
-            'toplevel_page_servertrack',             // dashboard top-level
+            'settings_page_servertrack',
+            'servertrack_page_servertrack-settings',
+            'toplevel_page_servertrack',
         ];
         if ( ! in_array( $hook, $allowed_hooks, true ) ) return;
 
+        // Primary stylesheet — all tokens + components unified
         wp_enqueue_style(
             'servertrack-admin',
             SERVERTRACK_URL . 'admin/assets/admin.css',
             [],
             SERVERTRACK_VERSION
         );
+
+        // Dashboard stylesheet stub (no-op, kept for backwards compatibility)
+        wp_enqueue_style(
+            'servertrack-admin-dashboard',
+            SERVERTRACK_URL . 'admin/assets/admin-dashboard.css',
+            [ 'servertrack-admin' ],
+            SERVERTRACK_VERSION
+        );
+
         wp_enqueue_script(
             'servertrack-admin',
             SERVERTRACK_URL . 'admin/assets/admin.js',
@@ -104,9 +98,11 @@ class ServerTrack_Admin {
             SERVERTRACK_VERSION,
             true
         );
+
         wp_localize_script( 'servertrack-admin', 'servertrack_admin', [
-            'ajax_url' => admin_url( 'admin-ajax.php' ),
-            'nonce'    => wp_create_nonce( 'servertrack_admin_nonce' ),
+            'ajax_url'  => admin_url( 'admin-ajax.php' ),
+            'nonce'     => wp_create_nonce( 'servertrack_admin_nonce' ),
+            'logo_url'  => SERVERTRACK_URL . 'assets/logo/bglogo.png',
             'platforms' => [
                 'meta'   => [
                     'enabled'    => (bool) get_option( 'servertrack_meta_enabled', 0 ),
@@ -136,15 +132,13 @@ class ServerTrack_Admin {
 
     public static function register_settings() {
 
-        // ── General tab ────────────────────────────────────────────
         $general_options = [
-            'servertrack_enabled'      => [ 'type' => 'integer', 'sanitize' => 'absint',                              'default' => 1      ],
-            'servertrack_test_mode'    => [ 'type' => 'integer', 'sanitize' => 'absint',                              'default' => 0      ],
+            'servertrack_enabled'      => [ 'type' => 'integer', 'sanitize' => 'absint',                                  'default' => 1      ],
+            'servertrack_test_mode'    => [ 'type' => 'integer', 'sanitize' => 'absint',                                  'default' => 0      ],
             'servertrack_consent_mode' => [ 'type' => 'string',  'sanitize' => [ self::class, 'sanitize_consent_mode' ], 'default' => 'none' ],
         ];
         self::register_group( 'servertrack_general_settings', $general_options );
 
-        // ── Meta CAPI tab ──────────────────────────────────────────
         $meta_options = [
             'servertrack_meta_enabled'         => [ 'type' => 'integer', 'sanitize' => 'absint',              'default' => 0  ],
             'servertrack_meta_pixel_id'        => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
@@ -153,7 +147,6 @@ class ServerTrack_Admin {
         ];
         self::register_group( 'servertrack_meta_settings', $meta_options );
 
-        // ── Google Ads tab ─────────────────────────────────────────
         $google_options = [
             'servertrack_google_enabled'         => [ 'type' => 'integer', 'sanitize' => 'absint',              'default' => 0  ],
             'servertrack_google_customer_id'     => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
@@ -167,7 +160,6 @@ class ServerTrack_Admin {
         ];
         self::register_group( 'servertrack_google_settings', $google_options );
 
-        // ── TikTok Events tab ─────────────────────────────────────
         $tiktok_options = [
             'servertrack_tiktok_enabled'      => [ 'type' => 'integer', 'sanitize' => 'absint',              'default' => 0  ],
             'servertrack_tiktok_pixel_id'     => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
@@ -175,7 +167,6 @@ class ServerTrack_Admin {
         ];
         self::register_group( 'servertrack_tiktok_settings', $tiktok_options );
 
-        // ── Sources tab ─────────────────────────────────────────────
         $sources_options = [
             'servertrack_source_woo_enabled'         => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1  ],
             'servertrack_source_cf7_enabled'         => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
@@ -259,10 +250,7 @@ class ServerTrack_Admin {
 
         $client_id     = get_option( 'servertrack_google_client_id', '' );
         $client_secret = get_option( 'servertrack_google_client_secret', '' );
-
-        // Redirect URI must exactly match what was registered in Google Cloud Console.
-        // It now points to admin.php?page=servertrack-settings&tab=google.
-        $redirect_uri = self::settings_url( 'google' );
+        $redirect_uri  = self::settings_url( 'google' );
 
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         $code = sanitize_text_field( wp_unslash( $_GET['code'] ) );
@@ -343,14 +331,13 @@ class ServerTrack_Admin {
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         $active_tab = isset( $_GET['tab'] ) ? sanitize_text_field( wp_unslash( $_GET['tab'] ) ) : 'general';
 
-        // Validate against known tabs; fall back to 'general' on invalid input.
         $tabs = [
-            'general' => __( 'General', 'servertrack' ),
-            'meta'    => __( 'Meta CAPI', 'servertrack' ),
-            'google'  => __( 'Google Ads', 'servertrack' ),
-            'tiktok'  => __( 'TikTok Events', 'servertrack' ),
-            'sources' => __( 'Sources', 'servertrack' ),
-            'debug'   => __( 'Debug Log', 'servertrack' ),
+            'general' => __( 'General',      'servertrack' ),
+            'meta'    => __( 'Meta CAPI',    'servertrack' ),
+            'google'  => __( 'Google Ads',   'servertrack' ),
+            'tiktok'  => __( 'TikTok Events','servertrack' ),
+            'sources' => __( 'Sources',      'servertrack' ),
+            'debug'   => __( 'Debug Log',    'servertrack' ),
         ];
         if ( ! array_key_exists( $active_tab, $tabs ) ) {
             $active_tab = 'general';
@@ -408,21 +395,39 @@ class ServerTrack_Admin {
         <?php
     }
 
+    /**
+     * Renders the dark branded page header with bglogo.png.
+     *
+     * v3.0: Replaced the SVG lightning-bolt placeholder with the real
+     * bglogo.png (transparent PNG). The .st-logo-wrap container handles
+     * sizing and a subtle frosted-glass background so the logo reads
+     * clearly on the dark gradient header regardless of its colour.
+     */
     private static function render_page_header() {
-        $meta_ok   = get_option( 'servertrack_meta_enabled', 0 ) && get_option( 'servertrack_meta_pixel_id', '' ) && get_option( 'servertrack_meta_access_token', '' );
-        $google_ok = get_option( 'servertrack_google_enabled', 0 ) && get_option( 'servertrack_google_refresh_token', '' );
-        $tiktok_ok = get_option( 'servertrack_tiktok_enabled', 0 ) && get_option( 'servertrack_tiktok_pixel_id', '' ) && get_option( 'servertrack_tiktok_access_token', '' );
+        $meta_ok   = get_option( 'servertrack_meta_enabled', 0 )
+                     && get_option( 'servertrack_meta_pixel_id', '' )
+                     && get_option( 'servertrack_meta_access_token', '' );
+        $google_ok = get_option( 'servertrack_google_enabled', 0 )
+                     && get_option( 'servertrack_google_refresh_token', '' );
+        $tiktok_ok = get_option( 'servertrack_tiktok_enabled', 0 )
+                     && get_option( 'servertrack_tiktok_pixel_id', '' )
+                     && get_option( 'servertrack_tiktok_access_token', '' );
+
+        $logo_url = esc_url( SERVERTRACK_URL . 'assets/logo/bglogo.png' );
         ?>
         <div class="st-page-header">
             <div class="st-page-header-left">
-                <div class="st-logo-icon">
-                    <svg viewBox="0 0 24 24">
-                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-                    </svg>
+                <div class="st-logo-wrap">
+                    <img src="<?php echo $logo_url; ?>"
+                         alt="<?php esc_attr_e( 'ServerTrack', 'servertrack' ); ?>"
+                         width="36"
+                         height="36"
+                         loading="eager"
+                         decoding="async">
                 </div>
                 <div class="st-page-title-group">
                     <h1><?php esc_html_e( 'ServerTrack', 'servertrack' ); ?></h1>
-                    <p><?php esc_html_e( 'Server-side event tracking — Meta CAPI • Google Ads • TikTok Events', 'servertrack' ); ?></p>
+                    <p><?php esc_html_e( 'Server-side event tracking — Meta CAPI · Google Ads · TikTok Events', 'servertrack' ); ?></p>
                 </div>
             </div>
             <div class="st-header-badges">
@@ -436,7 +441,7 @@ class ServerTrack_Admin {
                     <span class="st-badge st-badge-tiktok"><span class="st-badge-dot"></span> TikTok</span>
                 <?php endif; ?>
                 <?php if ( ! $meta_ok && ! $google_ok && ! $tiktok_ok ) : ?>
-                    <span class="st-badge" style="background:rgba(255,255,255,.1);color:rgba(255,255,255,.5)">
+                    <span class="st-badge" style="background:rgba(255,255,255,.1);color:rgba(255,255,255,.45);">
                         <?php esc_html_e( 'No platforms active', 'servertrack' ); ?>
                     </span>
                 <?php endif; ?>
@@ -452,7 +457,6 @@ class ServerTrack_Admin {
     public static function render_health_notice() {
         if ( ! current_user_can( 'manage_options' ) ) return;
         $screen = get_current_screen();
-        // Suppress the banner on our own Settings page (either hook slug).
         if ( $screen && in_array( $screen->id, [
             'settings_page_servertrack',
             'servertrack_page_servertrack-settings',
