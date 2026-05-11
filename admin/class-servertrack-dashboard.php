@@ -4,7 +4,24 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Dashboard  v2.9
+ * ServerTrack_Dashboard  v3.0
+ *
+ * FIX in v3.0 — Removed premature wp_localize_script call from enqueue_assets().
+ *
+ *   ROOT CAUSE: enqueue_assets() was hooked at priority 5, before
+ *   ServerTrack_Admin::enqueue_assets() (priority 10) had a chance to
+ *   register the 'servertrack-admin' script handle. wp_localize_script()
+ *   silently no-ops when the handle doesn't exist yet, so the
+ *   servertrack_admin JS object was undefined on the Dashboard page —
+ *   breaking every AJAX call: auto-refresh, Clear Log, and Drain Retries.
+ *
+ *   FIX: Removed the wp_localize_script() call from this class entirely.
+ *   ServerTrack_Admin::enqueue_assets() already runs at priority 10 and
+ *   correctly registers + localises 'servertrack-admin' with the full
+ *   platform config. No duplication needed.
+ *
+ *   Also tightened the hook allowlist to match ServerTrack_Admin exactly,
+ *   so Chart.js is only loaded on ServerTrack admin pages.
  *
  * FIX in v2.9 — HTML class names realigned with admin.css selectors:
  *   1.  st-kpi-card  → st-kpi        (CSS §17 defines .st-kpi)
@@ -103,10 +120,22 @@ class ServerTrack_Dashboard {
     }
 
     /**
-     * Enqueue Chart.js + admin stylesheet for all ServerTrack admin pages.
+     * Enqueue Chart.js for all ServerTrack admin pages.
+     *
+     * v3.0 FIX: Removed the wp_localize_script( 'servertrack-admin', … ) call
+     * that previously lived here. It ran at priority 5 — before
+     * ServerTrack_Admin::enqueue_assets() (priority 10) registered the
+     * 'servertrack-admin' handle — so wp_localize_script silently no-oped and
+     * the servertrack_admin JS object was always undefined on the Dashboard.
+     * ServerTrack_Admin::enqueue_assets() already handles localisation correctly.
      */
     public static function enqueue_assets( string $hook ): void {
-        if ( strpos( $hook, 'servertrack' ) === false ) return;
+        $allowed_hooks = [
+            'settings_page_servertrack',             // legacy / fallback
+            'servertrack_page_servertrack-settings', // Settings submenu
+            'toplevel_page_servertrack',             // Dashboard top-level
+        ];
+        if ( ! in_array( $hook, $allowed_hooks, true ) ) return;
 
         wp_enqueue_script(
             'chart-js',
@@ -123,11 +152,9 @@ class ServerTrack_Dashboard {
             SERVERTRACK_VERSION
         );
 
-        // v2.7 FIX: Localise nonce for admin.js so cfg.nonce is defined.
-        wp_localize_script( 'servertrack-admin', 'servertrack_admin', [
-            'ajax_url' => admin_url( 'admin-ajax.php' ),
-            'nonce'    => wp_create_nonce( 'servertrack_admin_nonce' ),
-        ] );
+        // NOTE: wp_localize_script for 'servertrack-admin' intentionally
+        // removed here (v3.0). ServerTrack_Admin::enqueue_assets() runs at
+        // priority 10 and registers + localises the handle correctly.
     }
 
     // ────────────────────────────────────────────────────────────────────────
