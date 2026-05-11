@@ -85,17 +85,23 @@ function servertrack_load_classes(): void {
     // ── Admin ─────────────────────────────────────────────────────────────────────
     if ( is_admin() ) {
         require_once SERVERTRACK_DIR . 'admin/class-servertrack-dashboard.php';
-        // FIX: load the actual admin/settings class (ServerTrack_Admin)
         require_once SERVERTRACK_DIR . 'admin/class-servertrack-admin.php';
     }
 }
 
 /**
  * Initialise all plugin components.
- * Called on plugins_loaded to ensure WooCommerce is available.
+ *
+ * FIX-BUG-15: Priority changed from 5 → 20 so WooCommerce (which loads at
+ * priority 10) is always available before ServerTrack sources hook in.
  */
 function servertrack_init(): void {
     servertrack_load_classes();
+
+    // FIX-BUG-16: Ensure any new options added in v6.0 are registered for
+    // users who upgraded without a fresh install (add_option is a no-op when
+    // the key already exists, so this is always safe to run).
+    servertrack_maybe_upgrade();
 
     // Core infrastructure
     ServerTrack_Identity::init();
@@ -116,24 +122,60 @@ function servertrack_init(): void {
     // Admin
     if ( is_admin() ) {
         ServerTrack_Dashboard::init();
-        // FIX: ServerTrack_Admin is the real settings class
         ServerTrack_Admin::init();
     }
 }
-add_action( 'plugins_loaded', 'servertrack_init', 5 );
+// FIX-BUG-15: Was priority 5 — WooCommerce loads at 10, so we must be >= 10.
+add_action( 'plugins_loaded', 'servertrack_init', 20 );
+
+/**
+ * FIX-BUG-16: Register any options that may be missing for users who upgraded
+ * from an older version without re-running the activation hook.
+ * add_option() is a no-op when the option already exists.
+ */
+function servertrack_maybe_upgrade(): void {
+    // Core
+    add_option( 'servertrack_enabled',           1 );
+    add_option( 'servertrack_debug_mode',         0 );
+    add_option( 'servertrack_debug_log',          [] );
+    add_option( 'servertrack_retry_queue',        [] );
+
+    // FIX-BUG-03: Platform enable flags — were missing from activation hook
+    add_option( 'servertrack_meta_enabled',       0 );
+    add_option( 'servertrack_tiktok_enabled',     0 );
+    add_option( 'servertrack_google_enabled',     0 );
+
+    // v6.0 webhook options
+    add_option( 'servertrack_webhook_enabled',    0 );
+    add_option( 'servertrack_webhook_url',        '' );
+    add_option( 'servertrack_webhook_secret',     '' );
+    add_option( 'servertrack_webhook_events',     '' );
+}
 
 /**
  * Plugin activation: set default options.
+ *
+ * FIX-BUG-03: Added registration of all three platform enable flags
+ * (servertrack_meta_enabled, servertrack_tiktok_enabled, servertrack_google_enabled)
+ * which were previously missing, causing get_option() to return an empty
+ * string (falsy) instead of integer 0.
  */
 register_activation_hook( __FILE__, function (): void {
-    add_option( 'servertrack_enabled',         1 );
-    add_option( 'servertrack_debug_mode',       0 );
-    add_option( 'servertrack_debug_log',        [] );
-    add_option( 'servertrack_retry_queue',      [] );
-    add_option( 'servertrack_webhook_enabled',  0 );
-    add_option( 'servertrack_webhook_url',      '' );
-    add_option( 'servertrack_webhook_secret',   '' );
-    add_option( 'servertrack_webhook_events',   '' );
+    add_option( 'servertrack_enabled',           1 );
+    add_option( 'servertrack_debug_mode',         0 );
+    add_option( 'servertrack_debug_log',          [] );
+    add_option( 'servertrack_retry_queue',        [] );
+
+    // FIX-BUG-03: Register platform enable flags.
+    add_option( 'servertrack_meta_enabled',       0 );
+    add_option( 'servertrack_tiktok_enabled',     0 );
+    add_option( 'servertrack_google_enabled',     0 );
+
+    // v6.0 webhook options
+    add_option( 'servertrack_webhook_enabled',    0 );
+    add_option( 'servertrack_webhook_url',        '' );
+    add_option( 'servertrack_webhook_secret',     '' );
+    add_option( 'servertrack_webhook_events',     '' );
 } );
 
 /**
@@ -144,6 +186,11 @@ register_activation_hook( __FILE__, function (): void {
  *   wp_options across deactivation/re-activation cycles, causing stale events
  *   to fire immediately on re-activation — potentially double-sending conversions
  *   that had already been delivered before deactivation.
+ *
+ * FIX-BUG-06: Delete all sensitive API credential options on deactivation
+ *   so tokens and secrets are not left sitting in wp_options after the plugin
+ *   is turned off.  Permanent uninstall cleanup is handled by uninstall.php;
+ *   this covers the deactivate-then-reactivate security window.
  */
 register_deactivation_hook( __FILE__, function (): void {
     $hooks = [
@@ -164,4 +211,17 @@ register_deactivation_hook( __FILE__, function (): void {
 
     // FIX-09: Purge the retry queue so stale events don't re-fire on re-activation.
     delete_option( 'servertrack_retry_queue' );
+
+    // FIX-BUG-06: Remove sensitive API credentials from the database.
+    // These are re-entered by the admin after re-activation.
+    $credential_options = [
+        'servertrack_meta_access_token',
+        'servertrack_tiktok_access_token',
+        'servertrack_google_refresh_token',
+        'servertrack_google_access_token',
+        'servertrack_webhook_secret',
+    ];
+    foreach ( $credential_options as $opt ) {
+        delete_option( $opt );
+    }
 } );

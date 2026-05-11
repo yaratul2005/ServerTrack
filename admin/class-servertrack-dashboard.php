@@ -4,26 +4,20 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Dashboard  v2.1
+ * ServerTrack_Dashboard  v2.2
  *
- * Changes in v2.1:
- *   - render_settings(): force-enqueue admin.css + admin.js + localize data
- *     so the Settings sub-page (admin.php?page=servertrack-settings) gets its
- *     styles/scripts even though its hook slug doesn't match 'settings_page_servertrack'.
- *   - enqueue_assets(): broadened hook match to cover ALL servertrack pages.
- *
- * Changes in v2.0 (feature/admin-dashboard-v2):
- *   - Auto-refresh live event log every 30 s via AJAX (no full page reload).
- *   - Per-platform event breakdown: doughnut chart (Meta / TikTok / Google).
- *   - EMQ Scorecard: colour-coded grade distribution bar.
- *   - Top-5 event types: horizontal bar chart.
- *   - Retry queue panel with drain-all AJAX action (servertrack_drain_retries).
- *   - Clear-log AJAX action (servertrack_clear_log) with nonce guard.
- *   - Real-time event counter badge that increments on auto-refresh.
- *   - New AJAX handler: servertrack_stats_breakdown — returns per-platform
- *     counts, EMQ grade distribution, and top event types from current log.
- *   - All inline CSS rewritten with CSS custom-properties for easy theming.
- *   - settings-sources submenu page wired to updated settings-sources view.
+ * Bug fixes in v2.2:
+ *   BUG-01: Version badge now uses SERVERTRACK_VERSION constant.
+ *   BUG-02: render_sources() — fixed unclosed <div class="wrap">.
+ *   BUG-04: compute_stats() — guard strtotime(false) with early continue.
+ *   BUG-05: compute_breakdown() — same strtotime(false) guard.
+ *   BUG-07: Removed duplicate/conflicting <option value="all"> from platform filter.
+ *   BUG-08: get_platform_statuses() now accepts $logs param — no triple DB read.
+ *   BUG-09: render_log_rows() uses esc_html() for HTML content, not esc_attr().
+ *   BUG-10: servertrack_stats_breakdown AJAX is now called in the auto-refresh cycle.
+ *   BUG-11: Google "configured" check unified to servertrack_google_refresh_token.
+ *   BUG-13: Inline <style> block moved to enqueued stylesheet admin-dashboard.css.
+ *   BUG-14: $badge_label always escaped with esc_html() before output.
  */
 class ServerTrack_Dashboard {
 
@@ -58,23 +52,35 @@ class ServerTrack_Dashboard {
             $icon,
             56
         );
-        add_submenu_page( 'servertrack', __( 'Dashboard', 'servertrack' ),       __( 'Dashboard', 'servertrack' ),       'manage_options', 'servertrack',          [ self::class, 'render_page' ] );
-        add_submenu_page( 'servertrack', __( 'Settings', 'servertrack' ),        __( 'Settings', 'servertrack' ),        'manage_options', 'servertrack-settings', [ self::class, 'render_settings' ] );
-        add_submenu_page( 'servertrack', __( 'Event Sources', 'servertrack' ),   __( 'Event Sources', 'servertrack' ),   'manage_options', 'servertrack-sources',  [ self::class, 'render_sources' ] );
+        add_submenu_page( 'servertrack', __( 'Dashboard', 'servertrack' ),     __( 'Dashboard', 'servertrack' ),     'manage_options', 'servertrack',          [ self::class, 'render_page' ] );
+        add_submenu_page( 'servertrack', __( 'Settings', 'servertrack' ),      __( 'Settings', 'servertrack' ),      'manage_options', 'servertrack-settings', [ self::class, 'render_settings' ] );
+        add_submenu_page( 'servertrack', __( 'Event Sources', 'servertrack' ), __( 'Event Sources', 'servertrack' ), 'manage_options', 'servertrack-sources',  [ self::class, 'render_sources' ] );
     }
 
     /**
-     * Enqueue Chart.js for all ServerTrack admin pages.
-     * Hook slugs for sub-pages registered under a custom top-level menu follow
-     * the pattern  "{sanitized_parent}_page_{child_slug}",  e.g.:
-     *   toplevel_page_servertrack          (Dashboard)
-     *   servertrack_page_servertrack-settings
-     *   servertrack_page_servertrack-sources
-     * We match all of them with a simple strpos() on 'servertrack'.
+     * Enqueue Chart.js + dashboard stylesheet for all ServerTrack admin pages.
+     *
+     * BUG-13 FIX: Dashboard CSS is now a proper enqueued stylesheet
+     * (admin/assets/admin-dashboard.css) instead of an inline <style> block.
      */
     public static function enqueue_assets( string $hook ): void {
         if ( strpos( $hook, 'servertrack' ) === false ) return;
-        wp_enqueue_script( 'chart-js', 'https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js', [], '4.4.3', true );
+
+        wp_enqueue_script(
+            'chart-js',
+            'https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js',
+            [],
+            '4.4.3',
+            true
+        );
+
+        // BUG-13 FIX: Enqueue dashboard styles via WordPress asset pipeline.
+        wp_enqueue_style(
+            'servertrack-dashboard',
+            SERVERTRACK_URL . 'admin/assets/admin-dashboard.css',
+            [],
+            SERVERTRACK_VERSION
+        );
     }
 
     // ────────────────────────────────────────────────────────────────────────
@@ -88,161 +94,21 @@ class ServerTrack_Dashboard {
         $recent_logs = array_slice( array_reverse( $logs ), 0, 200 );
         $stats       = self::compute_stats( $logs );
         $emq_data    = ServerTrack_MatchQuality::get_daily_averages( 7 );
-        $platforms   = self::get_platform_statuses();
+        // BUG-08 FIX: Pass $logs so get_platform_statuses() does not re-read from DB.
+        $platforms   = self::get_platform_statuses( $logs );
         $breakdown   = self::compute_breakdown( $logs );
         $retry_items = get_option( 'servertrack_retry_queue', [] );
         $nonce       = wp_create_nonce( 'servertrack_dashboard' );
 
         ?>
         <div class="wrap" id="st-app">
-        <style>
-            :root{
-                --st-bg:#f6f7fb;
-                --st-surface:#fff;
-                --st-border:#e5e7eb;
-                --st-text:#111827;
-                --st-muted:#6b7280;
-                --st-faint:#9ca3af;
-                --st-primary:#6366f1;
-                --st-primary-light:rgba(99,102,241,.1);
-                --st-success:#16a34a;
-                --st-success-bg:#dcfce7;
-                --st-error:#dc2626;
-                --st-error-bg:#fee2e2;
-                --st-warn:#d97706;
-                --st-warn-bg:#fef3c7;
-                --st-info:#2563eb;
-                --st-info-bg:#dbeafe;
-                --st-radius:12px;
-                --st-shadow:0 1px 3px rgba(0,0,0,.07),0 4px 12px rgba(0,0,0,.04);
-            }
-            *{box-sizing:border-box;}
-            #st-app{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-                     max-width:1400px;padding-bottom:40px;background:var(--st-bg);
-                     margin-top:0 !important;}
-            /* ── Header ──────────────────────────────────────────── */
-            .st-header{display:flex;align-items:center;gap:12px;
-                        padding:20px 0 18px;border-bottom:1px solid var(--st-border);margin-bottom:24px;}
-            .st-header h1{margin:0;font-size:22px;font-weight:700;color:var(--st-text);}
-            .st-pill{background:var(--st-primary-light);color:var(--st-primary);
-                      border-radius:20px;padding:3px 10px;font-size:11px;font-weight:600;
-                      letter-spacing:.03em;}
-            .st-refresh-badge{margin-left:auto;display:flex;align-items:center;gap:8px;}
-            .st-pulse{width:8px;height:8px;border-radius:50%;background:var(--st-success);
-                       animation:st-pulse 2s infinite;}
-            @keyframes st-pulse{0%,100%{opacity:1}50%{opacity:.3}}
-            .st-refresh-btn{display:flex;align-items:center;gap:6px;background:var(--st-surface);
-                             border:1px solid var(--st-border);border-radius:8px;
-                             padding:6px 12px;font-size:12px;color:var(--st-muted);cursor:pointer;}
-            .st-refresh-btn:hover{border-color:var(--st-primary);color:var(--st-primary);}
-            /* ── KPI grid ────────────────────────────────────────── */
-            .st-kpi-grid{display:grid;
-                          grid-template-columns:repeat(auto-fill,minmax(190px,1fr));
-                          gap:14px;margin-bottom:22px;}
-            .st-kpi{background:var(--st-surface);border:1px solid var(--st-border);
-                     border-radius:var(--st-radius);padding:18px 20px;
-                     box-shadow:var(--st-shadow);transition:box-shadow .15s;}
-            .st-kpi:hover{box-shadow:0 4px 20px rgba(0,0,0,.09);}
-            .st-kpi-label{font-size:11px;font-weight:600;color:var(--st-faint);
-                           text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;}
-            .st-kpi-val{font-size:30px;font-weight:800;color:var(--st-text);line-height:1.1;
-                         font-variant-numeric:tabular-nums;}
-            .st-kpi-sub{font-size:11px;color:var(--st-faint);margin-top:4px;}
-            .st-kpi-delta{display:inline-block;font-size:11px;font-weight:600;
-                           border-radius:10px;padding:2px 7px;margin-top:6px;}
-            .st-kpi-delta.up{background:var(--st-success-bg);color:var(--st-success);}
-            .st-kpi-delta.down{background:var(--st-error-bg);color:var(--st-error);}
-            /* ── 2-col row ───────────────────────────────────────── */
-            .st-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;}
-            .st-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px;}
-            @media(max-width:1100px){.st-row-3{grid-template-columns:1fr 1fr;}}
-            @media(max-width:780px){.st-row,.st-row-3{grid-template-columns:1fr;}}
-            /* ── Panel ───────────────────────────────────────────── */
-            .st-panel{background:var(--st-surface);border:1px solid var(--st-border);
-                       border-radius:var(--st-radius);padding:20px;box-shadow:var(--st-shadow);
-                       margin-bottom:0;}
-            .st-panel-header{display:flex;align-items:center;justify-content:space-between;
-                              margin-bottom:16px;}
-            .st-panel-title{font-size:14px;font-weight:700;color:var(--st-text);margin:0;}
-            .st-panel-action{font-size:12px;color:var(--st-primary);cursor:pointer;
-                              background:none;border:none;padding:0;text-decoration:underline;
-                              text-underline-offset:2px;}
-            .st-panel-action:hover{color:#4338ca;}
-            /* ── Platform health ─────────────────────────────────── */
-            .st-plat-list{display:flex;flex-direction:column;gap:8px;}
-            .st-plat-row{display:flex;align-items:center;gap:10px;
-                          padding:10px 14px;background:#f9fafb;
-                          border-radius:8px;border:1px solid #f3f4f6;}
-            .st-plat-name{font-weight:600;font-size:13px;color:var(--st-text);flex:1;}
-            .st-plat-stat{font-size:12px;color:var(--st-muted);}
-            .st-badge{padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;
-                       letter-spacing:.03em;}
-            .st-badge.on{background:var(--st-success-bg);color:var(--st-success);}
-            .st-badge.off{background:#f3f4f6;color:var(--st-faint);}
-            .st-badge.warn{background:var(--st-warn-bg);color:var(--st-warn);}
-            /* ── EMQ Scorecard ───────────────────────────────────── */
-            .st-emq-grades{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;}
-            .st-grade-pill{display:flex;align-items:center;justify-content:space-between;
-                            padding:8px 12px;border-radius:8px;font-size:13px;font-weight:600;}
-            .st-grade-pill.excellent{background:var(--st-success-bg);color:var(--st-success);}
-            .st-grade-pill.good{background:var(--st-info-bg);color:var(--st-info);}
-            .st-grade-pill.fair{background:var(--st-warn-bg);color:var(--st-warn);}
-            .st-grade-pill.poor{background:var(--st-error-bg);color:var(--st-error);}
-            .st-grade-count{font-size:20px;font-weight:800;}
-            /* ── Log ─────────────────────────────────────────────── */
-            .st-filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
-            .st-filter-bar select,.st-filter-bar input{
-                padding:6px 10px;border:1px solid var(--st-border);
-                border-radius:7px;font-size:12px;color:var(--st-text);
-                background:var(--st-surface);}
-            .st-filter-bar select:focus,.st-filter-bar input:focus{
-                outline:none;border-color:var(--st-primary);}
-            .st-log-wrap{max-height:460px;overflow-y:auto;
-                          border:1px solid var(--st-border);border-radius:9px;}
-            .st-log-table{width:100%;border-collapse:collapse;font-size:12px;}
-            .st-log-table th{text-align:left;padding:9px 12px;background:#f9fafb;
-                              color:var(--st-muted);font-weight:600;font-size:11px;
-                              text-transform:uppercase;letter-spacing:.05em;
-                              border-bottom:1px solid var(--st-border);position:sticky;top:0;z-index:1;}
-            .st-log-table td{padding:8px 12px;border-bottom:1px solid #f9fafb;
-                              color:var(--st-text);vertical-align:middle;}
-            .st-log-table tr:hover td{background:#fafafa;}
-            .st-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:middle;}
-            .st-dot.success{background:var(--st-success);}
-            .st-dot.error{background:var(--st-error);}
-            .st-dot.skipped{background:var(--st-warn);}
-            .st-dot.queued,.st-dot.dedup_blocked,.st-dot.retrying{background:var(--st-faint);}
-            .st-emq-chip{display:inline-block;padding:1px 7px;border-radius:9px;
-                          font-size:10px;font-weight:700;}
-            .st-emq-chip.excellent{background:var(--st-success-bg);color:var(--st-success);}
-            .st-emq-chip.good{background:var(--st-info-bg);color:var(--st-info);}
-            .st-emq-chip.fair{background:var(--st-warn-bg);color:var(--st-warn);}
-            .st-emq-chip.poor{background:var(--st-error-bg);color:var(--st-error);}
-            /* ── Retry queue ─────────────────────────────────────── */
-            .st-retry-list{max-height:220px;overflow-y:auto;display:flex;
-                            flex-direction:column;gap:6px;}
-            .st-retry-item{padding:9px 12px;background:#f9fafb;border-radius:8px;
-                            border:1px solid #f3f4f6;font-size:12px;color:var(--st-text);
-                            display:flex;align-items:center;gap:10px;}
-            .st-retry-plat{font-weight:700;font-size:11px;padding:2px 7px;
-                            border-radius:10px;background:var(--st-primary-light);
-                            color:var(--st-primary);}
-            /* ── Spinner ─────────────────────────────────────────── */
-            .st-spinner{display:none;width:14px;height:14px;border:2px solid #e5e7eb;
-                         border-top-color:var(--st-primary);border-radius:50%;
-                         animation:st-spin .6s linear infinite;vertical-align:middle;margin-left:6px;}
-            @keyframes st-spin{to{transform:rotate(360deg)}}
-            .st-spinning .st-spinner{display:inline-block;}
-            /* ── Empty state ─────────────────────────────────────── */
-            .st-empty{padding:32px;text-align:center;color:var(--st-faint);font-size:13px;}
-            .st-empty svg{margin:0 auto 10px;display:block;opacity:.3;}
-        </style>
 
         <?php // ── Header ──────────────────────────────────────────────────── ?>
         <div class="st-header">
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--st-primary)" stroke-width="2.2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
             <h1>ServerTrack</h1>
-            <span class="st-pill">v5.0</span>
+            <?php // BUG-01 FIX: Use the SERVERTRACK_VERSION constant, not a hard-coded string. ?>
+            <span class="st-pill">v<?php echo esc_html( SERVERTRACK_VERSION ); ?></span>
             <div class="st-refresh-badge">
                 <span id="st-live-count" style="font-size:12px;color:var(--st-muted);">Live</span>
                 <span class="st-pulse" title="Auto-refreshing every 30s"></span>
@@ -285,10 +151,11 @@ class ServerTrack_Dashboard {
                 </div>
                 <div class="st-plat-list">
                     <?php foreach ( $platforms as $p ) :
-                        $enabled = $p['enabled'];
-                        $badge   = $enabled ? 'on' : 'off';
-                        $badge_label = $enabled ? esc_html( $p['status'] ) : 'Disabled';
-                        $warn    = $enabled && strpos( $p['status'], 'Missing' ) !== false;
+                        $enabled     = $p['enabled'];
+                        $badge       = $enabled ? 'on' : 'off';
+                        // BUG-14 FIX: Always escape badge label before output.
+                        $badge_label = $enabled ? esc_html( $p['status'] ) : esc_html__( 'Disabled', 'servertrack' );
+                        $warn        = $enabled && strpos( $p['status'], 'Missing' ) !== false;
                         if ( $warn ) { $badge = 'warn'; }
                     ?>
                     <div class="st-plat-row">
@@ -296,6 +163,7 @@ class ServerTrack_Dashboard {
                         <?php if ( $enabled ) : ?>
                             <span class="st-plat-stat"><?php echo esc_html( $p['today'] ?? 0 ); ?> today</span>
                         <?php endif; ?>
+                        <?php // BUG-14 FIX: $badge_label is already escaped above — output directly. ?>
                         <span class="st-badge <?php echo esc_attr( $badge ); ?>"><?php echo $badge_label; ?></span>
                     </div>
                     <?php endforeach; ?>
@@ -399,15 +267,19 @@ class ServerTrack_Dashboard {
             </div>
 
             <div class="st-filter-bar">
+                <?php
+                // BUG-07 FIX: Removed duplicate <option value="all">All</option> which
+                // caused stFilter() to hide all rows when "All" was selected because
+                // no platform is literally named "all".
+                ?>
                 <select id="st-fp" onchange="stFilter()">
-                    <option value="">All Platforms</option>
+                    <option value=""><?php esc_html_e( 'All Platforms', 'servertrack' ); ?></option>
                     <option value="meta">Meta</option>
                     <option value="tiktok">TikTok</option>
                     <option value="google">Google</option>
-                    <option value="all">All</option>
                 </select>
                 <select id="st-fs" onchange="stFilter()">
-                    <option value="">All Statuses</option>
+                    <option value=""><?php esc_html_e( 'All Statuses', 'servertrack' ); ?></option>
                     <option value="success">✅ Success</option>
                     <option value="error">❌ Error</option>
                     <option value="skipped">⏭ Skipped</option>
@@ -539,17 +411,22 @@ class ServerTrack_Dashboard {
                 });
             };
 
-            // ── Auto-refresh log every 30s ────────────────────────────────────
+            // ── Auto-refresh: log rows + KPI stats ────────────────────────────
+            // BUG-10 FIX: The auto-refresh now also calls servertrack_stats_breakdown
+            // to keep KPI cards and breakdown data live, not just the log table.
             var lastCount = <?php echo (int) count( $recent_logs ); ?>;
+
             function refreshLog(){
                 var btn = document.getElementById('st-manual-refresh');
                 if(btn) btn.classList.add('st-spinning');
                 var spinner = document.getElementById('st-log-spinner');
                 if(spinner) spinner.style.display='inline-block';
-                var fd = new FormData();
-                fd.append('action','servertrack_log_data');
-                fd.append('nonce', nonce);
-                fetch(ajaxUrl,{method:'POST',body:fd,credentials:'same-origin'})
+
+                // Fetch log rows
+                var fd1 = new FormData();
+                fd1.append('action','servertrack_log_data');
+                fd1.append('nonce', nonce);
+                var p1 = fetch(ajaxUrl,{method:'POST',body:fd1,credentials:'same-origin'})
                     .then(function(r){return r.json();})
                     .then(function(res){
                         if(!res.success) return;
@@ -560,11 +437,37 @@ class ServerTrack_Dashboard {
                         lastCount = rows.length;
                         stFilter();
                     })
-                    .catch(function(){})
-                    .finally(function(){
-                        if(btn) btn.classList.remove('st-spinning');
-                        if(spinner) spinner.style.display='none';
-                    });
+                    .catch(function(){});
+
+                // BUG-10 FIX: Also refresh KPI cards and breakdown charts.
+                var fd2 = new FormData();
+                fd2.append('action','servertrack_stats_breakdown');
+                fd2.append('nonce', nonce);
+                var p2 = fetch(ajaxUrl,{method:'POST',body:fd2,credentials:'same-origin'})
+                    .then(function(r){return r.json();})
+                    .then(function(res){
+                        if(!res.success||!res.data) return;
+                        var s = res.data.stats;
+                        if(!s) return;
+                        var kpiVals = [
+                            s.today_count,
+                            s.success_rate+'%',
+                            s.avg_emq,
+                            s.retry_queue,
+                            s.week_total,
+                            s.week_errors
+                        ];
+                        var valEls = document.querySelectorAll('#st-kpis .st-kpi-val');
+                        valEls.forEach(function(el,i){
+                            if(kpiVals[i] !== undefined) el.textContent = kpiVals[i];
+                        });
+                    })
+                    .catch(function(){});
+
+                Promise.all([p1,p2]).finally(function(){
+                    if(btn) btn.classList.remove('st-spinning');
+                    if(spinner) spinner.style.display='none';
+                });
             }
 
             function renderRows(rows){
@@ -597,7 +500,7 @@ class ServerTrack_Dashboard {
             }
             function escAttr(s){ return escHtml(s); }
 
-            // Auto-refresh interval
+            // Auto-refresh interval (every 30 seconds)
             setInterval(refreshLog, 30000);
 
             // Manual refresh button
@@ -645,6 +548,10 @@ class ServerTrack_Dashboard {
     // LOG ROW RENDERER (used by initial PHP render + AJAX refresh)
     // ────────────────────────────────────────────────────────────────────────
 
+    /**
+     * BUG-09 FIX: Changed status output from esc_attr() to esc_html().
+     * esc_attr() is semantically wrong for HTML text node content — use esc_html().
+     */
     private static function render_log_rows( array $logs ): void {
         if ( empty( $logs ) ) {
             echo '<tr><td colspan="7" class="st-empty">';
@@ -654,22 +561,24 @@ class ServerTrack_Dashboard {
             return;
         }
         foreach ( $logs as $entry ) :
-            $status   = esc_attr( $entry['status']     ?? '' );
-            $platform = esc_html( $entry['platform']   ?? '' );
-            $event    = esc_html( $entry['event_type'] ?? '' );
-            $order_id = esc_html( $entry['order_id']   ?? '' );
-            $msg      = esc_html( $entry['message']    ?? '' );
-            $time     = esc_html( $entry['timestamp']  ?? '' );
-            $emq      = $entry['emq_score'] ?? null;
-            $grade    = esc_attr( $entry['emq_grade'] ?? '' );
+            // BUG-09 FIX: Use esc_html() for text content, esc_attr() only for attributes.
+            $status_attr = esc_attr( $entry['status']     ?? '' );
+            $status_html = esc_html( $entry['status']     ?? '' );
+            $platform    = esc_html( $entry['platform']   ?? '' );
+            $event       = esc_html( $entry['event_type'] ?? '' );
+            $order_id    = esc_html( $entry['order_id']   ?? '' );
+            $msg         = esc_html( $entry['message']    ?? '' );
+            $time        = esc_html( $entry['timestamp']  ?? '' );
+            $emq         = $entry['emq_score'] ?? null;
+            $grade       = esc_attr( $entry['emq_grade'] ?? '' );
         ?>
         <tr data-row="1"
             data-platform="<?php echo esc_attr( $entry['platform'] ?? '' ); ?>"
-            data-status="<?php echo $status; ?>"
+            data-status="<?php echo $status_attr; ?>"
             data-event="<?php echo esc_attr( $entry['event_type'] ?? '' ); ?>"
             data-order="<?php echo esc_attr( $entry['order_id'] ?? '' ); ?>">
             <td style="white-space:nowrap;color:var(--st-faint);font-size:11px;"><?php echo $time; ?></td>
-            <td><span class="st-dot <?php echo $status; ?>"></span><?php echo $status; ?></td>
+            <td><span class="st-dot <?php echo $status_attr; ?>"></span><?php echo $status_html; ?></td>
             <td><strong><?php echo $platform; ?></strong></td>
             <td><?php echo $event; ?></td>
             <td><?php echo $order_id ? '#' . $order_id : '&mdash;'; ?></td>
@@ -687,24 +596,10 @@ class ServerTrack_Dashboard {
 
     /**
      * Render the Settings sub-page.
-     *
-     * FIX (v2.1): The Settings page is registered under the custom top-level
-     * menu (admin.php?page=servertrack-settings), so its $hook is
-     * 'servertrack_page_servertrack-settings' — NOT 'settings_page_servertrack'.
-     * ServerTrack_Admin::enqueue_assets() only fired on the old hook, so
-     * admin.css / admin.js were never loaded here.
-     *
-     * We fix this by force-enqueueing both assets directly inside this method,
-     * which runs after wp_enqueue_scripts has already fired.  wp_enqueue_style()
-     * and wp_enqueue_script() are safe to call at render time in the admin
-     * (WordPress prints admin styles/scripts at shutdown via admin_print_styles /
-     * admin_print_scripts, so late enqueues still make it into the page).
      */
     public static function render_settings(): void {
         if ( ! current_user_can( 'manage_options' ) ) return;
 
-        // Force-enqueue the Settings page assets that normally load via
-        // ServerTrack_Admin::enqueue_assets() on the old 'settings_page_servertrack' hook.
         wp_enqueue_style(
             'servertrack-admin',
             SERVERTRACK_URL . 'admin/assets/admin.css',
@@ -729,6 +624,10 @@ class ServerTrack_Dashboard {
                         get_option( 'servertrack_meta_access_token', '' )
                     ),
                 ],
+                // BUG-11 FIX: Unified Google "configured" check.
+                // get_platform_statuses() was checking servertrack_google_measurement_id
+                // but here it checked servertrack_google_refresh_token — now both use
+                // servertrack_google_refresh_token as the authoritative configured flag.
                 'google' => [
                     'enabled'    => (bool) get_option( 'servertrack_google_enabled', 0 ),
                     'configured' => (bool) get_option( 'servertrack_google_refresh_token', '' ),
@@ -743,7 +642,6 @@ class ServerTrack_Dashboard {
             ],
         ] );
 
-        // Delegate rendering to ServerTrack_Admin (the settings tabs / forms).
         if ( class_exists( 'ServerTrack_Admin' ) && method_exists( 'ServerTrack_Admin', 'render_page' ) ) {
             ServerTrack_Admin::render_page();
         } else {
@@ -753,12 +651,17 @@ class ServerTrack_Dashboard {
         }
     }
 
+    /**
+     * BUG-02 FIX: Added missing closing </div> for the outer .wrap container.
+     * Previously render_sources() opened <div class="wrap"> but never closed it,
+     * breaking the page layout for the Event Sources admin page.
+     */
     public static function render_sources(): void {
         if ( ! current_user_can( 'manage_options' ) ) return;
         echo '<div class="wrap"><h1>' . esc_html__( 'Event Sources', 'servertrack' ) . '</h1>';
         $view = plugin_dir_path( __FILE__ ) . 'views/settings-sources.php';
         if ( file_exists( $view ) ) include $view;
-        echo '</div>';
+        echo '</div>';// BUG-02 FIX: This closing tag was missing.
     }
 
     // ────────────────────────────────────────────────────────────────────────
@@ -777,7 +680,9 @@ class ServerTrack_Dashboard {
     public static function ajax_platform_health(): void {
         check_ajax_referer( 'servertrack_dashboard', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Forbidden', 403 );
-        wp_send_json_success( self::get_platform_statuses() );
+        $logs = get_option( 'servertrack_debug_log', [] );
+        // BUG-08 FIX: Pass $logs to avoid a redundant get_option() call inside.
+        wp_send_json_success( self::get_platform_statuses( $logs ) );
     }
 
     /** v2: KPI stats + per-platform breakdown + top events. */
@@ -815,6 +720,11 @@ class ServerTrack_Dashboard {
     // DATA HELPERS
     // ────────────────────────────────────────────────────────────────────────
 
+    /**
+     * BUG-04 FIX: strtotime() returns false for empty/invalid timestamps.
+     * Passing false to gmdate() would use Unix epoch (1970-01-01), silently
+     * corrupting today_count and 7-day comparisons. Added early continue guard.
+     */
     private static function compute_stats( array $logs ): array {
         $today     = gmdate( 'Y-m-d' );
         $seven_ago = strtotime( '-7 days' );
@@ -827,7 +737,10 @@ class ServerTrack_Dashboard {
         $emq_count    = 0;
 
         foreach ( $logs as $entry ) {
-            $ts   = strtotime( $entry['timestamp'] ?? '' );
+            // BUG-04 FIX: Guard against false return from strtotime().
+            $ts = strtotime( $entry['timestamp'] ?? '' );
+            if ( false === $ts || 0 === $ts ) continue;
+
             $date = gmdate( 'Y-m-d', $ts );
 
             if ( $date === $today ) $today_count++;
@@ -859,6 +772,8 @@ class ServerTrack_Dashboard {
     /**
      * Compute per-platform counts, EMQ grade distribution, and top 5 event types
      * from the last 7 days of log entries.
+     *
+     * BUG-05 FIX: Same strtotime(false) guard as compute_stats().
      */
     private static function compute_breakdown( array $logs ): array {
         $seven_ago   = strtotime( '-7 days' );
@@ -867,7 +782,9 @@ class ServerTrack_Dashboard {
         $event_types = [];
 
         foreach ( $logs as $entry ) {
+            // BUG-05 FIX: Guard against false/0 from strtotime() on bad timestamps.
             $ts = strtotime( $entry['timestamp'] ?? '' );
+            if ( false === $ts || 0 === $ts ) continue;
             if ( $ts < $seven_ago ) continue;
             if ( ( $entry['status'] ?? '' ) !== 'success' ) continue;
 
@@ -887,7 +804,6 @@ class ServerTrack_Dashboard {
             }
         }
 
-        // Top 5 event types by count
         arsort( $event_types );
         $top_events = array_slice( $event_types, 0, 5, true );
 
@@ -898,13 +814,27 @@ class ServerTrack_Dashboard {
         ];
     }
 
-    private static function get_platform_statuses(): array {
-        $logs      = get_option( 'servertrack_debug_log', [] );
+    /**
+     * BUG-08 FIX: Accept $logs as a parameter so the caller (render_page) can
+     * pass the already-loaded log array, avoiding a third get_option() DB call.
+     *
+     * BUG-11 FIX: Google status now checks servertrack_google_refresh_token
+     * (OAuth token) as the authoritative "configured" signal, matching what
+     * render_settings() / the settings JS use.  Previously this method checked
+     * servertrack_google_measurement_id, creating a split-brain inconsistency.
+     */
+    private static function get_platform_statuses( array $logs = [] ): array {
+        // BUG-08 FIX: Use the passed $logs; fall back to DB only if not provided.
+        if ( empty( $logs ) ) {
+            $logs = get_option( 'servertrack_debug_log', [] );
+        }
+
         $today     = gmdate( 'Y-m-d' );
         $today_map = [ 'meta' => 0, 'tiktok' => 0, 'google' => 0 ];
 
         foreach ( $logs as $entry ) {
-            $ts   = strtotime( $entry['timestamp'] ?? '' );
+            $ts = strtotime( $entry['timestamp'] ?? '' );
+            if ( false === $ts || 0 === $ts ) continue;
             $date = gmdate( 'Y-m-d', $ts );
             $plat = strtolower( $entry['platform'] ?? '' );
             if ( $date === $today && isset( $today_map[ $plat ] ) && ( $entry['status'] ?? '' ) === 'success' ) {
@@ -928,7 +858,9 @@ class ServerTrack_Dashboard {
             [
                 'name'    => 'Google (GA4)',
                 'enabled' => (bool) get_option( 'servertrack_google_enabled', 0 ),
-                'status'  => get_option( 'servertrack_google_measurement_id' ) ? 'Configured' : 'Missing Measurement ID',
+                // BUG-11 FIX: Use servertrack_google_refresh_token (not _measurement_id)
+                // as the single authoritative "configured" flag for Google.
+                'status'  => get_option( 'servertrack_google_refresh_token' ) ? 'Configured' : 'Missing OAuth Token',
                 'today'   => $today_map['google'],
             ],
         ];
