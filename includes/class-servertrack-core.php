@@ -4,7 +4,17 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Core  v3.2
+ * ServerTrack_Core  v3.3
+ *
+ * Changes in v3.3 (feature/new-woo-events):
+ *   Bootstraps three new WooCommerce event source classes:
+ *     - ServerTrack_WooOrderStatus   (order lifecycle: on-hold, failed, cancelled)
+ *     - ServerTrack_WooWishlist      (AddToWishlist CAPI — YITH & TI plugins)
+ *     - ServerTrack_WooPartialRefund (partial refund amount, separate from full refund)
+ *   Registers new options:
+ *     servertrack_source_order_status_enabled  (default 1  — on by default)
+ *     servertrack_source_wishlist_enabled      (default 0  — opt-in)
+ *     servertrack_source_partial_refund_enabled (default 1 — on by default)
  *
  * Changes in v3.2:
  *   - Bootstraps ServerTrack_WooAbandonment when WooCommerce is active and
@@ -42,6 +52,24 @@ class ServerTrack_Core {
                 require_once SERVERTRACK_DIR . 'sources/class-servertrack-woo-abandonment.php';
                 ServerTrack_WooAbandonment::init();
             }
+
+            // v3.3: Order lifecycle status events (on-hold, failed, cancelled) — on by default
+            if ( get_option( 'servertrack_source_order_status_enabled', 1 ) ) {
+                require_once SERVERTRACK_DIR . 'sources/class-servertrack-woo-order-status.php';
+                ServerTrack_WooOrderStatus::init();
+            }
+
+            // v3.3: AddToWishlist events — opt-in (requires YITH or TI Wishlist plugin)
+            if ( get_option( 'servertrack_source_wishlist_enabled', 0 ) ) {
+                require_once SERVERTRACK_DIR . 'sources/class-servertrack-woo-wishlist.php';
+                ServerTrack_WooWishlist::init();
+            }
+
+            // v3.3: Partial refund events — on by default
+            if ( get_option( 'servertrack_source_partial_refund_enabled', 1 ) ) {
+                require_once SERVERTRACK_DIR . 'sources/class-servertrack-woo-partial-refund.php';
+                ServerTrack_WooPartialRefund::init();
+            }
         }
 
         if ( class_exists( 'WPCF7' ) && get_option( 'servertrack_source_cf7_enabled', 0 ) ) {
@@ -76,6 +104,7 @@ class ServerTrack_Core {
         // ── Register options ─────────────────────────────────────────────────
         self::register_v3_options();
         self::register_v32_options();
+        self::register_v33_options();
     }
 
     private static function register_v3_options() {
@@ -117,6 +146,29 @@ class ServerTrack_Core {
                 'servertrack_abandonment_window_minutes',
             ];
             foreach ( $v32 as $opt ) $allowed['servertrack_sources_settings'][] = $opt;
+            return $allowed;
+        } );
+    }
+
+    /**
+     * Register v3.3 options for new WooCommerce event sources.
+     */
+    private static function register_v33_options() {
+        $new_options = [
+            'servertrack_source_order_status_enabled'   => 1,  // on by default
+            'servertrack_source_wishlist_enabled'       => 0,  // opt-in
+            'servertrack_source_partial_refund_enabled' => 1,  // on by default
+        ];
+        foreach ( $new_options as $key => $default ) {
+            if ( false === get_option( $key ) ) add_option( $key, $default );
+        }
+        add_filter( 'allowed_options', function( array $allowed ): array {
+            $v33 = [
+                'servertrack_source_order_status_enabled',
+                'servertrack_source_wishlist_enabled',
+                'servertrack_source_partial_refund_enabled',
+            ];
+            foreach ( $v33 as $opt ) $allowed['servertrack_sources_settings'][] = $opt;
             return $allowed;
         } );
     }
