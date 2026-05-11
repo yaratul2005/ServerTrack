@@ -38,6 +38,20 @@
  *   Now requires a valid nonce (servertrack_event_id) for browser requests,
  *   or shop_manager/administrator capability for server-side use.
  *
+ * BUG-06 fix (v2.3):
+ *   inject_initiate_checkout_id() called generate_event_id('initiatecheckout', 0).
+ *   context_id=0 is identical for every visitor on the site — the seed
+ *   'initiatecheckout_0_<SECURE_AUTH_KEY>' never changed, so ALL users received
+ *   the same event_id. Meta deduplicated every InitiateCheckout across the whole
+ *   site as a single conversion event.
+ *
+ *   Fix: the context_id is now derived per-session:
+ *     - Logged-in users: WC customer ID (stable across sessions)
+ *     - Guest users:     crc32 of the WC session customer ID (transient but
+ *                        consistent within a single browsing session)
+ *   The resolved id is written to WC()->session['servertrack_ic_event_id'] so
+ *   the CAPI sender can retrieve and pass the matching event_id to Meta.
+ *
  * @package ServerTrack
  * @since   6.0.0
  */
@@ -77,18 +91,13 @@ class ServerTrack_PixelDedup {
 	/**
 	 * Generate a deterministic, collision-resistant event_id formatted as UUID v4.
 	 *
-	 * M-1 FIX (v2.2):
-	 *   Previous implementation seeded sha256 with microtime() + wp_generate_password().
-	 *   This produced a DIFFERENT id on each call, meaning the id stored in order meta
-	 *   at checkout never matched the id injected on the thank-you page — breaking
-	 *   pixel/CAPI deduplication for 100% of Purchase events.
-	 *
-	 *   Fix: seed is now deterministic: event_name + context_id + SECURE_AUTH_KEY.
-	 *   The result is formatted as RFC 4122 UUID v4 (bits 6 and 8 set correctly)
-	 *   to match the Dedup::generate_event_id() contract used by the CAPI sender.
+	 * M-1 FIX (v2.2): seed is deterministic: event_name + context_id + SECURE_AUTH_KEY.
+	 * BUG-06 FIX (v2.3): context_id is now per-session for InitiateCheckout
+	 *   (see inject_initiate_checkout_id) — callers must pass a non-zero,
+	 *   per-visitor context_id so the seed differs between users.
 	 *
 	 * @param string $event_name  e.g. 'purchase', 'initiatecheckout'
-	 * @param int    $context_id  Order ID, session hash, or product ID
+	 * @param int    $context_id  Order ID, session hash, or product ID — MUST be non-zero for per-user events
 	 * @return string  UUID v4 string
 	 */
 	public static function generate_event_id( string $event_name, int $context_id = 0 ): string {
@@ -186,11 +195,48 @@ class ServerTrack_PixelDedup {
 	}
 
 	/**
-	 * Inject InitiateCheckout event_id as a hidden input + JS call.
+	 * Inject InitiateCheckout event_id as a JS fbq() call.
+	 *
+	 * BUG-06 FIX (v2.3):
+	 *   Previously called generate_event_id('initiatecheckout', 0). context_id=0
+	 *   is constant for the entire site, producing a shared seed across all
+	 *   visitors and causing Meta to merge all InitiateCheckout events as one.
+	 *
+	 *   Fix: derive a per-session context_id:
+	 *     - Logged-in user: WC customer ID (integer, stable per user)
+	 *     - Guest:          crc32() of WC session customer_id (alphanumeric string
+	 *                       that WC assigns per session, so unique per session)
+	 *
+	 *   The generated event_id is stored in WC()->session so the CAPI sender
+	 *   (ServerTrack_WooCommerce or the checkout handler) can retrieve it via
+	 *   WC()->session->get('servertrack_ic_event_id') and pass the same value
+	 *   to Meta — completing the dedup loop.
 	 */
 	public static function inject_initiate_checkout_id(): void {
-		$event_id = self::generate_event_id( 'initiatecheckout', 0 );
+		/*
+		 * Derive a per-session context_id so each visitor gets a unique event_id.
+		 *
+		 * WC()->customer->get_id() returns the WP user ID for logged-in users
+		 * and 0 for guests. For guests we fall back to crc32() of the WC session
+		 * customer_id — a random alphanumeric string WC assigns per browser session.
+		 */
+		$context_id = 0;
+		if ( function_exists( 'WC' ) && WC()->session ) {
+			$user_id = get_current_user_id();
+			if ( $user_id > 0 ) {
+				$context_id = $user_id;
+			} else {
+				// Guest: derive a stable int from the session customer_id string.
+				$session_customer_id = WC()->session->get_customer_id();
+				if ( $session_customer_id ) {
+					$context_id = abs( crc32( (string) $session_customer_id ) );
+				}
+			}
+		}
 
+		$event_id = self::generate_event_id( 'initiatecheckout', $context_id );
+
+		// Store in session so CAPI sender can use the same event_id.
 		if ( function_exists( 'WC' ) && WC()->session ) {
 			WC()->session->set( 'servertrack_ic_event_id', $event_id );
 		}
@@ -198,7 +244,7 @@ class ServerTrack_PixelDedup {
 		$event_id_json = wp_json_encode( $event_id );
 		// phpcs:disable WordPress.Security.EscapeOutput.OutputNotEscaped
 		echo "<script>\n";
-		echo "/* ServerTrack — InitiateCheckout pixel dedup */\n";
+		echo "/* ServerTrack — InitiateCheckout pixel dedup (per-session event_id) */\n";
 		echo "if(typeof fbq==='function'){";
 		echo "fbq('track','InitiateCheckout',{},{eventID:{$event_id_json}});";
 		echo "}\n";
