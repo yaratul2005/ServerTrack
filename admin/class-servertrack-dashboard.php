@@ -4,7 +4,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Dashboard  v2.0
+ * ServerTrack_Dashboard  v2.1
+ *
+ * Changes in v2.1:
+ *   - render_settings(): force-enqueue admin.css + admin.js + localize data
+ *     so the Settings sub-page (admin.php?page=servertrack-settings) gets its
+ *     styles/scripts even though its hook slug doesn't match 'settings_page_servertrack'.
+ *   - enqueue_assets(): broadened hook match to cover ALL servertrack pages.
  *
  * Changes in v2.0 (feature/admin-dashboard-v2):
  *   - Auto-refresh live event log every 30 s via AJAX (no full page reload).
@@ -18,10 +24,6 @@ if ( ! defined( 'ABSPATH' ) ) {
  *     counts, EMQ grade distribution, and top event types from current log.
  *   - All inline CSS rewritten with CSS custom-properties for easy theming.
  *   - settings-sources submenu page wired to updated settings-sources view.
- *
- * Changes in v1.0 (original):
- *   Platform Health, 7-day EMQ line chart, live event log, quick stats,
- *   AJAX handlers ajax_log_data / ajax_platform_health.
  */
 class ServerTrack_Dashboard {
 
@@ -61,6 +63,15 @@ class ServerTrack_Dashboard {
         add_submenu_page( 'servertrack', __( 'Event Sources', 'servertrack' ),   __( 'Event Sources', 'servertrack' ),   'manage_options', 'servertrack-sources',  [ self::class, 'render_sources' ] );
     }
 
+    /**
+     * Enqueue Chart.js for all ServerTrack admin pages.
+     * Hook slugs for sub-pages registered under a custom top-level menu follow
+     * the pattern  "{sanitized_parent}_page_{child_slug}",  e.g.:
+     *   toplevel_page_servertrack          (Dashboard)
+     *   servertrack_page_servertrack-settings
+     *   servertrack_page_servertrack-sources
+     * We match all of them with a simple strpos() on 'servertrack'.
+     */
     public static function enqueue_assets( string $hook ): void {
         if ( strpos( $hook, 'servertrack' ) === false ) return;
         wp_enqueue_script( 'chart-js', 'https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js', [], '4.4.3', true );
@@ -675,10 +686,64 @@ class ServerTrack_Dashboard {
     // ────────────────────────────────────────────────────────────────────────
 
     /**
-     * Render the Settings sub-page by delegating to ServerTrack_Admin.
-     * ServerTrack_Admin is always loaded via servertrack.php before this runs.
+     * Render the Settings sub-page.
+     *
+     * FIX (v2.1): The Settings page is registered under the custom top-level
+     * menu (admin.php?page=servertrack-settings), so its $hook is
+     * 'servertrack_page_servertrack-settings' — NOT 'settings_page_servertrack'.
+     * ServerTrack_Admin::enqueue_assets() only fired on the old hook, so
+     * admin.css / admin.js were never loaded here.
+     *
+     * We fix this by force-enqueueing both assets directly inside this method,
+     * which runs after wp_enqueue_scripts has already fired.  wp_enqueue_style()
+     * and wp_enqueue_script() are safe to call at render time in the admin
+     * (WordPress prints admin styles/scripts at shutdown via admin_print_styles /
+     * admin_print_scripts, so late enqueues still make it into the page).
      */
     public static function render_settings(): void {
+        if ( ! current_user_can( 'manage_options' ) ) return;
+
+        // Force-enqueue the Settings page assets that normally load via
+        // ServerTrack_Admin::enqueue_assets() on the old 'settings_page_servertrack' hook.
+        wp_enqueue_style(
+            'servertrack-admin',
+            SERVERTRACK_URL . 'admin/assets/admin.css',
+            [],
+            SERVERTRACK_VERSION
+        );
+        wp_enqueue_script(
+            'servertrack-admin',
+            SERVERTRACK_URL . 'admin/assets/admin.js',
+            [ 'jquery' ],
+            SERVERTRACK_VERSION,
+            true
+        );
+        wp_localize_script( 'servertrack-admin', 'servertrack_admin', [
+            'ajax_url' => admin_url( 'admin-ajax.php' ),
+            'nonce'    => wp_create_nonce( 'servertrack_admin_nonce' ),
+            'platforms' => [
+                'meta'   => [
+                    'enabled'    => (bool) get_option( 'servertrack_meta_enabled', 0 ),
+                    'configured' => (bool) (
+                        get_option( 'servertrack_meta_pixel_id', '' ) &&
+                        get_option( 'servertrack_meta_access_token', '' )
+                    ),
+                ],
+                'google' => [
+                    'enabled'    => (bool) get_option( 'servertrack_google_enabled', 0 ),
+                    'configured' => (bool) get_option( 'servertrack_google_refresh_token', '' ),
+                ],
+                'tiktok' => [
+                    'enabled'    => (bool) get_option( 'servertrack_tiktok_enabled', 0 ),
+                    'configured' => (bool) (
+                        get_option( 'servertrack_tiktok_pixel_id', '' ) &&
+                        get_option( 'servertrack_tiktok_access_token', '' )
+                    ),
+                ],
+            ],
+        ] );
+
+        // Delegate rendering to ServerTrack_Admin (the settings tabs / forms).
         if ( class_exists( 'ServerTrack_Admin' ) && method_exists( 'ServerTrack_Admin', 'render_page' ) ) {
             ServerTrack_Admin::render_page();
         } else {
