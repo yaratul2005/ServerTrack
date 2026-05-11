@@ -2,7 +2,7 @@
 /**
  * ServerTrack — Dashboard Overview Tab
  *
- * All live data is fetched client-side via AJAX (servertrack_get_dashboard_stats).
+ * All live data is fetched client-side via AJAX.
  * This file renders the skeleton HTML only.
  */
 if ( ! defined( 'ABSPATH' ) ) exit;
@@ -21,7 +21,7 @@ $st_tiktok_configured = get_option( 'servertrack_tiktok_enabled', 0 )
 <div class="st-kpi-grid" id="st-kpi-grid">
 
     <div class="st-kpi-card">
-        <div class="st-kpi-icon st-kpi-icon-brand">
+        <div class="st-kpi-icon st-kpi-icon-blue">
             <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
         </div>
         <div class="st-kpi-value" id="st-kpi-total">
@@ -74,13 +74,16 @@ $st_tiktok_configured = get_option( 'servertrack_tiktok_enabled', 0 )
 
 </div><!-- /.st-kpi-grid -->
 
-<!-- Responsive two-column layout via .st-dashboard-grid class (collapses at 1100px) -->
-<div class="st-dashboard-grid">
+<!-- Two-column layout: Platform Health + Activity Feed -->
+<!-- NOTE: Layout handled by .st-dashboard-layout in admin.css (responsive-ready) -->
+<div class="st-dashboard-layout">
 
     <!-- Platform Health Cards -->
     <div>
         <div class="st-card-title" style="margin-bottom:12px">
-            <svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            <svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:none;stroke:var(--st-brand);stroke-width:2;stroke-linecap:round;stroke-linejoin:round">
+                <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+            </svg>
             <?php esc_html_e( 'Platform Status', 'servertrack' ); ?>
         </div>
 
@@ -199,4 +202,4 @@ $st_tiktok_configured = get_option( 'servertrack_tiktok_enabled', 0 )
         </ul>
     </div>
 
-</div><!-- /.st-dashboard-grid -->
+</div><!-- /.st-dashboard-layout -->

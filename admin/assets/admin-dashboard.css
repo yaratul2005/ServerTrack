@@ -1,11 +1,9 @@
 /*
- * admin-dashboard.css — v3.0
+ * admin-dashboard.css — DEPRECATED in v2.3
  *
- * This file is intentionally kept as a no-op redirect.
- * All styles have been consolidated into admin.css (v3.0) to
- * eliminate the dual-token conflict between --st-brand (admin.css)
- * and --st-primary (admin-dashboard.css) that caused visual breaks.
+ * All dashboard styles have been merged into admin.css.
+ * This file is intentionally left empty to avoid breaking
+ * any existing wp_enqueue_style() calls that reference it.
  *
- * This file remains so any enqueue_style() calls for
- * 'servertrack-admin-dashboard' do not 404. It contains no rules.
+ * Safe to remove this file after confirming no enqueue references remain.
  */

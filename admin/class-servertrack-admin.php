@@ -4,34 +4,26 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Admin — v3.0
+ * ServerTrack_Admin — v2.3
  *
- * Changes in v3.0 (Frontend Redesign):
- *   - render_page_header(): Replaced generic SVG bolt icon with branded
- *     bglogo.png image (assets/logo/bglogo.png). Uses .st-logo-wrap <img>
- *     pattern so the transparent PNG renders on the dark header gradient.
- *   - enqueue_assets(): Added wp_enqueue_style() for admin-dashboard.css
- *     (now a no-op stub — all styles unified in admin.css v3.0).
- *   - Brand colour updated from #6c63ff (violet) to #0ea5a0 (teal) via
- *     CSS custom property --st-brand in admin.css. PHP-side colour refs
- *     are CSS-variable-driven; no PHP changes needed.
+ * Changes in v2.3 (Branding Overhaul):
+ *   - render_page_header(): Replaced generic SVG lightning-bolt icon with
+ *     the actual bglogo.png via <img> tag inside .st-logo-wrap.
+ *     Falls back gracefully to the SVG icon if the file is missing.
+ *   - enqueue_assets(): Added 'servertrack-logo' image preload hint so the
+ *     logo loads without a render-blocking delay in the header strip.
+ *   - Brand colour updated from #6c63ff (purple) to #0ea5e9 (teal/sky) in
+ *     admin.css — consistent with the logo palette.
  *
  * Changes in v2.2:
- *   - All internal URLs updated from options-general.php?page=servertrack
- *     to admin.php?page=servertrack-settings (current top-level submenu).
+ *   - CRITICAL FIX: All internal URLs updated from options-general.php?page=servertrack
+ *     to admin.php?page=servertrack-settings.
  *   - register_menu() removed — handled by ServerTrack_Dashboard.
- *   - enqueue_assets() hook check updated.
- *   - handle_oauth_callback() / handle_oauth_revoke() redirect URLs fixed.
+ *   - enqueue_assets() hook updated.
+ *   - handle_oauth_callback() / handle_oauth_revoke() redirect URLs updated.
  *   - render_page() tab hrefs updated.
- *   - render_health_notice() settings URLs updated.
- *   - ST_SETTINGS_URL helper constant added.
- *
- * Changes in v2.1:
- *   - register_settings(): added servertrack_source_abandonment_enabled
- *     and servertrack_abandonment_window_minutes.
- *
- * Changes in v2.0:
- *   - New 'dashboard' tab, AJAX handler, dark gradient header.
+ *   - render_health_notice() URLs updated.
+ *   - Added ST_SETTINGS_URL helper.
  */
 class ServerTrack_Admin {
 
@@ -75,7 +67,6 @@ class ServerTrack_Admin {
         ];
         if ( ! in_array( $hook, $allowed_hooks, true ) ) return;
 
-        // Primary stylesheet — all tokens + components unified
         wp_enqueue_style(
             'servertrack-admin',
             SERVERTRACK_URL . 'admin/assets/admin.css',
@@ -83,13 +74,9 @@ class ServerTrack_Admin {
             SERVERTRACK_VERSION
         );
 
-        // Dashboard stylesheet stub (no-op, kept for backwards compatibility)
-        wp_enqueue_style(
-            'servertrack-admin-dashboard',
-            SERVERTRACK_URL . 'admin/assets/admin-dashboard.css',
-            [ 'servertrack-admin' ],
-            SERVERTRACK_VERSION
-        );
+        // Preload the logo so it's ready before the header renders
+        $logo_url = SERVERTRACK_URL . 'assets/logo/bglogo.png';
+        echo '<link rel="preload" as="image" href="' . esc_url( $logo_url ) . '">' . "\n";
 
         wp_enqueue_script(
             'servertrack-admin',
@@ -98,11 +85,10 @@ class ServerTrack_Admin {
             SERVERTRACK_VERSION,
             true
         );
-
         wp_localize_script( 'servertrack-admin', 'servertrack_admin', [
-            'ajax_url'  => admin_url( 'admin-ajax.php' ),
-            'nonce'     => wp_create_nonce( 'servertrack_admin_nonce' ),
-            'logo_url'  => SERVERTRACK_URL . 'assets/logo/bglogo.png',
+            'ajax_url' => admin_url( 'admin-ajax.php' ),
+            'nonce'    => wp_create_nonce( 'servertrack_admin_nonce' ),
+            'logo_url' => esc_url( $logo_url ),
             'platforms' => [
                 'meta'   => [
                     'enabled'    => (bool) get_option( 'servertrack_meta_enabled', 0 ),
@@ -135,7 +121,7 @@ class ServerTrack_Admin {
         $general_options = [
             'servertrack_enabled'      => [ 'type' => 'integer', 'sanitize' => 'absint',                                  'default' => 1      ],
             'servertrack_test_mode'    => [ 'type' => 'integer', 'sanitize' => 'absint',                                  'default' => 0      ],
-            'servertrack_consent_mode' => [ 'type' => 'string',  'sanitize' => [ self::class, 'sanitize_consent_mode' ], 'default' => 'none' ],
+            'servertrack_consent_mode' => [ 'type' => 'string',  'sanitize' => [ self::class, 'sanitize_consent_mode' ],  'default' => 'none' ],
         ];
         self::register_group( 'servertrack_general_settings', $general_options );
 
@@ -332,12 +318,12 @@ class ServerTrack_Admin {
         $active_tab = isset( $_GET['tab'] ) ? sanitize_text_field( wp_unslash( $_GET['tab'] ) ) : 'general';
 
         $tabs = [
-            'general' => __( 'General',      'servertrack' ),
-            'meta'    => __( 'Meta CAPI',    'servertrack' ),
-            'google'  => __( 'Google Ads',   'servertrack' ),
-            'tiktok'  => __( 'TikTok Events','servertrack' ),
-            'sources' => __( 'Sources',      'servertrack' ),
-            'debug'   => __( 'Debug Log',    'servertrack' ),
+            'general' => __( 'General', 'servertrack' ),
+            'meta'    => __( 'Meta CAPI', 'servertrack' ),
+            'google'  => __( 'Google Ads', 'servertrack' ),
+            'tiktok'  => __( 'TikTok Events', 'servertrack' ),
+            'sources' => __( 'Sources', 'servertrack' ),
+            'debug'   => __( 'Debug Log', 'servertrack' ),
         ];
         if ( ! array_key_exists( $active_tab, $tabs ) ) {
             $active_tab = 'general';
@@ -395,41 +381,50 @@ class ServerTrack_Admin {
         <?php
     }
 
-    /**
-     * Renders the dark branded page header with bglogo.png.
-     *
-     * v3.0: Replaced the SVG lightning-bolt placeholder with the real
-     * bglogo.png (transparent PNG). The .st-logo-wrap container handles
-     * sizing and a subtle frosted-glass background so the logo reads
-     * clearly on the dark gradient header regardless of its colour.
-     */
-    private static function render_page_header() {
-        $meta_ok   = get_option( 'servertrack_meta_enabled', 0 )
-                     && get_option( 'servertrack_meta_pixel_id', '' )
-                     && get_option( 'servertrack_meta_access_token', '' );
-        $google_ok = get_option( 'servertrack_google_enabled', 0 )
-                     && get_option( 'servertrack_google_refresh_token', '' );
-        $tiktok_ok = get_option( 'servertrack_tiktok_enabled', 0 )
-                     && get_option( 'servertrack_tiktok_pixel_id', '' )
-                     && get_option( 'servertrack_tiktok_access_token', '' );
+    // ─────────────────────────────────────────────────────────────────
+    // Page Header — v2.3: uses bglogo.png for branding
+    // ─────────────────────────────────────────────────────────────────
 
-        $logo_url = esc_url( SERVERTRACK_URL . 'assets/logo/bglogo.png' );
+    private static function render_page_header() {
+        $meta_ok   = get_option( 'servertrack_meta_enabled', 0 ) && get_option( 'servertrack_meta_pixel_id', '' ) && get_option( 'servertrack_meta_access_token', '' );
+        $google_ok = get_option( 'servertrack_google_enabled', 0 ) && get_option( 'servertrack_google_refresh_token', '' );
+        $tiktok_ok = get_option( 'servertrack_tiktok_enabled', 0 ) && get_option( 'servertrack_tiktok_pixel_id', '' ) && get_option( 'servertrack_tiktok_access_token', '' );
+
+        // Resolve the logo image URL and check the file actually exists on disk.
+        $logo_url  = SERVERTRACK_URL . 'assets/logo/bglogo.png';
+        $logo_file = SERVERTRACK_DIR . 'assets/logo/bglogo.png';
+        $has_logo  = file_exists( $logo_file );
         ?>
         <div class="st-page-header">
             <div class="st-page-header-left">
-                <div class="st-logo-wrap">
-                    <img src="<?php echo $logo_url; ?>"
-                         alt="<?php esc_attr_e( 'ServerTrack', 'servertrack' ); ?>"
-                         width="36"
-                         height="36"
-                         loading="eager"
-                         decoding="async">
-                </div>
+
+                <?php if ( $has_logo ) : ?>
+                    <!-- Branding: transparent-background logo from assets/logo/bglogo.png -->
+                    <div class="st-logo-wrap">
+                        <img
+                            src="<?php echo esc_url( $logo_url ); ?>"
+                            alt="<?php esc_attr_e( 'ServerTrack logo', 'servertrack' ); ?>"
+                            width="36"
+                            height="36"
+                            loading="eager"
+                            decoding="async"
+                        />
+                    </div>
+                <?php else : ?>
+                    <!-- Fallback SVG icon if bglogo.png is missing -->
+                    <div class="st-logo-icon">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                        </svg>
+                    </div>
+                <?php endif; ?>
+
                 <div class="st-page-title-group">
                     <h1><?php esc_html_e( 'ServerTrack', 'servertrack' ); ?></h1>
                     <p><?php esc_html_e( 'Server-side event tracking — Meta CAPI · Google Ads · TikTok Events', 'servertrack' ); ?></p>
                 </div>
             </div>
+
             <div class="st-header-badges">
                 <?php if ( $meta_ok ) : ?>
                     <span class="st-badge st-badge-meta"><span class="st-badge-dot"></span> Meta</span>
@@ -441,7 +436,7 @@ class ServerTrack_Admin {
                     <span class="st-badge st-badge-tiktok"><span class="st-badge-dot"></span> TikTok</span>
                 <?php endif; ?>
                 <?php if ( ! $meta_ok && ! $google_ok && ! $tiktok_ok ) : ?>
-                    <span class="st-badge" style="background:rgba(255,255,255,.1);color:rgba(255,255,255,.45);">
+                    <span class="st-badge" style="background:rgba(255,255,255,.08);color:rgba(255,255,255,.45);border-color:rgba(255,255,255,.1)">
                         <?php esc_html_e( 'No platforms active', 'servertrack' ); ?>
                     </span>
                 <?php endif; ?>
