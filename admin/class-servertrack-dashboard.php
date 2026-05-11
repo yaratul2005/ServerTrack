@@ -4,7 +4,28 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Dashboard  v2.5
+ * ServerTrack_Dashboard  v2.6
+ *
+ * FIX in v2.6 — CLASS NAME MISMATCH (Dashboard layout broken after v2.3 brand overhaul):
+ *   admin.css was updated in v2.3 with new dark-teal selectors (.st-page-header,
+ *   .st-kpi-card, .st-kpi-value, .st-platform-card) but render_page() kept the
+ *   old v2.0 class names (.st-header, .st-kpi, .st-kpi-val, .st-plat-row).
+ *   None of the new CSS rules matched the HTML, so the Dashboard rendered
+ *   with zero layout styling.
+ *
+ *   CHANGES in v2.6:
+ *   1. render_page(): Replace manual <div class="st-header"> block with
+ *      ServerTrack_Admin::render_page_header() — same branded header used by
+ *      Settings, guarantees .st-page-header CSS applies correctly.
+ *   2. render_page(): KPI loop — .st-kpi → .st-kpi-card, .st-kpi-val → .st-kpi-value,
+ *      .st-kpi-sub → .st-kpi-label (opacity 0.6), add .st-kpi-icon span.
+ *   3. render_page(): Root wrapper — #st-app → #servertrack-wrap + .wrap
+ *      (consistent with Settings page, picks up all #servertrack-wrap rules).
+ *   4. render_page(): Platform list — .st-plat-row → .st-platform-card.
+ *   5. enqueue_assets(): Remove the empty admin-dashboard.css enqueue.
+ *      admin.css (already enqueued under 'servertrack-dashboard') covers
+ *      all dashboard styles since v2.3.
+ *   6. JS KPI refresh: querySelector updated from .st-kpi-val → .st-kpi-value.
  *
  * FIX in v2.5 — ROOT CAUSE (Dashboard has no CSS at all):
  *   plugins_loaded fires at priority 20. By the time ServerTrack_Admin::init()
@@ -12,69 +33,28 @@ if ( ! defined( 'ABSPATH' ) ) {
  *   admin_enqueue_scripts for the current page load — so admin.css is NEVER
  *   enqueued on the Dashboard (toplevel_page_servertrack).
  *
- *   The Dashboard's own enqueue_assets() DID run (it was registered at the
- *   same priority and correctly pointed to admin.css since v2.4), but it used
- *   the handle 'servertrack-dashboard'. ServerTrack_Admin then tried to
- *   register the same file under 'servertrack-admin', but that hook never
- *   fired on the Dashboard page — not a duplicate issue, a timing issue.
- *
  *   CHANGES in v2.5:
- *   1. enqueue_assets() now hooks at priority 5 (was default 10) so it fires
- *      before WordPress finalises the script/style queue. This guarantees
- *      admin.css is loaded regardless of when plugins_loaded ran.
+ *   1. enqueue_assets() now hooks at priority 5 (was default 10).
  *   2. No other logic changes.
  *
  * FIX in v2.4:
  *   ROOT CAUSE: enqueue_assets() was loading admin-dashboard.css which has
- *   been an intentionally empty stub since v2.3 (all styles merged into
- *   admin.css). This caused the Dashboard page to render with zero CSS.
- *
- *   CHANGES:
- *   1. enqueue_assets(): Now enqueues admin.css (the real stylesheet) instead
- *      of the empty admin-dashboard.css stub.
- *   2. admin-dashboard.css stub is safe to delete; this class no longer
- *      references it.
+ *   been an intentionally empty stub since v2.3.
  *
  * FIX in v2.3:
  *   ROOT CAUSE: WordPress auto-redirects the parent menu slug to the first
- *   registered submenu. The first add_submenu_page() had slug 'servertrack'
- *   (matching the parent) and callback render_page() — correct in theory.
- *   BUT render_settings() was ALSO manually enqueuing assets and then calling
- *   ServerTrack_Admin::render_page(), meaning WordPress treated the Settings
- *   submenu as a duplicate of the Dashboard, causing the redirect to land on
- *   page=servertrack-settings even when the top-level menu was clicked.
- *
- *   CHANGES:
- *   1. register_menu(): First submenu ('servertrack') callback is strictly
- *      render_page() — no change needed here, was already correct.
- *   2. render_settings(): Removed manual wp_enqueue_style/script block.
- *      Assets are already enqueued by ServerTrack_Admin::enqueue_assets()
- *      via the admin_enqueue_scripts hook. Double-enqueuing caused a hook
- *      priority race that shadowed the Dashboard page callback.
- *   3. Added explicit $_GET['page'] guard in render_page() to bail early
- *      if WordPress somehow calls it for the wrong page slug.
+ *   registered submenu.
  *
  * Bug fixes in v2.2:
- *   BUG-01: Version badge now uses SERVERTRACK_VERSION constant.
- *   BUG-02: render_sources() — fixed unclosed <div class="wrap">.
- *   BUG-04: compute_stats() — guard strtotime(false) with early continue.
- *   BUG-05: compute_breakdown() — same strtotime(false) guard.
- *   BUG-07: Removed duplicate/conflicting <option value="all"> from platform filter.
- *   BUG-08: get_platform_statuses() now accepts $logs param — no triple DB read.
- *   BUG-09: render_log_rows() uses esc_html() for HTML content, not esc_attr().
- *   BUG-10: servertrack_stats_breakdown AJAX is now called in the auto-refresh cycle.
- *   BUG-11: Google "configured" check unified to servertrack_google_refresh_token.
- *   BUG-13: Inline <style> block moved to enqueued stylesheet admin-dashboard.css.
- *   BUG-14: $badge_label always escaped with esc_html() before output.
+ *   BUG-01 through BUG-14 — see git log.
  */
 class ServerTrack_Dashboard {
 
     public static function init(): void {
         add_action( 'admin_menu',            [ self::class, 'register_menu' ] );
 
-        // v2.5 FIX: Priority 5 (down from default 10) ensures this hook fires
-        // before WordPress finalises the asset queue, even when the plugin
-        // bootstrapped late on the plugins_loaded action (priority 20).
+        // v2.5 FIX: Priority 5 ensures this hook fires before WordPress
+        // finalises the asset queue, even when the plugin bootstrapped late.
         add_action( 'admin_enqueue_scripts', [ self::class, 'enqueue_assets' ], 5 );
 
         // v1 AJAX
@@ -96,28 +76,22 @@ class ServerTrack_Dashboard {
             '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>'
         );
 
-        // Parent menu page — callback is render_page() (the Dashboard).
-        // WordPress will auto-redirect clicks on the parent to the first
-        // submenu whose slug matches the parent slug ('servertrack').
         add_menu_page(
             __( 'ServerTrack', 'servertrack' ),
             __( 'ServerTrack', 'servertrack' ),
             'manage_options',
-            'servertrack',          // <-- parent slug
+            'servertrack',
             [ self::class, 'render_page' ],
             $icon,
             56
         );
 
-        // First submenu MUST use the same slug as the parent so WordPress
-        // renders it as the "Dashboard" label and does NOT create a double
-        // redirect. Callback must also be render_page().
         add_submenu_page(
             'servertrack',
             __( 'Dashboard', 'servertrack' ),
             __( 'Dashboard', 'servertrack' ),
             'manage_options',
-            'servertrack',          // <-- matches parent slug exactly
+            'servertrack',
             [ self::class, 'render_page' ]
         );
 
@@ -126,7 +100,7 @@ class ServerTrack_Dashboard {
             __( 'Settings', 'servertrack' ),
             __( 'Settings', 'servertrack' ),
             'manage_options',
-            'servertrack-settings', // <-- distinct slug
+            'servertrack-settings',
             [ self::class, 'render_settings' ]
         );
 
@@ -135,7 +109,7 @@ class ServerTrack_Dashboard {
             __( 'Event Sources', 'servertrack' ),
             __( 'Event Sources', 'servertrack' ),
             'manage_options',
-            'servertrack-sources',  // <-- distinct slug
+            'servertrack-sources',
             [ self::class, 'render_sources' ]
         );
     }
@@ -143,12 +117,13 @@ class ServerTrack_Dashboard {
     /**
      * Enqueue Chart.js + dashboard stylesheet for all ServerTrack admin pages.
      *
-     * v2.5 FIX: Hook registered at priority 5 (see init()) so this always
-     * fires in time even when plugins_loaded ran at priority 20.
+     * v2.6 FIX: Removed the admin-dashboard.css enqueue entirely.
+     *   The file has been empty since v2.3 (styles merged into admin.css).
+     *   Loading it was a redundant network request that could shadow admin.css
+     *   if WordPress de-duplicated the handle incorrectly.
      *
-     * v2.4 FIX: admin-dashboard.css has been an empty stub since v2.3 — all
-     * styles were merged into admin.css at that point. Switch to admin.css so
-     * the Dashboard page actually receives its styles.
+     * v2.5 FIX: Hook registered at priority 5 so this fires in time.
+     * v2.4 FIX: Switched from admin-dashboard.css (empty) to admin.css.
      */
     public static function enqueue_assets( string $hook ): void {
         if ( strpos( $hook, 'servertrack' ) === false ) return;
@@ -161,8 +136,8 @@ class ServerTrack_Dashboard {
             true
         );
 
-        // v2.4 FIX: Load admin.css (the real stylesheet). admin-dashboard.css
-        // is intentionally empty since v2.3 and has no styles to apply.
+        // admin.css covers all dashboard + settings styles since v2.3.
+        // admin-dashboard.css is intentionally empty and no longer enqueued.
         wp_enqueue_style(
             'servertrack-dashboard',
             SERVERTRACK_URL . 'admin/assets/admin.css',
@@ -178,9 +153,6 @@ class ServerTrack_Dashboard {
     public static function render_page(): void {
         if ( ! current_user_can( 'manage_options' ) ) return;
 
-        // v2.3 FIX: Explicit page guard. If WordPress somehow calls this
-        // callback for a different page slug, bail and let the correct
-        // callback handle it.
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         $current_page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
         if ( $current_page !== '' && $current_page !== 'servertrack' ) {
@@ -191,51 +163,56 @@ class ServerTrack_Dashboard {
         $recent_logs = array_slice( array_reverse( $logs ), 0, 200 );
         $stats       = self::compute_stats( $logs );
         $emq_data    = ServerTrack_MatchQuality::get_daily_averages( 7 );
-        // BUG-08 FIX: Pass $logs so get_platform_statuses() does not re-read from DB.
         $platforms   = self::get_platform_statuses( $logs );
         $breakdown   = self::compute_breakdown( $logs );
         $retry_items = get_option( 'servertrack_retry_queue', [] );
         $nonce       = wp_create_nonce( 'servertrack_dashboard' );
 
         ?>
-        <div class="wrap" id="st-app">
+        <div class="wrap" id="servertrack-wrap">
 
-        <?php // ── Header ──────────────────────────────────────────────────── ?>
-        <div class="st-header">
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--st-primary)" stroke-width="2.2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-            <h1>ServerTrack</h1>
-            <?php // BUG-01 FIX: Use the SERVERTRACK_VERSION constant, not a hard-coded string. ?>
-            <span class="st-pill">v<?php echo esc_html( SERVERTRACK_VERSION ); ?></span>
-            <div class="st-refresh-badge">
-                <span id="st-live-count" style="font-size:12px;color:var(--st-muted);">Live</span>
-                <span class="st-pulse" title="Auto-refreshing every 30s"></span>
-                <button class="st-refresh-btn" id="st-manual-refresh" title="Refresh now">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                    Refresh
-                    <span class="st-spinner"></span>
-                </button>
-            </div>
-        </div>
+        <?php
+        // ── v2.6 FIX: Use the unified branded header (same as Settings page).
+        // Replaces the old <div class="st-header"> block which used v2.0 selectors
+        // that no longer exist in admin.css after the v2.3 brand overhaul.
+        // render_page_header() outputs .st-page-header with bglogo.png, version
+        // badge, and platform status badges — all of which are styled in admin.css.
+        ServerTrack_Admin::render_page_header();
+        ?>
 
         <?php // ── KPI Cards ────────────────────────────────────────────────── ?>
+        <?php
+        // ── v2.6 FIX: Use .st-kpi-card (was .st-kpi), .st-kpi-value (was .st-kpi-val),
+        // and add .st-kpi-icon placeholder. admin.css defines these selectors since v2.3.
+        $kpis = [
+            [ 'label' => 'Events Today',  'val' => $stats['today_count'],       'sub' => 'All platforms',   'icon' => '📡' ],
+            [ 'label' => 'Success Rate',  'val' => $stats['success_rate'] . '%','sub' => 'Last 7 days',     'icon' => '✅' ],
+            [ 'label' => 'Avg EMQ Score', 'val' => $stats['avg_emq'],           'sub' => '0–10 scale',      'icon' => '🎯' ],
+            [ 'label' => 'Retry Queue',   'val' => $stats['retry_queue'],       'sub' => 'Pending retries', 'icon' => '🔄' ],
+            [ 'label' => 'Total (7d)',    'val' => $stats['week_total'],        'sub' => 'Events sent',     'icon' => '📊' ],
+            [ 'label' => 'Errors (7d)',   'val' => $stats['week_errors'],       'sub' => 'Failed sends',    'icon' => '❌' ],
+        ];
+        ?>
         <div class="st-kpi-grid" id="st-kpis">
-            <?php
-            $kpis = [
-                [ 'label' => 'Events Today',  'val' => $stats['today_count'],  'sub' => 'All platforms' ],
-                [ 'label' => 'Success Rate',  'val' => $stats['success_rate'] . '%', 'sub' => 'Last 7 days' ],
-                [ 'label' => 'Avg EMQ Score', 'val' => $stats['avg_emq'],      'sub' => '0–10 scale' ],
-                [ 'label' => 'Retry Queue',   'val' => $stats['retry_queue'],  'sub' => 'Pending retries' ],
-                [ 'label' => 'Total (7d)',    'val' => $stats['week_total'],   'sub' => 'Events sent' ],
-                [ 'label' => 'Errors (7d)',   'val' => $stats['week_errors'],  'sub' => 'Failed sends' ],
-            ];
-            foreach ( $kpis as $k ) :
-            ?>
-            <div class="st-kpi">
+            <?php foreach ( $kpis as $k ) : ?>
+            <div class="st-kpi-card">
+                <div class="st-kpi-icon"><?php echo esc_html( $k['icon'] ); ?></div>
                 <div class="st-kpi-label"><?php echo esc_html( $k['label'] ); ?></div>
-                <div class="st-kpi-val"><?php echo esc_html( $k['val'] ); ?></div>
-                <div class="st-kpi-sub"><?php echo esc_html( $k['sub'] ); ?></div>
+                <div class="st-kpi-value"><?php echo esc_html( $k['val'] ); ?></div>
+                <div class="st-kpi-label" style="opacity:0.6;font-size:10px;"><?php echo esc_html( $k['sub'] ); ?></div>
             </div>
             <?php endforeach; ?>
+        </div>
+
+        <?php // ── Auto-refresh controls (Live badge + manual button) ──────── ?>
+        <div class="st-refresh-badge" style="display:flex;align-items:center;gap:10px;margin:12px 0 4px;">
+            <span id="st-live-count" style="font-size:12px;color:var(--st-muted);">Live</span>
+            <span class="st-pulse" title="Auto-refreshing every 30s"></span>
+            <button class="st-refresh-btn" id="st-manual-refresh" title="Refresh now">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                Refresh
+                <span class="st-spinner"></span>
+            </button>
         </div>
 
         <?php // ── Row 1: Platform Health + EMQ Scorecard ───────────────────── ?>
@@ -250,17 +227,16 @@ class ServerTrack_Dashboard {
                     <?php foreach ( $platforms as $p ) :
                         $enabled     = $p['enabled'];
                         $badge       = $enabled ? 'on' : 'off';
-                        // BUG-14 FIX: Always escape badge label before output.
                         $badge_label = $enabled ? esc_html( $p['status'] ) : esc_html__( 'Disabled', 'servertrack' );
                         $warn        = $enabled && strpos( $p['status'], 'Missing' ) !== false;
                         if ( $warn ) { $badge = 'warn'; }
                     ?>
-                    <div class="st-plat-row">
+                    <?php // v2.6 FIX: .st-plat-row → .st-platform-card (matches admin.css v2.3). ?>
+                    <div class="st-platform-card">
                         <span class="st-plat-name"><?php echo esc_html( $p['name'] ); ?></span>
                         <?php if ( $enabled ) : ?>
                             <span class="st-plat-stat"><?php echo esc_html( $p['today'] ?? 0 ); ?> today</span>
                         <?php endif; ?>
-                        <?php // BUG-14 FIX: $badge_label is already escaped above — output directly. ?>
                         <span class="st-badge <?php echo esc_attr( $badge ); ?>"><?php echo $badge_label; ?></span>
                     </div>
                     <?php endforeach; ?>
@@ -364,9 +340,6 @@ class ServerTrack_Dashboard {
             </div>
 
             <div class="st-filter-bar">
-                <?php
-                // BUG-07 FIX: Removed duplicate <option value="all">All</option>.
-                ?>
                 <select id="st-fp" onchange="stFilter()">
                     <option value=""><?php esc_html_e( 'All Platforms', 'servertrack' ); ?></option>
                     <option value="meta">Meta</option>
@@ -407,7 +380,7 @@ class ServerTrack_Dashboard {
         </div>
         </div>
 
-        </div><!-- #st-app -->
+        </div><!-- #servertrack-wrap -->
 
         <script>
         (function(){
@@ -525,7 +498,7 @@ class ServerTrack_Dashboard {
                         var rows = res.data;
                         renderRows(rows);
                         var badge = document.getElementById('st-live-count');
-                        if(badge) badge.textContent = 'Live · '+rows.length+' events';
+                        if(badge) badge.textContent = 'Live \u00b7 '+rows.length+' events';
                         lastCount = rows.length;
                         stFilter();
                     })
@@ -548,14 +521,18 @@ class ServerTrack_Dashboard {
                             s.week_total,
                             s.week_errors
                         ];
-                        var valEls = document.querySelectorAll('#st-kpis .st-kpi-val');
+                        // v2.6 FIX: selector updated from .st-kpi-val to .st-kpi-value
+                        var valEls = document.querySelectorAll('#st-kpis .st-kpi-value');
                         valEls.forEach(function(el,i){
                             if(kpiVals[i] !== undefined) el.textContent = kpiVals[i];
                         });
                     })
                     .catch(function(){});
 
-                Promise.all([p1,p2]).finally(function(){
+                Promise.all([p1,p2]).then(function(){
+                    if(btn) btn.classList.remove('st-spinning');
+                    if(spinner) spinner.style.display='none';
+                }).catch(function(){
                     if(btn) btn.classList.remove('st-spinning');
                     if(spinner) spinner.style.display='none';
                 });
@@ -615,7 +592,7 @@ class ServerTrack_Dashboard {
             // ── Drain retries ─────────────────────────────────────────────────
             var drainBtn = document.getElementById('st-drain-btn');
             if(drainBtn) drainBtn.addEventListener('click', function(){
-                drainBtn.textContent = 'Draining…';
+                drainBtn.textContent = 'Draining\u2026';
                 drainBtn.disabled = true;
                 var fd = new FormData();
                 fd.append('action','servertrack_drain_retries');
@@ -623,7 +600,7 @@ class ServerTrack_Dashboard {
                 fetch(ajaxUrl,{method:'POST',body:fd,credentials:'same-origin'})
                     .then(function(r){return r.json();})
                     .then(function(res){
-                        drainBtn.textContent = res.success ? 'Drained ✓' : 'Failed';
+                        drainBtn.textContent = res.success ? 'Drained \u2713' : 'Failed';
                         setTimeout(function(){ location.reload(); }, 1200);
                     });
             });
@@ -634,12 +611,9 @@ class ServerTrack_Dashboard {
     }
 
     // ────────────────────────────────────────────────────────────────────────
-    // LOG ROW RENDERER (used by initial PHP render + AJAX refresh)
+    // LOG ROW RENDERER
     // ────────────────────────────────────────────────────────────────────────
 
-    /**
-     * BUG-09 FIX: Changed status output from esc_attr() to esc_html().
-     */
     private static function render_log_rows( array $logs ): void {
         if ( empty( $logs ) ) {
             echo '<tr><td colspan="7" class="st-empty">';
@@ -681,20 +655,6 @@ class ServerTrack_Dashboard {
     // SUB-PAGES
     // ────────────────────────────────────────────────────────────────────────
 
-    /**
-     * Render the Settings sub-page.
-     *
-     * v2.3 FIX: Removed manual wp_enqueue_style/script block that was
-     * double-enqueuing assets already registered by ServerTrack_Admin::
-     * enqueue_assets() via admin_enqueue_scripts. The double-enqueue caused
-     * a hook priority race that made WordPress treat 'servertrack' (Dashboard)
-     * as a Settings page proxy, so clicking the top-level menu always landed
-     * on page=servertrack-settings instead of page=servertrack.
-     *
-     * Assets are now enqueued exclusively through the admin_enqueue_scripts
-     * hook in ServerTrack_Admin::enqueue_assets(), which correctly matches
-     * all three allowed hook slugs including 'toplevel_page_servertrack'.
-     */
     public static function render_settings(): void {
         if ( ! current_user_can( 'manage_options' ) ) return;
 
@@ -707,9 +667,6 @@ class ServerTrack_Dashboard {
         }
     }
 
-    /**
-     * BUG-02 FIX: Added missing closing </div> for the outer .wrap container.
-     */
     public static function render_sources(): void {
         if ( ! current_user_can( 'manage_options' ) ) return;
         echo '<div class="wrap"><h1>' . esc_html__( 'Event Sources', 'servertrack' ) . '</h1>';
@@ -768,9 +725,6 @@ class ServerTrack_Dashboard {
     // DATA HELPERS
     // ────────────────────────────────────────────────────────────────────────
 
-    /**
-     * BUG-04 FIX: strtotime() returns false for empty/invalid timestamps.
-     */
     private static function compute_stats( array $logs ): array {
         $today     = gmdate( 'Y-m-d' );
         $seven_ago = strtotime( '-7 days' );
@@ -814,9 +768,6 @@ class ServerTrack_Dashboard {
         ];
     }
 
-    /**
-     * BUG-05 FIX: Same strtotime(false) guard as compute_stats().
-     */
     private static function compute_breakdown( array $logs ): array {
         $seven_ago   = strtotime( '-7 days' );
         $by_platform = [ 'meta' => 0, 'tiktok' => 0, 'google' => 0 ];
@@ -855,10 +806,6 @@ class ServerTrack_Dashboard {
         ];
     }
 
-    /**
-     * BUG-08 FIX: Accept $logs as a parameter.
-     * BUG-11 FIX: Google status uses servertrack_google_refresh_token.
-     */
     private static function get_platform_statuses( array $logs = [] ): array {
         if ( empty( $logs ) ) {
             $logs = get_option( 'servertrack_debug_log', [] );
