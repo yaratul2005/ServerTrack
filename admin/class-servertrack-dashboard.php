@@ -674,11 +674,17 @@ class ServerTrack_Dashboard {
     // SUB-PAGES
     // ────────────────────────────────────────────────────────────────────────
 
+    /**
+     * Render the Settings sub-page by delegating to ServerTrack_Admin.
+     * ServerTrack_Admin is always loaded via servertrack.php before this runs.
+     */
     public static function render_settings(): void {
-        if ( class_exists( 'ServerTrack_Settings' ) && method_exists( 'ServerTrack_Settings', 'render_page' ) ) {
-            ServerTrack_Settings::render_page();
+        if ( class_exists( 'ServerTrack_Admin' ) && method_exists( 'ServerTrack_Admin', 'render_page' ) ) {
+            ServerTrack_Admin::render_page();
         } else {
-            echo '<div class="wrap"><h1>ServerTrack Settings</h1><p>Settings class not loaded.</p></div>';
+            echo '<div class="wrap"><h1>ServerTrack Settings</h1>';
+            echo '<p style="color:red;">⚠️ ServerTrack_Admin class not found. Please re-upload the plugin files.</p>';
+            echo '</div>';
         }
     }
 
