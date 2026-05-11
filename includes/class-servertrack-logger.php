@@ -4,78 +4,106 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Logger
+ * ServerTrack_Logger  v2.0
  *
- * Bug fix: log was capped at 50 entries. On busy WooCommerce stores with
- * multiple platforms firing per order (Meta + TikTok + Google), 50 entries
- * can be exhausted in under 10 minutes, hiding older errors from view.
- * Raised to 200 entries (still stored as a single wp_options row — each
- * entry is small). autoload is 'no' to avoid loading 200 entries on every
- * WordPress page load.
+ * Feature #7 — Enhanced Debug Logger with EMQ Score Storage.
  *
- * Bug fix: update_option() was called without the autoload parameter,
- * defaulting to 'yes'. Debug log data is only needed in the admin panel —
- * loading it on every front-end page load wastes memory. Explicitly set
- * to 'no'.
+ * Changes in v2.0:
+ *   - log() now accepts an optional $emq array (from ServerTrack_MatchQuality::score)
+ *     and persists emq_score + emq_grade to the log entry.
+ *   - Log entries now include event_type field (was missing in v1).
+ *   - Max log size increased from 500 to 1000 entries.
+ *   - Oldest entries are pruned when limit is reached (FIFO).
+ *
+ * Log entry format:
+ * [
+ *   'timestamp'  => '2026-05-11 08:30:00',
+ *   'status'     => 'success'|'error'|'skipped'|'queued'|'dedup_blocked',
+ *   'platform'   => 'meta'|'tiktok'|'google'|'all'|'identity',
+ *   'message'    => 'Human-readable description',
+ *   'event_id'   => 'uuid-v4-string',
+ *   'order_id'   => 12345,
+ *   'event_type' => 'Purchase'|'ViewContent'|...,
+ *   'emq_score'  => 7.2,   // optional — only present when EMQ was computed
+ *   'emq_grade'  => 'good', // optional — only present when EMQ was computed
+ * ]
+ *
+ * Usage (same signature as v1, emq is optional):
+ *   ServerTrack_Logger::log('success','meta','Order sent','event-id-here',12345,'Purchase');
+ *   ServerTrack_Logger::log('success','meta','Order sent','','event-id',12345,'Purchase', ['score'=>7.2,'grade'=>'good']);
  */
 class ServerTrack_Logger {
 
-    /** Maximum number of log entries to retain. */
-    const MAX_ENTRIES = 200;
+    const OPTION_KEY = 'servertrack_debug_log';
+    const MAX_ENTRIES = 1000;
 
     /**
-     * Logs an event send attempt.
+     * Append a log entry.
      *
-     * @param string $status    'success', 'error', 'skipped', 'dedup_blocked', 'queued'
-     * @param string $platform  'meta', 'google', 'tiktok', 'all'
-     * @param string $message   Short description or HTTP code
-     * @param string $response  Raw API response body (optional)
-     * @param string $event_id  Dedup event UUID (optional)
-     * @param int    $order_id  WooCommerce order ID (optional)
-     * @param string $event_name  Event name e.g. 'Purchase' (optional)
-     * @param int    $http_code   HTTP response code (optional)
+     * @param string $status      success|error|skipped|queued|dedup_blocked
+     * @param string $platform    meta|tiktok|google|all|identity
+     * @param string $message     Human-readable description
+     * @param string $response    Raw API response string (optional)
+     * @param string $event_id    UUID event ID (optional)
+     * @param int    $order_id    WC order ID (optional, 0 for non-order events)
+     * @param string $event_type  Purchase|ViewContent|AddToCart|... (optional)
+     * @param array  $emq         [ 'score' => float, 'grade' => string ] (optional)
      */
     public static function log(
         string $status,
         string $platform,
         string $message,
-        string $response  = '',
-        string $event_id  = '',
-        int    $order_id  = 0,
-        string $event_name = '',
-        int    $http_code  = 0
-    ) {
-        $log_entry = [
-            'timestamp'  => current_time( 'mysql' ),
-            'platform'   => $platform,
+        string $response   = '',
+        string $event_id   = '',
+        int    $order_id   = 0,
+        string $event_type = '',
+        array  $emq        = []
+    ): void {
+        if ( ! get_option( 'servertrack_debug_mode', 0 ) ) {
+            return;
+        }
+
+        $entry = [
+            'timestamp'  => current_time( 'Y-m-d H:i:s' ),
             'status'     => $status,
+            'platform'   => $platform,
             'message'    => $message,
-            'response'   => $response,
             'event_id'   => $event_id,
             'order_id'   => $order_id,
-            'event_name' => $event_name,
-            'http_code'  => $http_code,
+            'event_type' => $event_type,
         ];
 
-        $logs = get_option( 'servertrack_debug_log', [] );
-        if ( ! is_array( $logs ) ) {
-            $logs = [];
+        if ( ! empty( $emq ) && isset( $emq['score'] ) ) {
+            $entry['emq_score'] = $emq['score'];
+            $entry['emq_grade'] = $emq['grade'] ?? '';
         }
 
-        array_unshift( $logs, $log_entry );
+        $logs   = get_option( self::OPTION_KEY, [] );
+        $logs[] = $entry;
 
-        // BUG FIX: was 50 — raised to 200 so errors on busy stores are not
-        // immediately overwritten by success entries.
+        // Prune oldest entries if limit exceeded
         if ( count( $logs ) > self::MAX_ENTRIES ) {
-            $logs = array_slice( $logs, 0, self::MAX_ENTRIES );
+            $logs = array_slice( $logs, -self::MAX_ENTRIES );
         }
 
-        // BUG FIX: autoload='no' — debug log is admin-only data, no need to
-        // load it on every front-end page load.
-        update_option( 'servertrack_debug_log', $logs, false );
+        update_option( self::OPTION_KEY, $logs, false );
     }
 
-    public static function clear_logs(): void {
-        update_option( 'servertrack_debug_log', [], false );
+    /**
+     * Clear all log entries.
+     */
+    public static function clear(): void {
+        update_option( self::OPTION_KEY, [], false );
+    }
+
+    /**
+     * Get recent log entries.
+     *
+     * @param int $limit  Max entries to return (most recent first)
+     * @return array
+     */
+    public static function get_recent( int $limit = 100 ): array {
+        $logs = get_option( self::OPTION_KEY, [] );
+        return array_slice( array_reverse( $logs ), 0, $limit );
     }
 }

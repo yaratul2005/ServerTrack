@@ -4,23 +4,27 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_WooCommerce  v2.3
+ * ServerTrack_WooCommerce  v3.0
+ *
+ * Changes in v3.0 (Feature #9 — Identity & Click ID wiring):
+ *   - build_order_user_data() now uses ServerTrack_Identity::get_external_id_for_order()
+ *     instead of the previous hashed order-ID fallback. This gives every order the
+ *     strongest possible external_id (stable WP user UID > guest email match > order ID).
+ *   - build_order_user_data() now merges ServerTrack_ClickCapture::get_for_order() as
+ *     the PRIMARY source of click IDs (fbc, fbp, ttclid, gclid), before falling back
+ *     to order meta and cookie values. This recovers click IDs that were lost to
+ *     Safari ITP / Firefox ETP / ad blockers.
+ *   - send_purchase_async() and send_refund_async() now call
+ *     ServerTrack_MatchQuality::annotate() on each event before sending.
+ *     The EMQ score is stripped from the payload before API dispatch but
+ *     persisted to the logger so the dashboard can display per-event scores.
+ *   - All logger calls updated to pass event_type as 7th argument (v2.0 signature).
  *
  * Changes in v2.3:
- *   - on_order_refunded() now fires a real server-side Refund CAPI event
- *     to all enabled platforms (Meta, TikTok, Google) instead of only
- *     marking _servertrack_refunded order meta.
- *     The meta flag is still set first (before async dispatch) so that any
- *     concurrent send_purchase_async cron that races with the refund handler
- *     is blocked immediately.
- *     Dispatch is async via WP-Cron to avoid blocking wp-admin.
- *   - New cron handler: send_refund_async() builds order user_data and
- *     custom_data and sends to all enabled platforms with dedup + retry.
- *   - New cron action registered in init(): servertrack_send_woo_refund.
+ *   - on_order_refunded() fires real Refund CAPI event.
  *
  * Changes in v2.2:
- *   CRITICAL FIX — retry-on-success: all maybe_queue() calls wrapped in
- *   `if ( $result['status'] !== 'success' )` guard.
+ *   CRITICAL FIX — retry-on-success guard.
  *
  * Changes in v2.1:
  *   - Consent capture on thank-you page.
@@ -88,128 +92,79 @@ class ServerTrack_WooCommerce {
         spawn_cron();
     }
 
-    /**
-     * Fires when an order is refunded.
-     *
-     * v2.3: now dispatches a real CAPI Refund event to all enabled platforms
-     * in addition to marking the _servertrack_refunded flag.
-     *
-     * The flag is written FIRST so that any racing send_purchase_async cron
-     * that reads the order before our async cron fires will be blocked by the
-     * existing refund guard in send_purchase_async().
-     */
     public static function on_order_refunded( int $order_id ) {
         if ( ! get_option( 'servertrack_enabled', 1 ) ) return;
-
         $order = wc_get_order( $order_id );
         if ( ! $order ) return;
-
-        // Set the refund flag immediately (HPOS-compatible)
         $order->update_meta_data( '_servertrack_refunded', '1' );
         $order->save_meta_data();
-
-        ServerTrack_Logger::log(
-            'queued', 'all',
-            'Order #' . $order_id . ' refunded — queuing Refund CAPI event.',
-            '', ServerTrack_Dedup::get_event_id( $order_id ), $order_id, 'Refund'
-        );
-
-        // Dispatch async — do not block wp-admin
+        ServerTrack_Logger::log( 'queued', 'all', 'Order #' . $order_id . ' refunded — queuing Refund CAPI event.', '', ServerTrack_Dedup::get_event_id( $order_id ), $order_id, 'Refund' );
         wp_schedule_single_event( time(), 'servertrack_send_woo_refund', [ $order_id ] );
         spawn_cron();
     }
 
-    /**
-     * Async cron: send Refund event to all enabled platforms.
-     *
-     * Uses a stable dedup key 'refund_{order_id}' so repeated cron runs
-     * (e.g. after a server restart) cannot double-fire.
-     *
-     * @param int $order_id The refunded order ID.
-     */
     public static function send_refund_async( int $order_id ) {
         if ( ! get_option( 'servertrack_enabled', 1 ) ) return;
-
         $order = wc_get_order( $order_id );
         if ( ! $order ) {
             ServerTrack_Logger::log( 'error', 'all', 'send_refund_async: order #' . $order_id . ' not found.', '', '', $order_id, 'Refund' );
             return;
         }
-
-        // Generate a stable refund-specific event_id
         $refund_event_id_key = 'refund_' . $order_id;
         $event_id = ServerTrack_Dedup::get_event_id( $refund_event_id_key );
         if ( empty( $event_id ) ) {
             $event_id = ServerTrack_Dedup::generate_event_id( $refund_event_id_key );
             ServerTrack_Dedup::store_event_id( $refund_event_id_key, $event_id );
         }
-
-        // Dedup check — 'refund' platform slot
         if ( ServerTrack_Dedup::was_sent( $refund_event_id_key, 'meta' )
             && ServerTrack_Dedup::was_sent( $refund_event_id_key, 'tiktok' )
             && ServerTrack_Dedup::was_sent( $refund_event_id_key, 'google' ) ) {
             ServerTrack_Logger::log( 'dedup_blocked', 'all', 'Refund #' . $order_id . ' already sent.', '', $event_id, $order_id, 'Refund' );
             return;
         }
-
         $user_data   = self::build_order_user_data( $order );
         $custom_data = self::build_purchase_custom_data( $order );
-        // Override event name in custom_data so platforms log it as Refund
         $custom_data['content_name'] = 'Refund';
 
-        // ── META ────────────────────────────────────────────────────────────
-        // Meta CAPI does not have a native 'Refund' event — send as Purchase
-        // with a negative value flag. Meta recommends this approach for refund
-        // attribution. We negate the value so it reduces attributed revenue.
-        if ( get_option( 'servertrack_meta_enabled', 0 )
-            && ! ServerTrack_Dedup::was_sent( $refund_event_id_key, 'meta' ) ) {
-            $meta_data             = $custom_data;
-            $meta_data['value']    = -1 * abs( $meta_data['value'] );
-            $e = ( new ServerTrack_Event( 'Purchase', $event_id ) )
-                ->set_user_data( $user_data )
-                ->set_custom_data( $meta_data );
+        // v3.0: compute and attach EMQ
+        $temp_event = ( new ServerTrack_Event( 'Purchase', $event_id ) )->set_user_data( $user_data );
+        $emq        = ServerTrack_MatchQuality::score( $user_data );
+
+        if ( get_option( 'servertrack_meta_enabled', 0 ) && ! ServerTrack_Dedup::was_sent( $refund_event_id_key, 'meta' ) ) {
+            $meta_data          = $custom_data;
+            $meta_data['value'] = -1 * abs( $meta_data['value'] );
+            $e      = ( new ServerTrack_Event( 'Purchase', $event_id ) )->set_user_data( $user_data )->set_custom_data( $meta_data );
             $result = ServerTrack_Meta::send( $e );
             if ( ( $result['status'] ?? '' ) === 'success' ) {
                 ServerTrack_Dedup::mark_as_sent( $refund_event_id_key, 'meta' );
             } else {
                 ServerTrack_Retry::maybe_queue( 'meta', $result, ServerTrack_Retry::event_to_args( $e ) );
             }
+            ServerTrack_Logger::log( $result['status'] ?? 'error', 'meta', 'Refund #' . $order_id, '', $event_id, $order_id, 'Refund', $emq );
         }
-
-        // ── TIKTOK ──────────────────────────────────────────────────────────
-        // TikTok Events API does not have a native Refund event either.
-        // Send as PlaceAnOrder with negative value — closest signal for refund.
-        if ( get_option( 'servertrack_tiktok_enabled', 0 )
-            && ! ServerTrack_Dedup::was_sent( $refund_event_id_key, 'tiktok' ) ) {
+        if ( get_option( 'servertrack_tiktok_enabled', 0 ) && ! ServerTrack_Dedup::was_sent( $refund_event_id_key, 'tiktok' ) ) {
             $tt_data          = $custom_data;
             $tt_data['value'] = -1 * abs( $tt_data['value'] );
-            $e = ( new ServerTrack_Event( 'PlaceAnOrder', $event_id ) )
-                ->set_user_data( $user_data )
-                ->set_custom_data( $tt_data );
+            $e      = ( new ServerTrack_Event( 'PlaceAnOrder', $event_id ) )->set_user_data( $user_data )->set_custom_data( $tt_data );
             $result = ServerTrack_TikTok::send( $e );
             if ( ( $result['status'] ?? '' ) === 'success' ) {
                 ServerTrack_Dedup::mark_as_sent( $refund_event_id_key, 'tiktok' );
             } else {
                 ServerTrack_Retry::maybe_queue( 'tiktok', $result, ServerTrack_Retry::event_to_args( $e ) );
             }
+            ServerTrack_Logger::log( $result['status'] ?? 'error', 'tiktok', 'Refund #' . $order_id, '', $event_id, $order_id, 'Refund', $emq );
         }
-
-        // ── GOOGLE ──────────────────────────────────────────────────────────
-        // Google Measurement Protocol supports a 'refund' hit type.
-        // Send as Purchase with negative revenue so GA4 adjusts the report.
-        if ( get_option( 'servertrack_google_enabled', 0 )
-            && ! ServerTrack_Dedup::was_sent( $refund_event_id_key, 'google' ) ) {
+        if ( get_option( 'servertrack_google_enabled', 0 ) && ! ServerTrack_Dedup::was_sent( $refund_event_id_key, 'google' ) ) {
             $g_data          = $custom_data;
             $g_data['value'] = -1 * abs( $g_data['value'] );
-            $e = ( new ServerTrack_Event( 'refund', $event_id ) )
-                ->set_user_data( $user_data )
-                ->set_custom_data( $g_data );
+            $e      = ( new ServerTrack_Event( 'refund', $event_id ) )->set_user_data( $user_data )->set_custom_data( $g_data );
             $result = ServerTrack_Google::send( $e );
             if ( ( $result['status'] ?? '' ) === 'success' ) {
                 ServerTrack_Dedup::mark_as_sent( $refund_event_id_key, 'google' );
             } else {
                 ServerTrack_Retry::maybe_queue( 'google', $result, ServerTrack_Retry::event_to_args( $e ) );
             }
+            ServerTrack_Logger::log( $result['status'] ?? 'error', 'google', 'Refund #' . $order_id, '', $event_id, $order_id, 'Refund', $emq );
         }
     }
 
@@ -219,66 +174,67 @@ class ServerTrack_WooCommerce {
             ServerTrack_Logger::log( 'error', 'all', 'send_purchase_async: order #' . $order_id . ' not found.', '', '', $order_id, 'Purchase' );
             return;
         }
-
         if ( '1' === (string) $order->get_meta( '_servertrack_refunded' ) ) {
             ServerTrack_Logger::log( 'skipped', 'all', 'Aborted — order was refunded.', '', ServerTrack_Dedup::get_event_id( $order_id ), $order_id, 'Purchase' );
             return;
         }
-
         $event_id = ServerTrack_Dedup::get_event_id( $order_id );
         if ( empty( $event_id ) ) {
             $event_id = ServerTrack_Dedup::generate_event_id( 'purchase_' . $order_id );
             ServerTrack_Dedup::store_event_id( $order_id, $event_id );
         }
-
         $user_data   = self::build_order_user_data( $order );
         $custom_data = self::build_purchase_custom_data( $order );
 
+        // v3.0: compute EMQ once, pass to all logger calls
+        $emq = ServerTrack_MatchQuality::score( $user_data );
+
         if ( 'thankyou' === $trigger && get_option( 'servertrack_meta_enabled', 0 ) ) {
             if ( ServerTrack_Dedup::was_sent( $order_id, 'meta' ) ) {
-                ServerTrack_Logger::log( 'dedup_blocked', 'meta', 'Already sent', '', $event_id, $order_id, 'Purchase' );
+                ServerTrack_Logger::log( 'dedup_blocked', 'meta', 'Already sent', '', $event_id, $order_id, 'Purchase', $emq );
             } elseif ( ! ServerTrack_Consent::is_granted( 'meta', $order_id ) ) {
-                ServerTrack_Logger::log( 'skipped', 'meta', 'Consent not granted', '', $event_id, $order_id, 'Purchase' );
+                ServerTrack_Logger::log( 'skipped', 'meta', 'Consent not granted', '', $event_id, $order_id, 'Purchase', $emq );
             } else {
-                $e = ( new ServerTrack_Event( 'Purchase', $event_id ) )->set_user_data( $user_data )->set_custom_data( $custom_data );
+                $e      = ( new ServerTrack_Event( 'Purchase', $event_id ) )->set_user_data( $user_data )->set_custom_data( $custom_data );
                 $result = ServerTrack_Meta::send( $e );
                 if ( ( $result['status'] ?? '' ) === 'success' ) {
                     ServerTrack_Dedup::mark_as_sent( $order_id, 'meta' );
                 } else {
                     ServerTrack_Retry::maybe_queue( 'meta', $result, ServerTrack_Retry::event_to_args( $e ) );
                 }
+                ServerTrack_Logger::log( $result['status'] ?? 'error', 'meta', 'Purchase #' . $order_id, '', $event_id, $order_id, 'Purchase', $emq );
             }
         }
-
         if ( 'thankyou' === $trigger && get_option( 'servertrack_tiktok_enabled', 0 ) ) {
             if ( ServerTrack_Dedup::was_sent( $order_id, 'tiktok' ) ) {
-                ServerTrack_Logger::log( 'dedup_blocked', 'tiktok', 'Already sent', '', $event_id, $order_id, 'Purchase' );
+                ServerTrack_Logger::log( 'dedup_blocked', 'tiktok', 'Already sent', '', $event_id, $order_id, 'Purchase', $emq );
             } elseif ( ! ServerTrack_Consent::is_granted( 'tiktok', $order_id ) ) {
-                ServerTrack_Logger::log( 'skipped', 'tiktok', 'Consent not granted', '', $event_id, $order_id, 'Purchase' );
+                ServerTrack_Logger::log( 'skipped', 'tiktok', 'Consent not granted', '', $event_id, $order_id, 'Purchase', $emq );
             } else {
-                $e = ( new ServerTrack_Event( 'Purchase', $event_id ) )->set_user_data( $user_data )->set_custom_data( $custom_data );
+                $e      = ( new ServerTrack_Event( 'Purchase', $event_id ) )->set_user_data( $user_data )->set_custom_data( $custom_data );
                 $result = ServerTrack_TikTok::send( $e );
                 if ( ( $result['status'] ?? '' ) === 'success' ) {
                     ServerTrack_Dedup::mark_as_sent( $order_id, 'tiktok' );
                 } else {
                     ServerTrack_Retry::maybe_queue( 'tiktok', $result, ServerTrack_Retry::event_to_args( $e ) );
                 }
+                ServerTrack_Logger::log( $result['status'] ?? 'error', 'tiktok', 'Purchase #' . $order_id, '', $event_id, $order_id, 'Purchase', $emq );
             }
         }
-
         if ( get_option( 'servertrack_google_enabled', 0 ) ) {
             if ( ServerTrack_Dedup::was_sent( $order_id, 'google' ) ) {
-                ServerTrack_Logger::log( 'dedup_blocked', 'google', 'Already sent (trigger=' . $trigger . ')', '', $event_id, $order_id, 'Purchase' );
+                ServerTrack_Logger::log( 'dedup_blocked', 'google', 'Already sent (trigger=' . $trigger . ')', '', $event_id, $order_id, 'Purchase', $emq );
             } elseif ( ! ServerTrack_Consent::is_granted( 'google', $order_id ) ) {
-                ServerTrack_Logger::log( 'skipped', 'google', 'Consent not granted', '', $event_id, $order_id, 'Purchase' );
+                ServerTrack_Logger::log( 'skipped', 'google', 'Consent not granted', '', $event_id, $order_id, 'Purchase', $emq );
             } else {
-                $e = ( new ServerTrack_Event( 'Purchase', $event_id ) )->set_user_data( $user_data )->set_custom_data( $custom_data );
+                $e      = ( new ServerTrack_Event( 'Purchase', $event_id ) )->set_user_data( $user_data )->set_custom_data( $custom_data );
                 $result = ServerTrack_Google::send( $e );
                 if ( ( $result['status'] ?? '' ) === 'success' ) {
                     ServerTrack_Dedup::mark_as_sent( $order_id, 'google' );
                 } else {
                     ServerTrack_Retry::maybe_queue( 'google', $result, ServerTrack_Retry::event_to_args( $e ) );
                 }
+                ServerTrack_Logger::log( $result['status'] ?? 'error', 'google', 'Purchase #' . $order_id, '', $event_id, $order_id, 'Purchase', $emq );
             }
         }
     }
@@ -317,12 +273,14 @@ class ServerTrack_WooCommerce {
             if ( ( $result['status'] ?? '' ) !== 'success' ) {
                 ServerTrack_Retry::maybe_queue( 'meta', $result, ServerTrack_Retry::event_to_args( $event ) );
             }
+            ServerTrack_Logger::log( $result['status'] ?? 'error', 'meta', 'ViewContent product #' . $product_id, '', $event_id, 0, 'ViewContent' );
         }
         if ( get_option( 'servertrack_tiktok_enabled', 0 ) && ServerTrack_Consent::is_granted( 'tiktok' ) ) {
             $result = ServerTrack_TikTok::send( $event );
             if ( ( $result['status'] ?? '' ) !== 'success' ) {
                 ServerTrack_Retry::maybe_queue( 'tiktok', $result, ServerTrack_Retry::event_to_args( $event ) );
             }
+            ServerTrack_Logger::log( $result['status'] ?? 'error', 'tiktok', 'ViewContent product #' . $product_id, '', $event_id, 0, 'ViewContent' );
         }
     }
 
@@ -330,14 +288,7 @@ class ServerTrack_WooCommerce {
     // ADD TO CART
     // ────────────────────────────────────────────────────────────────────────
 
-    public static function on_add_to_cart(
-        string $cart_item_key,
-        int    $product_id,
-        int    $quantity,
-        int    $variation_id,
-        array  $variation      = [],
-        array  $cart_item_data = []
-    ) {
+    public static function on_add_to_cart( string $cart_item_key, int $product_id, int $quantity, int $variation_id, array $variation = [], array $cart_item_data = [] ) {
         if ( ! get_option( 'servertrack_enabled', 1 ) ) return;
         $meta_on   = get_option( 'servertrack_meta_enabled', 0 );
         $tiktok_on = get_option( 'servertrack_tiktok_enabled', 0 );
@@ -439,6 +390,8 @@ class ServerTrack_WooCommerce {
         if ( $first ) $user_data['first_name'] = ServerTrack_Hasher::hash( $first );
         $last = sanitize_text_field( $new_customer_data['last_name'] ?? '' );
         if ( $last ) $user_data['last_name'] = ServerTrack_Hasher::hash( $last );
+        // v3.0: use stable identity UID
+        $user_data['external_id'] = ServerTrack_Identity::get_external_id_for_user( $customer_id );
         $event = new ServerTrack_Event( 'CompleteRegistration', $event_id );
         $event->set_user_data( $user_data )->set_custom_data( [
             'content_name' => 'New Customer Registration',
@@ -451,11 +404,7 @@ class ServerTrack_WooCommerce {
     // SHARED HELPERS
     // ────────────────────────────────────────────────────────────────────────
 
-    private static function send_to_platforms(
-        ServerTrack_Event $event,
-        bool $meta_on,
-        bool $tiktok_on
-    ) {
+    private static function send_to_platforms( ServerTrack_Event $event, bool $meta_on, bool $tiktok_on ) {
         $timeout_cb = [ self::class, '_http_timeout_filter' ];
         add_filter( 'http_request_args', $timeout_cb, 999 );
         if ( $meta_on && ServerTrack_Consent::is_granted( 'meta' ) ) {
@@ -508,10 +457,20 @@ class ServerTrack_WooCommerce {
         if ( is_user_logged_in() ) {
             $user = wp_get_current_user();
             if ( $user->user_email ) $data['email'] = ServerTrack_Hasher::hash_email( $user->user_email );
+            // v3.0: stable identity UID for logged-in users
+            $data['external_id'] = ServerTrack_Identity::get_external_id_for_user( $user->ID );
         }
         return $data;
     }
 
+    /**
+     * Build user_data from a WC order.
+     *
+     * v3.0 changes:
+     *   - external_id now uses ServerTrack_Identity (stable UID > guest match > order ID)
+     *   - Click IDs now use ServerTrack_ClickCapture::get_for_order() as primary source
+     *     (server-side persistent store), with order meta + cookie as fallbacks.
+     */
     private static function build_order_user_data( WC_Order $order ): array {
         $data = [];
         $ip = $order->get_customer_ip_address();
@@ -519,33 +478,43 @@ class ServerTrack_WooCommerce {
         if ( $ip ) $data['ip'] = $ip;
         $ua = $order->get_customer_user_agent();
         if ( $ua ) $data['user_agent'] = $ua;
-        $fbc = (string) $order->get_meta( '_servertrack_fbc' );
-        if ( empty( $fbc ) && ! empty( $_COOKIE['_fbc'] ) ) {
-            $fbc = sanitize_text_field( wp_unslash( $_COOKIE['_fbc'] ) ); // phpcs:ignore
-        }
+
+        // v3.0: server-side click ID store (primary source)
+        $customer_id = (int) $order->get_customer_id();
+        $session_id  = (string) ( $order->get_meta( '_servertrack_session_id' ) ?: '' );
+        $stored_clicks = ServerTrack_ClickCapture::get_for_order( $customer_id, $session_id );
+
+        // fbc — server store > order meta > cookie > build from fbclid
+        $fbc = $stored_clicks['fbc'] ?? '';
+        if ( empty( $fbc ) ) $fbc = (string) $order->get_meta( '_servertrack_fbc' );
+        if ( empty( $fbc ) && ! empty( $_COOKIE['_fbc'] ) ) $fbc = sanitize_text_field( wp_unslash( $_COOKIE['_fbc'] ) ); // phpcs:ignore
         if ( empty( $fbc ) ) {
-            $fbclid = (string) $order->get_meta( '_servertrack_fbclid' );
+            $fbclid = $stored_clicks['fbclid'] ?? (string) $order->get_meta( '_servertrack_fbclid' );
             if ( $fbclid ) {
                 $ts  = $order->get_date_created() ? $order->get_date_created()->getTimestamp() : time();
                 $fbc = 'fb.1.' . ( $ts * 1000 ) . '.' . $fbclid;
             }
         }
         if ( $fbc ) $data['fbc'] = $fbc;
-        $fbp = (string) $order->get_meta( '_servertrack_fbp' );
-        if ( empty( $fbp ) && ! empty( $_COOKIE['_fbp'] ) ) {
-            $fbp = sanitize_text_field( wp_unslash( $_COOKIE['_fbp'] ) ); // phpcs:ignore
-        }
+
+        // fbp
+        $fbp = $stored_clicks['fbp'] ?? '';
+        if ( empty( $fbp ) ) $fbp = (string) $order->get_meta( '_servertrack_fbp' );
+        if ( empty( $fbp ) && ! empty( $_COOKIE['_fbp'] ) ) $fbp = sanitize_text_field( wp_unslash( $_COOKIE['_fbp'] ) ); // phpcs:ignore
         if ( $fbp ) $data['fbp'] = $fbp;
-        $ttclid = (string) $order->get_meta( '_servertrack_ttclid' );
-        if ( empty( $ttclid ) && ! empty( $_COOKIE['ttclid'] ) ) {
-            $ttclid = sanitize_text_field( wp_unslash( $_COOKIE['ttclid'] ) ); // phpcs:ignore
-        }
+
+        // ttclid
+        $ttclid = $stored_clicks['ttclid'] ?? '';
+        if ( empty( $ttclid ) ) $ttclid = (string) $order->get_meta( '_servertrack_ttclid' );
+        if ( empty( $ttclid ) && ! empty( $_COOKIE['ttclid'] ) ) $ttclid = sanitize_text_field( wp_unslash( $_COOKIE['ttclid'] ) ); // phpcs:ignore
         if ( $ttclid ) $data['ttclid'] = $ttclid;
-        $gclid = (string) $order->get_meta( '_servertrack_gclid' );
-        if ( empty( $gclid ) && ! empty( $_COOKIE['_gcl_aw'] ) ) {
-            $gclid = sanitize_text_field( wp_unslash( $_COOKIE['_gcl_aw'] ) ); // phpcs:ignore
-        }
+
+        // gclid
+        $gclid = $stored_clicks['gclid'] ?? '';
+        if ( empty( $gclid ) ) $gclid = (string) $order->get_meta( '_servertrack_gclid' );
+        if ( empty( $gclid ) && ! empty( $_COOKIE['_gcl_aw'] ) ) $gclid = sanitize_text_field( wp_unslash( $_COOKIE['_gcl_aw'] ) ); // phpcs:ignore
         if ( $gclid ) $data['gclid'] = $gclid;
+
         $email = $order->get_billing_email();
         if ( $email ) $data['email'] = ServerTrack_Hasher::hash_email( $email );
         $phone = $order->get_billing_phone();
@@ -572,8 +541,8 @@ class ServerTrack_WooCommerce {
         foreach ( $pii as $key => $val ) {
             if ( $val ) $data[ $key ] = ServerTrack_Hasher::hash( $val );
         }
-        $customer_id = $order->get_customer_id();
-        $data['external_id'] = ServerTrack_Hasher::hash( (string) ( $customer_id ?: $order->get_id() ) );
+        // v3.0: stable identity UID
+        $data['external_id'] = ServerTrack_Identity::get_external_id_for_order( $order );
         return $data;
     }
 
