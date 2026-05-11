@@ -4,7 +4,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Dashboard  v2.8
+ * ServerTrack_Dashboard  v2.9
+ *
+ * FIX in v2.9 — HTML class names realigned with admin.css selectors:
+ *   1.  st-kpi-card  → st-kpi        (CSS §17 defines .st-kpi)
+ *   2.  st-kpi-value → st-kpi-val    (CSS §17 uses .st-kpi-val)
+ *   3.  st-platform-card → st-plat-row  (inside .st-plat-list)
+ *   4.  st-status    → st-dot        (CSS §17 uses .st-dot with modifiers)
  *
  * FIX in v2.8:
  *   1.  register_menu(): Settings submenu callback changed from
@@ -29,8 +35,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  *       beforeunload so the interval doesn't leak.
  *   6.  Dead `lastCount` variable removed.
  *
- * FIX in v2.6 — Class name mismatch after v2.3 brand overhaul:
- *   .st-header → .st-page-header, .st-kpi → .st-kpi-card, etc.
+ * FIX in v2.6 — Class name mismatch after v2.3 brand overhaul.
  */
 class ServerTrack_Dashboard {
 
@@ -77,8 +82,6 @@ class ServerTrack_Dashboard {
         );
 
         // v2.8 FIX: Use ServerTrack_Admin::render_page as callback.
-        // Previously render_settings() called wp_safe_redirect+exit which
-        // killed the entire admin page during the menu hook phase.
         add_submenu_page(
             'servertrack',
             __( 'Settings', 'servertrack' ),
@@ -88,9 +91,7 @@ class ServerTrack_Dashboard {
             [ 'ServerTrack_Admin', 'render_page' ]
         );
 
-        // v2.8 FIX: render_sources() never existed. Point to Settings page;
-        // admin.php?page=servertrack-sources will route here and the user
-        // can navigate to the Sources tab from the tab bar.
+        // v2.8 FIX: render_sources() never existed. Point to Settings page.
         add_submenu_page(
             'servertrack',
             __( 'Event Sources', 'servertrack' ),
@@ -103,13 +104,6 @@ class ServerTrack_Dashboard {
 
     /**
      * Enqueue Chart.js + admin stylesheet for all ServerTrack admin pages.
-     *
-     * v2.7 FIX: Added wp_localize_script() call so admin.js receives the
-     *   servertrack_dashboard nonce. Previously cfg.nonce was undefined on
-     *   the Dashboard page, causing every admin.js AJAX call to fail with 403.
-     *
-     * v2.6 FIX: Removed admin-dashboard.css enqueue (file is empty since v2.3).
-     * v2.5 FIX: Hook registered at priority 5.
      */
     public static function enqueue_assets( string $hook ): void {
         if ( strpos( $hook, 'servertrack' ) === false ) return;
@@ -175,10 +169,10 @@ class ServerTrack_Dashboard {
         ?>
         <div class="st-kpi-grid" id="st-kpis">
             <?php foreach ( $kpis as $k ) : ?>
-            <div class="st-kpi-card">
+            <div class="st-kpi">
                 <div class="st-kpi-icon" aria-hidden="true"><?php echo esc_html( $k['icon'] ); ?></div>
                 <div class="st-kpi-label"><?php echo esc_html( $k['label'] ); ?></div>
-                <div class="st-kpi-value" id="<?php echo esc_attr( $k['id'] ); ?>"><?php echo esc_html( $k['val'] ); ?></div>
+                <div class="st-kpi-val" id="<?php echo esc_attr( $k['id'] ); ?>"><?php echo esc_html( $k['val'] ); ?></div>
                 <div class="st-kpi-label" style="opacity:0.6;font-size:10px;"><?php echo esc_html( $k['sub'] ); ?></div>
             </div>
             <?php endforeach; ?>
@@ -208,7 +202,7 @@ class ServerTrack_Dashboard {
                         $warn        = $enabled && strpos( $p['status'], 'Missing' ) !== false;
                         if ( $warn ) { $badge = 'warn'; }
                     ?>
-                    <div class="st-platform-card">
+                    <div class="st-plat-row">
                         <span class="st-plat-name"><?php echo esc_html( $p['name'] ); ?></span>
                         <?php if ( $enabled ) : ?>
                             <span class="st-plat-stat"><?php echo esc_html( $p['today'] ?? 0 ); ?> today</span>
@@ -561,7 +555,7 @@ class ServerTrack_Dashboard {
             printf(
                 '<tr data-row="1" data-platform="%s" data-status="%s" data-event="%s" data-order="%s">' .
                 '<td style="white-space:nowrap;font-size:11px;">%s</td>' .
-                '<td><span class="st-status %s">%s %s</span></td>' .
+                '<td><span class="st-dot %s">%s %s</span></td>' .
                 '<td>%s</td><td>%s</td><td>%s</td><td>%s</td>' .
                 '<td style="max-width:260px;word-break:break-word;">%s</td></tr>',
                 esc_attr( $platform ), esc_attr( $status ), esc_attr( $event ), esc_attr( (string) $order ),
