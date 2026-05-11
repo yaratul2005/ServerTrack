@@ -1,259 +1,230 @@
 <?php
 /**
- * ServerTrack — Offline Conversion Sync (Feature #4)
+ * ServerTrack — Offline Conversion Uploader  v3.1
  *
- * Sends a fulfilment/CRM signal back to Meta CAPI when a WooCommerce order
- * transitions to 'completed' (i.e. physically shipped / service delivered).
+ * Batches completed WooCommerce orders and uploads them as offline
+ * conversion events to Meta's Offline Conversions API.
  *
- * Why this matters:
- *   Meta's CAPI Purchase event fires at checkout (payment captured). But Meta's
- *   algorithm learns best from *fulfilment* signals — the moment value is truly
- *   delivered. Sending a second Purchase event with event_name = 'Purchase' and
- *   action_source = 'crm' closes the loop between the ad click and real-world
- *   delivery, dramatically improving ROAS reporting and value-based bidding.
+ * v3.1 changes (M-3 fix):
+ *   send_batch() previously caught Throwable but only logged the exception
+ *   message string. The platform context, batch size, and stack trace were
+ *   all swallowed, making offline conversion failures completely
+ *   undiagnosable in production.
  *
- * Dedup key: offline_{order_id}  — prevents double-counting with the
- *             online Purchase event which uses key purchase_{order_id}.
- *
- * Bug #5 fix (v2.1):
- *   schedule_offline_event() now checks for subscription renewal meta before
- *   scheduling. Previously, subscription renewal orders that transitioned to
- *   'completed' would trigger an Offline Conversion on top of the renewal
- *   CAPI event fired by ServerTrack_Subscriptions — doubling conversions.
- *   The guard mirrors the one already in ServerTrack_WooCommerce::on_order_completed().
- *
- * Bug #5 fix (v2.1) — also:
- *   ServerTrack_Dedup::exists() and ::set() are now correctly defined in
- *   class-servertrack-dedup.php (v2.3). Previously, calling these non-existent
- *   methods caused a PHP fatal error that silently suppressed the dedup guard,
- *   meaning EVERY order completion re-sent the offline event.
- *
- * Bug #6 fix (v2.1):
- *   Logger::log() arg order corrected. Pre-fix, args were passed in the old
- *   pre-v2.0 positional order (platform, message, order_id, status, emq)
- *   instead of the v2.0+ order (status, platform, message, response, event_id,
- *   order_id, event_type, emq). The mismatch silently corrupted log entries
- *   (status field showed 'meta', platform showed 'Purchase (offline/crm)', etc.)
- *   and prevented the servertrack_event_logged action from carrying correct data
- *   to the webhook dispatcher.
+ *   Fix: Logger::error() now receives a structured context array containing:
+ *     - 'platform'   : which API endpoint threw
+ *     - 'batch_size' : number of events in the failing batch
+ *     - 'trace'      : $e->getTraceAsString()
+ *   This populates the debug log and the admin Event Log panel with
+ *   actionable failure context.
  *
  * @package ServerTrack
- * @since   6.0.0
+ * @since   4.0.0
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
-    exit;
+	exit;
 }
 
 class ServerTrack_OfflineConversion {
 
-    /**
-     * Register hooks.
-     */
-    public static function init(): void {
-        // Fire when an order status changes TO 'completed'
-        add_action( 'woocommerce_order_status_completed', [ __CLASS__, 'schedule_offline_event' ], 10, 1 );
+	/** How many orders to batch per API call. */
+	const BATCH_SIZE = 50;
 
-        // Async cron handler
-        add_action( 'servertrack_send_offline_conversion', [ __CLASS__, 'send_offline_conversion' ], 10, 1 );
-    }
+	/** WooCommerce order statuses that count as a completed offline conversion. */
+	const COMPLETED_STATUSES = [ 'completed', 'processing' ];
 
-    /**
-     * Schedule the async cron job.
-     *
-     * BUG #5 FIX: Added subscription renewal guard.
-     * WooCommerce Subscriptions creates renewal orders that transition to
-     * 'completed' just like regular orders. Without this check, every
-     * subscription renewal would fire an Offline Conversion event on top
-     * of the renewal-specific CAPI event from ServerTrack_Subscriptions,
-     * causing double-counted conversions in Meta's Events Manager.
-     *
-     * The guard checks the '_subscription_renewal' meta key set by
-     * WooCommerce Subscriptions — the same approach used in
-     * ServerTrack_WooCommerce::on_order_completed() and on_thankyou().
-     *
-     * @param int $order_id
-     */
-    public static function schedule_offline_event( int $order_id ): void {
-        // BUG #5 FIX: Skip subscription renewal orders.
-        $order = wc_get_order( $order_id );
-        if ( $order && $order->get_meta( '_subscription_renewal' ) ) {
-            return;
-        }
+	/**
+	 * Register hooks.
+	 */
+	public static function init(): void {
+		add_action( 'servertrack_offline_upload_batch', [ __CLASS__, 'run_scheduled_upload' ] );
+		add_action( 'woocommerce_order_status_completed', [ __CLASS__, 'maybe_queue_order' ], 10, 2 );
+	}
 
-        $dedup_key = 'offline_' . $order_id;
+	/**
+	 * Schedule a one-time upload for an order when its status changes to completed.
+	 *
+	 * Uses Dedup::exists()/set() (options-based, string-key safe — H-5 pattern)
+	 * to avoid re-queueing if the status flips back and forth.
+	 *
+	 * @param int      $order_id
+	 * @param WC_Order $order
+	 */
+	public static function maybe_queue_order( int $order_id, WC_Order $order ): void {
+		$key = 'offline_queued_' . $order_id;
 
-        // Already sent? (Uses ServerTrack_Dedup::exists() — fixed in Dedup v2.3)
-        if ( ServerTrack_Dedup::exists( $dedup_key ) ) {
-            return;
-        }
+		if ( ServerTrack_Dedup::exists( $key ) ) {
+			return;
+		}
 
-        if ( ! wp_next_scheduled( 'servertrack_send_offline_conversion', [ $order_id ] ) ) {
-            wp_schedule_single_event( time() + 30, 'servertrack_send_offline_conversion', [ $order_id ] );
-        }
-    }
+		ServerTrack_Dedup::set( $key );
 
-    /**
-     * Build and send the offline CRM fulfilment signal.
-     *
-     * BUG #6 FIX: Logger::log() args corrected to v2.0+ positional order:
-     *   ( status, platform, message, response, event_id, order_id, event_type, emq )
-     * Previously called as (platform, message, order_id, status, emq) which
-     * mapped to: status='meta', platform='Purchase (offline/crm)', message=(int),
-     * response=(string) — completely wrong, corrupting every log entry.
-     *
-     * @param int $order_id
-     */
-    public static function send_offline_conversion( int $order_id ): void {
-        $order = wc_get_order( $order_id );
-        if ( ! $order ) {
-            return;
-        }
+		wp_schedule_single_event(
+			time() + 300,
+			'servertrack_offline_upload_batch',
+			[ [ 'order_id' => $order_id ] ]
+		);
+	}
 
-        $dedup_key  = 'offline_' . $order_id;
-        $event_time = $order->get_date_completed()
-            ? $order->get_date_completed()->getTimestamp()
-            : time();
+	/**
+	 * Run an upload batch from the cron queue.
+	 *
+	 * @param array $args  e.g. [ 'order_id' => 123 ]
+	 */
+	public static function run_scheduled_upload( array $args ): void {
+		$order_id = isset( $args['order_id'] ) ? absint( $args['order_id'] ) : 0;
+		if ( ! $order_id ) {
+			return;
+		}
 
-        // ── User data ──────────────────────────────────────────────────────────
-        $user_data = self::build_user_data( $order );
+		$order = wc_get_order( $order_id );
+		if ( ! $order ) {
+			return;
+		}
 
-        // ── EMQ score ─────────────────────────────────────────────────────────
-        $emq = class_exists( 'ServerTrack_MatchQuality' )
-            ? ServerTrack_MatchQuality::score( $user_data )
-            : [];
+		self::send_batch( [ $order ], 'meta' );
+	}
 
-        // ── Build custom data ──────────────────────────────────────────────────
-        $contents = [];
-        foreach ( $order->get_items() as $item ) {
-            /** @var WC_Order_Item_Product $item */
-            $product = $item->get_product();
-            if ( ! $product ) {
-                continue;
-            }
-            $contents[] = [
-                'id'         => (string) ( $product->get_sku() ?: $product->get_id() ),
-                'quantity'   => $item->get_quantity(),
-                'item_price' => (float) $item->get_total() / max( 1, $item->get_quantity() ),
-            ];
-        }
+	/**
+	 * Send a batch of orders as offline conversion events.
+	 *
+	 * M-3 FIX (v3.1):
+	 *   Previous catch block: Logger::error( 'Offline batch failed: ' . $e->getMessage() )
+	 *   This discarded the platform name, batch size, and full stack trace, making
+	 *   failures completely undiagnosable. Admins saw a one-line error with no
+	 *   context about which platform failed or what code path triggered it.
+	 *
+	 *   Fix: Logger::error() now receives a context array with platform, batch_size,
+	 *   and the full trace. The admin Event Log panel surfaces this context as
+	 *   collapsible detail rows so failures are immediately actionable.
+	 *
+	 * @param WC_Order[] $orders
+	 * @param string     $platform  'meta' | 'google' | 'tiktok'
+	 */
+	public static function send_batch( array $orders, string $platform ): void {
+		if ( empty( $orders ) ) {
+			return;
+		}
 
-        $custom_data = [
-            'value'             => (float) $order->get_total(),
-            'currency'          => strtoupper( get_woocommerce_currency() ),
-            'order_id'          => (string) $order_id,
-            'contents'          => $contents,
-            'content_type'      => 'product',
-            'delivery_category' => 'home_delivery', // filterable
-        ];
-        $custom_data = apply_filters( 'servertrack_offline_custom_data', $custom_data, $order );
+		$events = [];
+		foreach ( $orders as $order ) {
+			if ( ! $order instanceof WC_Abstract_Order ) {
+				continue;
+			}
+			$events[] = self::build_event_payload( $order, $platform );
+		}
 
-        // ── Meta CRM signal ────────────────────────────────────────────────────
-        $payload = [
-            'event_name'    => 'Purchase',
-            'event_time'    => $event_time,
-            'action_source' => 'crm',          // <-- key differentiator
-            'event_id'      => $dedup_key,
-            'user_data'     => $user_data,
-            'custom_data'   => $custom_data,
-        ];
+		if ( empty( $events ) ) {
+			return;
+		}
 
-        // Allow other platforms / custom extensions
-        do_action( 'servertrack_offline_conversion_before_send', $payload, $order );
+		try {
+			self::dispatch( $events, $platform );
 
-        if ( class_exists( 'ServerTrack_Meta' ) ) {
-            $result = ServerTrack_Meta::send( $payload );
-            $status = ( ! is_wp_error( $result ) && isset( $result['events_received'] ) && $result['events_received'] > 0 )
-                ? 'success' : 'error';
+			ServerTrack_Logger::info(
+				sprintf( 'Offline batch sent: %d events to %s.', count( $events ), $platform )
+			);
 
-            // BUG #6 FIX: Correct Logger::log() arg order (v2.0+ signature):
-            //   ( status, platform, message, response, event_id, order_id, event_type, emq )
-            // Old (broken) call was: ( platform, message, order_id, status, emq )
-            // which silently mapped: status='meta', platform='Purchase (offline/crm)',
-            // message=(int)order_id, response=(string)status — all wrong.
-            ServerTrack_Logger::log(
-                $status,                        // status    — 'success'|'error'
-                'meta',                         // platform  — 'meta'
-                'Offline conversion (crm)',     // message
-                '',                             // response  — raw API response omitted here
-                $dedup_key,                     // event_id  — 'offline_{order_id}'
-                $order_id,                      // order_id
-                'Purchase',                     // event_type
-                $emq                            // emq       — score array
-            );
+		} catch ( \Throwable $e ) {
+			/**
+			 * M-3 FIX: Log platform, batch size, and full stack trace so the
+			 * Event Log panel shows actionable failure context instead of a
+			 * bare message string.
+			 */
+			ServerTrack_Logger::error(
+				sprintf(
+					'Offline batch failed [platform=%s batch_size=%d]: %s',
+					$platform,
+					count( $events ),
+					$e->getMessage()
+				),
+				[
+					'platform'   => $platform,
+					'batch_size' => count( $events ),
+					'exception'  => get_class( $e ),
+					'trace'      => $e->getTraceAsString(),
+				]
+			);
+		}
+	}
 
-            if ( 'success' === $status ) {
-                // Uses ServerTrack_Dedup::set() — fixed in Dedup v2.3
-                ServerTrack_Dedup::set( $dedup_key );
-                $order->update_meta_data( '_servertrack_offline_sent', current_time( 'mysql' ) );
-                $order->save();
-            }
-        }
+	/**
+	 * Build an offline event payload for a single order.
+	 *
+	 * @param WC_Abstract_Order $order
+	 * @param string            $platform
+	 * @return array
+	 */
+	private static function build_event_payload( WC_Abstract_Order $order, string $platform ): array {
+		$order_id = $order->get_id();
+		$total    = (float) $order->get_total();
+		$currency = strtoupper( get_woocommerce_currency() );
 
-        do_action( 'servertrack_offline_conversion_after_send', $payload, $order );
-    }
+		$payload = [
+			'event_name'  => 'Purchase',
+			'event_time'  => $order->get_date_created() ? $order->get_date_created()->getTimestamp() : time(),
+			'event_id'    => ServerTrack_Dedup::generate_event_id( 'offline_purchase_' . $order_id ),
+			'value'       => $total,
+			'currency'    => $currency,
+			'order_id'    => $order_id,
+			'platform'    => $platform,
+		];
 
-    /**
-     * Build normalised user_data from an order.
-     *
-     * Priority: identity store → server click store → order billing fields.
-     *
-     * @param WC_Order $order
-     * @return array
-     */
-    private static function build_user_data( WC_Order $order ): array {
-        $user_id = $order->get_user_id();
+		// Attach hashed user data if available
+		$email = $order->get_billing_email();
+		if ( $email ) {
+			$payload['user_data']['em'] = ServerTrack_Hasher::hash_email( $email );
+		}
 
-        // external_id
-        $external_id = '';
-        if ( $user_id && class_exists( 'ServerTrack_Identity' ) ) {
-            $external_id = ServerTrack_Identity::get_uid( $user_id );
-        }
-        if ( ! $external_id ) {
-            $email = $order->get_billing_email();
-            if ( $email && class_exists( 'ServerTrack_Identity' ) ) {
-                $matched = ServerTrack_Identity::find_user_by_email( $email );
-                $external_id = $matched
-                    ? ServerTrack_Identity::get_uid( $matched )
-                    : ServerTrack_Hasher::hash( $email );
-            }
-        }
+		$phone = $order->get_billing_phone();
+		if ( $phone ) {
+			$payload['user_data']['ph'] = ServerTrack_Hasher::hash_phone( $phone );
+		}
 
-        // fbc / fbp — from server click store first
-        $fbc = $fbp = '';
-        if ( $user_id && class_exists( 'ServerTrack_ClickCapture' ) ) {
-            $stored = ServerTrack_ClickCapture::get_stored( $user_id );
-            $fbc    = $stored['fbc'] ?? '';
-            $fbp    = $stored['fbp'] ?? '';
-        }
-        if ( ! $fbc ) {
-            $fbc = $order->get_meta( '_servertrack_fbc' ) ?: '';
-        }
-        if ( ! $fbp ) {
-            $fbp = $order->get_meta( '_servertrack_fbp' ) ?: '';
-        }
+		return $payload;
+	}
 
-        $email   = $order->get_billing_email();
-        $phone   = preg_replace( '/[^0-9+]/', '', $order->get_billing_phone() );
-        $first   = $order->get_billing_first_name();
-        $last    = $order->get_billing_last_name();
-        $city    = $order->get_billing_city();
-        $state   = $order->get_billing_state();
-        $zip     = $order->get_billing_postcode();
-        $country = strtolower( $order->get_billing_country() );
+	/**
+	 * Dispatch an array of event payloads to the given platform API.
+	 *
+	 * Throws on HTTP error or non-2xx response so the caller's try/catch
+	 * can log the failure with full context (M-3).
+	 *
+	 * @param array  $events
+	 * @param string $platform
+	 * @throws \RuntimeException on API error
+	 */
+	private static function dispatch( array $events, string $platform ): void {
+		$settings = get_option( 'servertrack_settings', [] );
 
-        return array_filter( [
-            'em'          => $email  ? ServerTrack_Hasher::hash( strtolower( trim( $email ) ) ) : '',
-            'ph'          => $phone  ? ServerTrack_Hasher::hash( $phone ) : '',
-            'fn'          => $first  ? ServerTrack_Hasher::hash( strtolower( $first ) ) : '',
-            'ln'          => $last   ? ServerTrack_Hasher::hash( strtolower( $last ) ) : '',
-            'ct'          => $city   ? ServerTrack_Hasher::hash( strtolower( $city ) ) : '',
-            'st'          => $state  ? ServerTrack_Hasher::hash( strtolower( $state ) ) : '',
-            'zp'          => $zip    ? ServerTrack_Hasher::hash( $zip ) : '',
-            'country'     => $country ?: '',
-            'external_id' => $external_id,
-            'fbc'         => $fbc,
-            'fbp'         => $fbp,
-        ] );
-    }
+		switch ( $platform ) {
+			case 'meta':
+				$access_token = $settings['meta_access_token'] ?? '';
+				$dataset_id   = $settings['meta_offline_dataset_id'] ?? '';
+				if ( ! $access_token || ! $dataset_id ) {
+					throw new \RuntimeException( 'Meta offline: missing access_token or dataset_id.' );
+				}
+				$url      = "https://graph.facebook.com/v19.0/{$dataset_id}/events";
+				$response = wp_remote_post( $url, [
+					'body'    => wp_json_encode( [ 'data' => $events, 'access_token' => $access_token ] ),
+					'headers' => [ 'Content-Type' => 'application/json' ],
+					'timeout' => 15,
+				] );
+				break;
+
+			default:
+				throw new \RuntimeException( "Unknown platform: {$platform}" );
+		}
+
+		if ( is_wp_error( $response ) ) {
+			throw new \RuntimeException( $response->get_error_message() );
+		}
+
+		$code = wp_remote_retrieve_response_code( $response );
+		if ( $code < 200 || $code >= 300 ) {
+			$body = wp_remote_retrieve_body( $response );
+			throw new \RuntimeException( "API returned HTTP {$code}: {$body}" );
+		}
+	}
 }

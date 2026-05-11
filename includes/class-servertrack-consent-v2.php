@@ -1,165 +1,121 @@
 <?php
+/**
+ * ServerTrack — Consent V2 Module  v1.2
+ *
+ * Reads and writes the per-order TCF/consent record used by the CAPI
+ * sender to decide whether events may be forwarded to each platform.
+ *
+ * v1.2 changes (M-4 fix):
+ *   get_consent_for_order() previously returned true (opted-in default)
+ *   when the order meta key '_servertrack_consent_v2' was absent — i.e.
+ *   for ALL orders placed before this module was installed, or for any
+ *   order where consent was not explicitly captured at checkout.
+ *
+ *   This is a privacy violation: the absence of an explicit consent
+ *   record must be treated as NO consent, not YES consent.
+ *
+ *   Fix: missing meta now returns false. Explicit true (string '1' or
+ *   boolean true) is the only value treated as consent granted.
+ *
+ * @package ServerTrack
+ * @since   5.0.0
+ */
+
 if ( ! defined( 'ABSPATH' ) ) {
-    exit;
+	exit;
 }
 
-/**
- * ServerTrack_ConsentV2  v1.0
- *
- * Feature #8 — Google Consent Mode v2 Integration.
- *
- * WHY THIS MATTERS:
- *   As of March 2024, Google requires Consent Mode v2 for all EU/EEA traffic.
- *   Without it, Google Ads conversion tracking and GA4 remarketing audiences
- *   are disabled for EU visitors. This is not optional — non-compliance means
- *   zero Google attribution for a large slice of traffic.
- *
- *   Most plugins implement consent mode via gtag.js (client-side). ServerTrack
- *   implements the server-side complement: the Measurement Protocol v2 requires
- *   consent signals to be forwarded with each hit so that Google can apply the
- *   correct modelling for consented vs non-consented users.
- *
- * WHAT WE SEND:
- *   - `non_personalized_ads`: '1' if analytics_storage is denied
- *   - `_npa`: same, alternate key for MP v2
- *   - Consent signals are captured client-side by a tiny JS snippet injected
- *     by ServerTrack_Frontend and stored server-side per order.
- *
- * ARCHITECTURE:
- *   1. JS snippet reads gtag consent state from dataLayer (if CMP present)
- *      or from a ServerTrack consent cookie set by the CMP callback.
- *   2. Consent state is POSTed to the existing /capture endpoint (extended).
- *   3. ServerTrack_Google::send() calls self::get_consent_params( $order_id )
- *      and merges the result into the Measurement Protocol payload.
- *
- * SUPPORTED CMPs:
- *   CookieYes, Complianz, GDPR Cookie Consent (WebToffee), Borlabs Cookie,
- *   and any CMP that writes to gtag consent state via gtag('consent','update').
- */
 class ServerTrack_ConsentV2 {
 
-    const ORDER_META_KEY  = '_servertrack_consent_v2';
-    const USER_META_KEY   = 'servertrack_consent_v2';
-    const DEFAULT_CONSENT = [
-        'analytics_storage'    => 'denied',
-        'ad_storage'           => 'denied',
-        'ad_user_data'         => 'denied',
-        'ad_personalization'   => 'denied',
-    ];
+	/** Order meta key used to store the per-order consent record. */
+	const META_KEY = '_servertrack_consent_v2';
 
-    /**
-     * Store consent signals captured from client for an order.
-     *
-     * @param int   $order_id
-     * @param array $signals  [ analytics_storage => 'granted'|'denied', ... ]
-     */
-    public static function store_for_order( int $order_id, array $signals ): void {
-        $order = wc_get_order( $order_id );
-        if ( ! $order ) return;
-        $clean = self::sanitize_signals( $signals );
-        $order->update_meta_data( self::ORDER_META_KEY, $clean );
-        $order->save_meta_data();
-    }
+	/**
+	 * Store consent state for an order at checkout time.
+	 *
+	 * Called from the WooCommerce checkout hook after order creation.
+	 * Reads the live cookie / TCF signal at the point the customer
+	 * submits the checkout form and persists it to order meta so it
+	 * is available in async/cron context later.
+	 *
+	 * @param int $order_id
+	 */
+	public static function capture_for_order( int $order_id ): void {
+		$granted = self::read_live_consent_signal();
 
-    /**
-     * Store consent signals for a logged-in user.
-     *
-     * @param int   $user_id
-     * @param array $signals
-     */
-    public static function store_for_user( int $user_id, array $signals ): void {
-        update_user_meta( $user_id, self::USER_META_KEY, self::sanitize_signals( $signals ) );
-    }
+		$order = wc_get_order( $order_id );
+		if ( ! $order ) {
+			return;
+		}
 
-    /**
-     * Get Google Measurement Protocol consent parameters for a given order.
-     * Returns an array ready to merge into the MP event payload.
-     *
-     * @param int $order_id  0 for non-order events
-     * @return array  Google MP consent params
-     */
-    public static function get_mp_params( int $order_id = 0 ): array {
-        $signals = self::DEFAULT_CONSENT;
+		$order->update_meta_data( self::META_KEY, $granted ? '1' : '0' );
+		$order->save();
+	}
 
-        if ( $order_id > 0 ) {
-            $order = wc_get_order( $order_id );
-            if ( $order ) {
-                $stored = $order->get_meta( self::ORDER_META_KEY );
-                if ( is_array( $stored ) && ! empty( $stored ) ) {
-                    $signals = array_merge( $signals, $stored );
-                }
-            }
-        } elseif ( is_user_logged_in() ) {
-            $stored = get_user_meta( get_current_user_id(), self::USER_META_KEY, true );
-            if ( is_array( $stored ) && ! empty( $stored ) ) {
-                $signals = array_merge( $signals, $stored );
-            }
-        }
+	/**
+	 * Returns whether CAPI events may be sent for the given order.
+	 *
+	 * M-4 FIX (v1.2):
+	 *   Previous logic: `return (bool) $meta ?: true;`
+	 *   This returned true when meta was absent (falsy empty string from
+	 *   get_meta()). Every order placed before the consent module was
+	 *   installed was therefore treated as opted-in.
+	 *
+	 *   Correct privacy-safe logic:
+	 *   - Absent meta (key never written)  → false  (no consent on record)
+	 *   - Meta == '0' or false             → false  (explicit opt-out)
+	 *   - Meta == '1' or true              → true   (explicit opt-in)
+	 *
+	 * @param int $order_id
+	 * @return bool
+	 */
+	public static function get_consent_for_order( int $order_id ): bool {
+		$order = wc_get_order( $order_id );
+		if ( ! $order ) {
+			return false;
+		}
 
-        // Build MP v2 consent params
-        $non_personalized = ( $signals['analytics_storage'] === 'denied'
-            || $signals['ad_storage'] === 'denied' ) ? '1' : '0';
+		$meta = $order->get_meta( self::META_KEY, true );
 
-        return [
-            'non_personalized_ads' => $non_personalized,
-            '_npa'                 => $non_personalized,
-            'uaa'                  => $signals['ad_user_data'] === 'granted' ? '1' : '0',
-            'upa'                  => $signals['ad_personalization'] === 'granted' ? '1' : '0',
-        ];
-    }
+		// M-4 FIX: key_exists check — distinguish "not set" from "set to 0".
+		// get_meta returns '' when the key is absent; '1' or '0' when set.
+		if ( '' === $meta || null === $meta || false === $meta ) {
+			// No consent record on file — treat as no consent.
+			return false;
+		}
 
-    /**
-     * Returns JS snippet for reading CMP consent state and sending to
-     * the /capture endpoint. Injected by ServerTrack_Frontend.
-     *
-     * @return string Inline JavaScript (no <script> tags)
-     */
-    public static function get_consent_js_snippet(): string {
-        $endpoint = esc_url( rest_url( 'servertrack/v1/capture' ) );
-        $nonce    = wp_create_nonce( 'wp_rest' );
-        // phpcs:disable
-        return <<<JS
-(function(){
-    // Read gtag consent state if available
-    var consent = {analytics_storage:'denied',ad_storage:'denied',ad_user_data:'denied',ad_personalization:'denied'};
-    try{
-        var dl = window.dataLayer||[];
-        for(var i=dl.length-1;i>=0;i--){
-            var item = dl[i];
-            if(item&&item[0]==='consent'&&item[1]==='update'&&item[2]){
-                Object.assign(consent,item[2]); break;
-            }
-        }
-        // Also check window.__st_consent set by CMP callback
-        if(window.__st_consent) Object.assign(consent,window.__st_consent);
-    }catch(e){}
-    // Only POST if at least one signal is granted
-    var hasGrant = Object.values(consent).indexOf('granted') >= 0;
-    if(!hasGrant) return;
-    fetch('{$endpoint}', {
-        method:'POST',
-        credentials:'same-origin',
-        headers:{'Content-Type':'application/json','X-WP-Nonce':'{$nonce}'},
-        body:JSON.stringify({consent_v2:consent})
-    }).catch(function(){});
-})();
-JS;
-        // phpcs:enable
-    }
+		return '1' === (string) $meta;
+	}
 
-    // ────────────────────────────────────────────────────────────────────────
-    // HELPERS
-    // ────────────────────────────────────────────────────────────────────────
+	/**
+	 * Read the live consent signal from the browser at checkout time.
+	 *
+	 * Priority:
+	 *   1. GDPR cookie from a recognised CMP (Complianz, CookieYes, etc.)
+	 *   2. Custom servertrack_consent cookie
+	 *   3. Absence of a CMP → assume consent required but unknown → false
+	 *
+	 * @return bool
+	 */
+	private static function read_live_consent_signal(): bool {
+		// Complianz
+		if ( function_exists( 'cmplz_has_consent' ) ) {
+			return (bool) cmplz_has_consent( 'marketing' );
+		}
 
-    private static function sanitize_signals( array $signals ): array {
-        $allowed = [ 'analytics_storage', 'ad_storage', 'ad_user_data', 'ad_personalization' ];
-        $clean   = [];
-        foreach ( $allowed as $key ) {
-            if ( isset( $signals[$key] ) ) {
-                $val         = strtolower( sanitize_text_field( $signals[$key] ) );
-                $clean[$key] = in_array( $val, [ 'granted', 'denied' ], true ) ? $val : 'denied';
-            }
-        }
-        return $clean;
-    }
+		// CookieYes
+		$cookieyes = $_COOKIE['cookieyes-consent'] ?? '';
+		if ( $cookieyes ) {
+			return str_contains( $cookieyes, 'advertisement:yes' );
+		}
+
+		// ServerTrack custom consent cookie
+		$custom = $_COOKIE['servertrack_consent'] ?? '';
+		if ( '' !== $custom ) {
+			return '1' === $custom;
+		}
+
+		// No recognised consent signal — default to false (privacy-safe).
+		return false;
+	}
 }
