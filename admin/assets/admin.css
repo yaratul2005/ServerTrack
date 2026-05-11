@@ -1,11 +1,22 @@
 /*
- * ServerTrack Admin Styles — v2.4
- * - bglogo.png wired in; .st-logo-icon (old SVG placeholder) removed.
- * - .st-logo-icon-fallback shown only when image fails to load.
- * - Responsive breakpoints tightened: logo stays crisp down to 375px.
- * - .st-page-header-left gets min-height so narrow screens never collapse.
- * - All other tokens, KPI cards, platform cards, log table, toasts
- *   and responsive grid fixes carried forward from v2.3.
+ * ServerTrack Admin Styles — v2.6
+ *
+ * v2.6 — ROOT CAUSE FIX (Dashboard has zero CSS):
+ *   class-servertrack-dashboard.php render_page() outputs HTML that uses an
+ *   entirely different set of CSS selectors from those defined in this file.
+ *   The dashboard wraps in #st-app (not #servertrack-wrap) and uses classes
+ *   such as .st-header, .st-kpi, .st-kpi-val, .st-kpi-sub, .st-row,
+ *   .st-panel, .st-panel-header, .st-panel-title, .st-panel-action,
+ *   .st-plat-list, .st-plat-row, .st-plat-name, .st-plat-stat, .st-badge
+ *   (with modifiers .on / .off / .warn), .st-dot, .st-emq-chip,
+ *   .st-grade-pill, .st-filter-bar, .st-log-wrap, .st-empty, .st-retry-item,
+ *   .st-retry-plat, .st-pill, .st-pulse, .st-refresh-btn, .st-spinning —
+ *   NONE of which existed in this stylesheet before this commit.
+ *   Section 17 adds the full set of missing rules.
+ *
+ * v2.5 — enqueue hook priority fix (class-servertrack-dashboard.php).
+ * v2.4 — bglogo.png wired in; empty admin-dashboard.css stub retired.
+ * v2.3 — all admin-dashboard.css styles merged here.
  */
 
 /* ─────────────────────────────────────────────────────────────────
@@ -18,6 +29,13 @@
     --st-brand-dark:     #0b7a76;
     --st-brand-deeper:   #065e5b;
 
+    /* Dashboard shorthand aliases used by render_page() inline styles */
+    --st-primary:        #0ea5a0;
+    --st-muted:          #6b7280;
+    --st-faint:          #9ca3af;
+    --st-text:           #1a1d23;
+    --st-error:          #ef4444;
+
     /* Surfaces */
     --st-bg:             #f4f6f9;
     --st-surface:        #ffffff;
@@ -26,7 +44,6 @@
     --st-divider:        #e8eaed;
 
     /* Text */
-    --st-text:           #1a1d23;
     --st-text-muted:     #6b7280;
     --st-text-faint:     #9ca3af;
 
@@ -34,7 +51,6 @@
     --st-success:        #22c55e;
     --st-success-bg:     #f0fdf4;
     --st-success-text:   #15803d;
-    --st-error:          #ef4444;
     --st-error-bg:       #fef2f2;
     --st-error-text:     #b91c1c;
     --st-warning:        #f59e0b;
@@ -69,8 +85,16 @@
     margin-right: 20px;
 }
 
+/* Dashboard uses #st-app as its root wrapper */
+#st-app {
+    max-width: 1200px;
+    margin-right: 20px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--st-text);
+}
+
 /* ─────────────────────────────────────────────────────────────────
-   2. PAGE HEADER
+   2. PAGE HEADER  (Settings page — .st-page-header)
 ───────────────────────────────────────────────────────────────── */
 .st-page-header {
     background: linear-gradient(135deg, #0d1f1f 0%, #0b2e2c 50%, #0d3535 100%);
@@ -90,37 +114,35 @@
     display: flex;
     align-items: center;
     gap: 16px;
-    min-height: 52px; /* prevent collapse on narrow screens */
+    min-height: 52px;
 }
 
-/* ── Real logo: bglogo.png (transparent background) ── */
+/* Real logo */
 .st-logo-img {
     width: 48px;
     height: 48px;
     object-fit: contain;
     flex-shrink: 0;
     display: block;
-    /* Teal glow to tie the logo into the dark header gradient */
     filter:
         drop-shadow(0 0 6px rgba(14,165,160,.55))
         drop-shadow(0 2px 10px rgba(0,0,0,.4));
     transition: filter var(--st-transition);
 }
 
-/* Slightly brighten on hover for a polished feel */
 .st-page-header:hover .st-logo-img {
     filter:
         drop-shadow(0 0 10px rgba(14,165,160,.75))
         drop-shadow(0 2px 12px rgba(0,0,0,.45));
 }
 
-/* ── Fallback icon — only displayed via JS onerror when image fails ── */
+/* Fallback icon */
 .st-logo-icon-fallback {
     width: 44px;
     height: 44px;
     background: linear-gradient(135deg, var(--st-brand), var(--st-brand-dark));
     border-radius: 10px;
-    display: none;           /* shown inline via JS onerror */
+    display: none;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
@@ -138,7 +160,6 @@
     stroke-linejoin: round;
 }
 
-/* Title group */
 .st-page-title-group h1 {
     color: #ffffff;
     font-size: 1.2rem;
@@ -157,7 +178,6 @@
     letter-spacing: .01em;
 }
 
-/* Right-side badges row */
 .st-header-badges {
     display: flex;
     gap: 8px;
@@ -165,7 +185,6 @@
     align-items: center;
 }
 
-/* Tiny version tag */
 .st-header-version {
     font-size: .7rem;
     color: rgba(255,255,255,.3);
@@ -260,7 +279,7 @@
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   4. KPI CARDS
+   4. KPI CARDS  (Settings-page variant — .st-kpi-card)
 ───────────────────────────────────────────────────────────────── */
 .st-kpi-grid {
     display: grid;
@@ -341,7 +360,7 @@
 .st-kpi-trend-info    { background: linear-gradient(90deg, var(--st-brand),   transparent); }
 
 /* ─────────────────────────────────────────────────────────────────
-   5. PLATFORM HEALTH CARDS
+   5. PLATFORM HEALTH CARDS  (Settings-page variant)
 ───────────────────────────────────────────────────────────────── */
 .st-platform-grid {
     display: grid;
@@ -408,7 +427,6 @@
     margin-top: 1px;
 }
 
-/* Status pill */
 .st-status-pill {
     display: inline-flex;
     align-items: center;
@@ -532,7 +550,7 @@
 .st-test-result.is-error   { background: var(--st-error-bg);   color: var(--st-error-text); }
 
 /* ─────────────────────────────────────────────────────────────────
-   6. LOG TABLE
+   6. LOG TABLE  (Settings-page variant)
 ───────────────────────────────────────────────────────────────── */
 .st-log-section {
     background: var(--st-surface);
@@ -946,21 +964,6 @@
     color: var(--st-text-muted);
 }
 
-.st-spinner {
-    width: 32px;
-    height: 32px;
-    border: 3px solid var(--st-divider);
-    border-top-color: var(--st-brand);
-    border-radius: 50%;
-    animation: st-spin 0.8s linear infinite;
-    margin: 0 auto 12px;
-}
-
-.st-loading-text {
-    font-size: .8125rem;
-    font-weight: 500;
-}
-
 /* ─────────────────────────────────────────────────────────────────
    12. ACTIVITY FEED
 ───────────────────────────────────────────────────────────────── */
@@ -1084,18 +1087,419 @@
     .st-page-header       { padding: 16px 18px; gap: 12px; }
     .st-log-filters       { display: none; }
     #servertrack-wrap     { margin-right: 10px; }
+    #st-app               { margin-right: 10px; }
     .st-dashboard-grid    { grid-template-columns: 1fr; }
-    /* Keep logo readable on tablet */
     .st-logo-img          { width: 42px; height: 42px; }
     .st-page-title-group h1 { font-size: 1.05rem; }
+    .st-row               { flex-direction: column; }
+    .st-row > .st-panel   { min-width: 0; }
 }
 
 @media screen and (max-width: 480px) {
     .st-kpi-grid          { grid-template-columns: 1fr; }
     .st-tab-nav           { gap: 1px; }
     .st-tab-nav .nav-tab  { padding: 6px 10px; font-size: .75rem; }
-    /* Logo stays at 40px minimum — never smaller */
     .st-logo-img          { width: 40px; height: 40px; }
     .st-page-header-left  { gap: 12px; }
-    .st-header-badges     { display: none; } /* hide badges on very small screens */
+    .st-header-badges     { display: none; }
+    .st-filter-bar        { flex-direction: column; align-items: stretch; }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   17. DASHBOARD PAGE  (#st-app) — MISSING RULES ADDED IN v2.6
+       All selectors below are used by class-servertrack-dashboard.php
+       render_page() but were absent from this stylesheet.
+───────────────────────────────────────────────────────────────── */
+
+/* ── Dashboard header bar ── */
+.st-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.st-header h1 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--st-text);
+    margin: 0;
+    padding: 0;
+    border: none;
+    line-height: 1.2;
+}
+
+/* Version pill next to h1 */
+.st-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: .6875rem;
+    font-weight: 600;
+    background: var(--st-brand-light);
+    color: var(--st-brand-dark);
+    letter-spacing: .03em;
+}
+
+/* Live / refresh badge */
+.st-refresh-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.st-refresh-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    border-radius: var(--st-radius-sm);
+    font-size: .75rem;
+    font-weight: 500;
+    border: 1px solid var(--st-border);
+    background: var(--st-surface);
+    color: var(--st-text-muted);
+    cursor: pointer;
+    transition: all var(--st-transition);
+}
+
+.st-refresh-btn:hover {
+    background: var(--st-bg);
+    color: var(--st-text);
+    border-color: rgba(0,0,0,.15);
+}
+
+.st-refresh-btn svg {
+    transition: transform .4s ease;
+}
+
+.st-refresh-btn.st-spinning svg,
+.st-refresh-btn.st-spinning .st-spinner {
+    animation: st-spin .7s linear infinite;
+}
+
+/* Inline spinner (inside refresh button) */
+.st-refresh-btn .st-spinner {
+    display: none;
+    width: 11px;
+    height: 11px;
+    border: 2px solid var(--st-divider);
+    border-top-color: var(--st-brand);
+    border-radius: 50%;
+}
+
+/* Pulse dot (live indicator) */
+.st-pulse {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--st-success);
+    animation: st-pulse 2s ease-in-out infinite;
+    flex-shrink: 0;
+}
+
+/* ── KPI cards (Dashboard variant: .st-kpi) ── */
+#st-kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.st-kpi {
+    background: var(--st-surface);
+    border: 1px solid var(--st-border);
+    border-radius: var(--st-radius);
+    padding: 16px 18px;
+    box-shadow: var(--st-shadow);
+    transition: box-shadow var(--st-transition), transform var(--st-transition);
+}
+
+.st-kpi:hover {
+    box-shadow: var(--st-shadow-md);
+    transform: translateY(-1px);
+}
+
+/* .st-kpi-label already defined in Section 4 — also used here */
+.st-kpi .st-kpi-label {
+    font-size: .6875rem;
+    color: var(--st-text-muted);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    margin-bottom: 6px;
+}
+
+.st-kpi-val {
+    font-size: 1.75rem;
+    font-weight: 800;
+    color: var(--st-text);
+    line-height: 1;
+    margin-bottom: 3px;
+    font-variant-numeric: tabular-nums;
+}
+
+.st-kpi-sub {
+    font-size: .6875rem;
+    color: var(--st-text-faint);
+}
+
+/* ── Two-column row ── */
+.st-row {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+}
+
+.st-row > .st-panel {
+    flex: 1;
+    min-width: 0;
+}
+
+/* ── Generic panel card (Dashboard) ── */
+.st-panel {
+    background: var(--st-surface);
+    border: 1px solid var(--st-border);
+    border-radius: var(--st-radius);
+    padding: 18px 20px;
+    box-shadow: var(--st-shadow);
+}
+
+.st-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.st-panel-title {
+    font-size: .9375rem;
+    font-weight: 700;
+    color: var(--st-text);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.st-panel-action {
+    font-size: .75rem;
+    font-weight: 600;
+    color: var(--st-brand);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    text-decoration: none;
+    transition: color var(--st-transition);
+}
+
+.st-panel-action:hover { color: var(--st-brand-dark); }
+
+/* ── Platform health list (inside panel) ── */
+.st-plat-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.st-plat-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: var(--st-radius-sm);
+    background: var(--st-bg);
+    flex-wrap: wrap;
+}
+
+.st-plat-name {
+    font-weight: 600;
+    font-size: .8125rem;
+    color: var(--st-text);
+    flex: 1;
+    min-width: 80px;
+}
+
+.st-plat-stat {
+    font-size: .75rem;
+    color: var(--st-text-muted);
+}
+
+/* ── Status badge variants used by Dashboard ── */
+/* .st-badge already defined in Section 2; modifiers .on/.off/.warn: */
+.st-badge.on {
+    background: var(--st-success-bg);
+    color: var(--st-success-text);
+}
+
+.st-badge.off {
+    background: var(--st-divider);
+    color: var(--st-text-faint);
+}
+
+.st-badge.warn {
+    background: var(--st-warning-bg);
+    color: var(--st-warning-text);
+}
+
+/* ── Status dot in log table ── */
+.st-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--st-text-faint);
+    margin-right: 5px;
+    vertical-align: middle;
+    flex-shrink: 0;
+}
+
+.st-dot.success       { background: var(--st-success); }
+.st-dot.error         { background: var(--st-error); }
+.st-dot.skipped       { background: var(--st-text-faint); }
+.st-dot.dedup_blocked { background: var(--st-warning); }
+.st-dot.queued        { background: var(--st-info); }
+.st-dot.retrying      { background: var(--st-warning); animation: st-pulse 1.4s ease-in-out infinite; }
+
+/* ── EMQ score chip ── */
+.st-emq-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 7px;
+    border-radius: 999px;
+    font-size: .6875rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    background: var(--st-divider);
+    color: var(--st-text-muted);
+}
+
+.st-emq-chip.excellent { background: var(--st-success-bg); color: var(--st-success-text); }
+.st-emq-chip.good      { background: var(--st-info-bg);    color: var(--st-info-text); }
+.st-emq-chip.fair      { background: var(--st-warning-bg); color: var(--st-warning-text); }
+.st-emq-chip.poor      { background: var(--st-error-bg);   color: var(--st-error-text); }
+
+/* ── EMQ grade pills in Scorecard panel ── */
+.st-emq-grades {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 14px;
+}
+
+.st-grade-pill {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 10px;
+    border-radius: var(--st-radius-sm);
+    background: var(--st-bg);
+    font-size: .75rem;
+}
+
+.st-grade-pill.excellent { background: var(--st-success-bg); }
+.st-grade-pill.good      { background: var(--st-info-bg); }
+.st-grade-pill.fair      { background: var(--st-warning-bg); }
+.st-grade-pill.poor      { background: var(--st-error-bg); }
+
+.st-grade-count {
+    font-weight: 700;
+    font-size: .875rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--st-text);
+}
+
+/* ── Filter bar (Live Event Log) ── */
+.st-filter-bar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 10px 0 14px;
+    border-bottom: 1px solid var(--st-divider);
+    margin-bottom: 12px;
+}
+
+.st-filter-bar select,
+.st-filter-bar input[type="text"] {
+    padding: 5px 9px;
+    border: 1px solid var(--st-border);
+    border-radius: var(--st-radius-sm);
+    font-size: .8125rem;
+    color: var(--st-text);
+    background: var(--st-surface);
+    transition: border-color var(--st-transition), box-shadow var(--st-transition);
+    outline: none;
+}
+
+.st-filter-bar select:focus,
+.st-filter-bar input[type="text"]:focus {
+    border-color: var(--st-brand);
+    box-shadow: 0 0 0 3px rgba(14,165,160,.12);
+}
+
+/* ── Log table wrapper inside dashboard panel ── */
+.st-log-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Reuse .st-log-table defined in Section 6 — also applies here */
+
+/* Empty log row */
+td.st-empty,
+.st-empty {
+    text-align: center;
+    padding: 32px 20px;
+    color: var(--st-text-muted);
+    font-size: .8125rem;
+}
+
+/* ── Retry queue list ── */
+.st-retry-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.st-retry-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border-radius: var(--st-radius-sm);
+    background: var(--st-bg);
+    font-size: .8125rem;
+    flex-wrap: wrap;
+}
+
+.st-retry-plat {
+    font-weight: 700;
+    font-size: .75rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--st-brand);
+    background: var(--st-brand-light);
+    padding: 1px 7px;
+    border-radius: 999px;
+    flex-shrink: 0;
+}
+
+/* ── Spinner (standalone, outside refresh button) ── */
+#st-log-spinner {
+    display: none;
+    width: 13px;
+    height: 13px;
+    border: 2px solid var(--st-divider);
+    border-top-color: var(--st-brand);
+    border-radius: 50%;
+    animation: st-spin .7s linear infinite;
+    vertical-align: middle;
+    margin-left: 6px;
 }
