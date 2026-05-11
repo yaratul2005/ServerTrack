@@ -4,10 +4,18 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Dedup  v2.2
+ * ServerTrack_Dedup  v2.3
  *
  * Handles event ID generation, storage, and deduplication flags
  * for both WooCommerce HPOS (custom orders table) and legacy post meta.
+ *
+ * Changes in v2.3:
+ *   - Added exists() — checks a non-order wp_options dedup key.
+ *     Used by ServerTrack_OfflineConversion to guard against double-sending.
+ *   - Added set()   — writes a non-order wp_options dedup key.
+ *     Used by ServerTrack_OfflineConversion after a successful send.
+ *   These two methods pair with reset_event_key() (already present in v2.2)
+ *   to form a complete options-based dedup system for non-order events.
  *
  * Changes in v2.2:
  *   - Added reset_for_order() — clears the dedup flags and event ID for a
@@ -21,6 +29,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  *   update_meta() only calls save() when value has changed.
  */
 class ServerTrack_Dedup {
+
+    // Options-based dedup key prefix (used for non-order events)
+    const OPTIONS_PREFIX = 'servertrack_dedup_';
 
     // ── HPOS detection (cached per request) ──────────────────────────────
 
@@ -195,5 +206,49 @@ class ServerTrack_Dedup {
     public static function reset_for_order( int $order_id ): void {
         self::delete_meta( $order_id, '_servertrack_event_id' );
         self::delete_meta( $order_id, '_servertrack_server_sent' );
+    }
+
+    // ── Options-based dedup (for non-order events e.g. Offline Conversion) ──
+
+    /**
+     * Check whether a non-order dedup key has been marked as sent.
+     *
+     * Keys are stored in wp_options under the namespaced prefix
+     * 'servertrack_dedup_{key}'. This avoids polluting order meta for
+     * events that are keyed on strings (e.g. 'offline_123').
+     *
+     * FIX (v2.3): This method was called by ServerTrack_OfflineConversion
+     * but never existed, causing a PHP fatal error and preventing the
+     * offline dedup guard from running entirely.
+     *
+     * @param string $key  e.g. 'offline_123'
+     * @return bool
+     */
+    public static function exists( string $key ): bool {
+        return (bool) get_option( self::OPTIONS_PREFIX . sanitize_key( $key ), false );
+    }
+
+    /**
+     * Mark a non-order dedup key as sent.
+     *
+     * FIX (v2.3): Paired with exists() — both were missing.
+     * ServerTrack_OfflineConversion calls set() after a successful
+     * Meta API response to prevent the offline event from re-sending
+     * on subsequent order_status_completed hooks (e.g. order edited
+     * in admin, status toggled back and forth).
+     *
+     * @param string $key  e.g. 'offline_123'
+     */
+    public static function set( string $key ): void {
+        update_option( self::OPTIONS_PREFIX . sanitize_key( $key ), 1, false );
+    }
+
+    /**
+     * Remove a non-order dedup key (e.g. to allow re-sending in testing).
+     *
+     * @param string $key  e.g. 'offline_123'
+     */
+    public static function reset_event_key( string $key ): void {
+        delete_option( self::OPTIONS_PREFIX . sanitize_key( $key ) );
     }
 }

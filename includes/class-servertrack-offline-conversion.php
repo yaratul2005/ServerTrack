@@ -15,6 +15,28 @@
  * Dedup key: offline_{order_id}  — prevents double-counting with the
  *             online Purchase event which uses key purchase_{order_id}.
  *
+ * Bug #5 fix (v2.1):
+ *   schedule_offline_event() now checks for subscription renewal meta before
+ *   scheduling. Previously, subscription renewal orders that transitioned to
+ *   'completed' would trigger an Offline Conversion on top of the renewal
+ *   CAPI event fired by ServerTrack_Subscriptions — doubling conversions.
+ *   The guard mirrors the one already in ServerTrack_WooCommerce::on_order_completed().
+ *
+ * Bug #5 fix (v2.1) — also:
+ *   ServerTrack_Dedup::exists() and ::set() are now correctly defined in
+ *   class-servertrack-dedup.php (v2.3). Previously, calling these non-existent
+ *   methods caused a PHP fatal error that silently suppressed the dedup guard,
+ *   meaning EVERY order completion re-sent the offline event.
+ *
+ * Bug #6 fix (v2.1):
+ *   Logger::log() arg order corrected. Pre-fix, args were passed in the old
+ *   pre-v2.0 positional order (platform, message, order_id, status, emq)
+ *   instead of the v2.0+ order (status, platform, message, response, event_id,
+ *   order_id, event_type, emq). The mismatch silently corrupted log entries
+ *   (status field showed 'meta', platform showed 'Purchase (offline/crm)', etc.)
+ *   and prevented the servertrack_event_logged action from carrying correct data
+ *   to the webhook dispatcher.
+ *
  * @package ServerTrack
  * @since   6.0.0
  */
@@ -39,12 +61,29 @@ class ServerTrack_OfflineConversion {
     /**
      * Schedule the async cron job.
      *
+     * BUG #5 FIX: Added subscription renewal guard.
+     * WooCommerce Subscriptions creates renewal orders that transition to
+     * 'completed' just like regular orders. Without this check, every
+     * subscription renewal would fire an Offline Conversion event on top
+     * of the renewal-specific CAPI event from ServerTrack_Subscriptions,
+     * causing double-counted conversions in Meta's Events Manager.
+     *
+     * The guard checks the '_subscription_renewal' meta key set by
+     * WooCommerce Subscriptions — the same approach used in
+     * ServerTrack_WooCommerce::on_order_completed() and on_thankyou().
+     *
      * @param int $order_id
      */
     public static function schedule_offline_event( int $order_id ): void {
+        // BUG #5 FIX: Skip subscription renewal orders.
+        $order = wc_get_order( $order_id );
+        if ( $order && $order->get_meta( '_subscription_renewal' ) ) {
+            return;
+        }
+
         $dedup_key = 'offline_' . $order_id;
 
-        // Already sent?
+        // Already sent? (Uses ServerTrack_Dedup::exists() — fixed in Dedup v2.3)
         if ( ServerTrack_Dedup::exists( $dedup_key ) ) {
             return;
         }
@@ -56,6 +95,12 @@ class ServerTrack_OfflineConversion {
 
     /**
      * Build and send the offline CRM fulfilment signal.
+     *
+     * BUG #6 FIX: Logger::log() args corrected to v2.0+ positional order:
+     *   ( status, platform, message, response, event_id, order_id, event_type, emq )
+     * Previously called as (platform, message, order_id, status, emq) which
+     * mapped to: status='meta', platform='Purchase (offline/crm)', message=(int),
+     * response=(string) — completely wrong, corrupting every log entry.
      *
      * @param int $order_id
      */
@@ -79,7 +124,6 @@ class ServerTrack_OfflineConversion {
             : [];
 
         // ── Build custom data ──────────────────────────────────────────────────
-        $items    = [];
         $contents = [];
         foreach ( $order->get_items() as $item ) {
             /** @var WC_Order_Item_Product $item */
@@ -88,18 +132,18 @@ class ServerTrack_OfflineConversion {
                 continue;
             }
             $contents[] = [
-                'id'       => (string) ( $product->get_sku() ?: $product->get_id() ),
-                'quantity' => $item->get_quantity(),
+                'id'         => (string) ( $product->get_sku() ?: $product->get_id() ),
+                'quantity'   => $item->get_quantity(),
                 'item_price' => (float) $item->get_total() / max( 1, $item->get_quantity() ),
             ];
         }
 
         $custom_data = [
-            'value'        => (float) $order->get_total(),
-            'currency'     => strtoupper( get_woocommerce_currency() ),
-            'order_id'     => (string) $order_id,
-            'contents'     => $contents,
-            'content_type' => 'product',
+            'value'             => (float) $order->get_total(),
+            'currency'          => strtoupper( get_woocommerce_currency() ),
+            'order_id'          => (string) $order_id,
+            'contents'          => $contents,
+            'content_type'      => 'product',
             'delivery_category' => 'home_delivery', // filterable
         ];
         $custom_data = apply_filters( 'servertrack_offline_custom_data', $custom_data, $order );
@@ -122,15 +166,24 @@ class ServerTrack_OfflineConversion {
             $status = ( ! is_wp_error( $result ) && isset( $result['events_received'] ) && $result['events_received'] > 0 )
                 ? 'success' : 'error';
 
+            // BUG #6 FIX: Correct Logger::log() arg order (v2.0+ signature):
+            //   ( status, platform, message, response, event_id, order_id, event_type, emq )
+            // Old (broken) call was: ( platform, message, order_id, status, emq )
+            // which silently mapped: status='meta', platform='Purchase (offline/crm)',
+            // message=(int)order_id, response=(string)status — all wrong.
             ServerTrack_Logger::log(
-                'meta',
-                'Purchase (offline/crm)',
-                $order_id,
-                $status,
-                $emq
+                $status,                        // status    — 'success'|'error'
+                'meta',                         // platform  — 'meta'
+                'Offline conversion (crm)',     // message
+                '',                             // response  — raw API response omitted here
+                $dedup_key,                     // event_id  — 'offline_{order_id}'
+                $order_id,                      // order_id
+                'Purchase',                     // event_type
+                $emq                            // emq       — score array
             );
 
             if ( 'success' === $status ) {
+                // Uses ServerTrack_Dedup::set() — fixed in Dedup v2.3
                 ServerTrack_Dedup::set( $dedup_key );
                 $order->update_meta_data( '_servertrack_offline_sent', current_time( 'mysql' ) );
                 $order->save();
@@ -180,13 +233,13 @@ class ServerTrack_OfflineConversion {
             $fbp = $order->get_meta( '_servertrack_fbp' ) ?: '';
         }
 
-        $email = $order->get_billing_email();
-        $phone = preg_replace( '/[^0-9+]/', '', $order->get_billing_phone() );
-        $first = $order->get_billing_first_name();
-        $last  = $order->get_billing_last_name();
-        $city  = $order->get_billing_city();
-        $state = $order->get_billing_state();
-        $zip   = $order->get_billing_postcode();
+        $email   = $order->get_billing_email();
+        $phone   = preg_replace( '/[^0-9+]/', '', $order->get_billing_phone() );
+        $first   = $order->get_billing_first_name();
+        $last    = $order->get_billing_last_name();
+        $city    = $order->get_billing_city();
+        $state   = $order->get_billing_state();
+        $zip     = $order->get_billing_postcode();
         $country = strtolower( $order->get_billing_country() );
 
         return array_filter( [

@@ -21,6 +21,14 @@
  * Covered events: Purchase (thank-you page), InitiateCheckout (checkout page),
  *                 AddToCart (product page — injected via JS data attribute).
  *
+ * Bug #4 fix (v2.1):
+ *   inject_purchase_dedup_snippet() now uses a static $fired flag to ensure
+ *   the fbq snippet is only emitted once per request. The woocommerce_thankyou
+ *   hook can fire more than once in certain themes (e.g. called via do_action
+ *   inside a template partial), which caused the pixel to double-fire and Meta
+ *   to see two Purchase pixel events with the same event_id — still deduplicated
+ *   server-side, but confusing in Events Manager and causing inflated pixel counts.
+ *
  * @package ServerTrack
  * @since   6.0.0
  */
@@ -103,9 +111,24 @@ class ServerTrack_PixelDedup {
      * This calls fbq('track','Purchase',{...},{eventID:'...'}) using the
      * canonical event_id that was sent via CAPI.
      *
+     * BUG #4 FIX: Static $fired guard prevents double-injection.
+     * woocommerce_thankyou fires once per page in standard WC, but some
+     * themes or plugins call do_action('woocommerce_thankyou', $order_id)
+     * a second time inside a template partial. Without this guard the
+     * fbq() call would fire twice — same event_id but two browser events —
+     * confusing Events Manager even though CAPI dedup works server-side.
+     *
      * @param int $order_id
      */
     public static function inject_purchase_dedup_snippet( int $order_id ): void {
+        // BUG #4 FIX: Only ever inject once per PHP request, regardless of
+        // how many times woocommerce_thankyou is triggered.
+        static $fired = false;
+        if ( $fired ) {
+            return;
+        }
+        $fired = true;
+
         $event_id = self::get_order_event_id( $order_id, 'purchase' );
         if ( ! $event_id ) {
             return;
