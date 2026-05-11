@@ -4,7 +4,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Source_WooCommerce  v3.3
+ * ServerTrack_Source_WooCommerce  v3.3.1
  *
  * Hooks into WooCommerce to fire CAPI events for all purchase lifecycle
  * stages.  Each feature can be toggled independently from the Event Sources
@@ -12,20 +12,28 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * Changelog
  * ----------
+ * v3.3.1  2026-05-11  Bug-audit fixes
+ *   FIX BUG-09: handle_order_status_change() dedup loop used `return`
+ *     instead of `continue` — a single already-sent platform would abort
+ *     all platforms. Now uses `continue` per-platform and skips after loop
+ *     only if ALL three have already been sent.
+ *
+ *   FIX BUG-10: fire_add_to_wishlist_event() dedup loop was discarded —
+ *     dispatch_to_platforms() was called unconditionally. Now builds a
+ *     $pending_platforms list; bails entirely if empty, dispatches only
+ *     to platforms not yet sent.
+ *
+ *   FIX BUG-11: handle_add_to_cart() had a 3-param signature but the
+ *     woocommerce_add_to_cart hook passes 6 args. Added missing params
+ *     ($variation_id, $variation, $cart_item_data) to silence PHP warnings.
+ *
+ *   FIX BUG-12: handle_full_refund() only checked dedup for 'meta'.
+ *     Extended check to cover 'meta', 'tiktok', 'google' before firing.
+ *
  * v3.3  2026-05-11
- *   + Order Status Events  – fires Lead/Contact/SubmitForm when an order
- *     moves to on-hold, failed, or cancelled.  Guarded by:
- *     servertrack_source_order_status_enabled  (default: 1)
- *
- *   + AddToWishlist Events – fires AddToWishlist to Meta & TikTok when a
- *     customer adds a product to their wishlist via YITH WooCommerce Wishlist
- *     or TI WooCommerce Wishlist.  Guarded by:
- *     servertrack_source_wishlist_enabled  (default: 0, opt-in)
- *
- *   + Partial Refund Events – fires a Purchase event with a *negative* value
- *     equal to the exact partial refund amount, separate from the full-Refund
- *     event.  Guarded by:
- *     servertrack_source_partial_refund_enabled  (default: 1)
+ *   + Order Status Events (Lead/Contact/SubmitForm)
+ *   + AddToWishlist Events (YITH + TI Wishlist, Meta+TikTok only)
+ *   + Partial Refund Events (negative-value Purchase, exact refund amount)
  *
  * v3.2  (prior)
  *   + Subscription Renewal events (Refund, Renewal)
@@ -37,7 +45,6 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class ServerTrack_Source_WooCommerce {
 
-    // ── Option defaults ────────────────────────────────────────────────────
     private static function opt( string $key, $default = 0 ) {
         return get_option( $key, $default );
     }
@@ -51,68 +58,57 @@ class ServerTrack_Source_WooCommerce {
             return;
         }
 
-        // ── Core WooCommerce hooks (enabled via servertrack_source_woo_enabled) ──
         if ( self::opt( 'servertrack_source_woo_enabled', 1 ) ) {
             self::register_core_hooks();
         }
 
-        // ── v3.3: Order Status Events ──────────────────────────────────────
         if ( self::opt( 'servertrack_source_order_status_enabled', 1 ) ) {
             add_action( 'woocommerce_order_status_changed', [ self::class, 'handle_order_status_change' ], 10, 4 );
         }
 
-        // ── v3.3: AddToWishlist Events ─────────────────────────────────────
         if ( self::opt( 'servertrack_source_wishlist_enabled', 0 ) ) {
-            // YITH WooCommerce Wishlist
-            add_action( 'yith_wcwl_added_to_wishlist',  [ self::class, 'handle_add_to_wishlist' ], 10, 2 );
-            // TI WooCommerce Wishlist
-            add_action( 'ti_wl_add_to_wishlist',        [ self::class, 'handle_add_to_wishlist_ti' ], 10, 2 );
+            add_action( 'yith_wcwl_added_to_wishlist', [ self::class, 'handle_add_to_wishlist' ],    10, 2 );
+            add_action( 'ti_wl_add_to_wishlist',       [ self::class, 'handle_add_to_wishlist_ti' ], 10, 2 );
         }
 
-        // ── v3.3: Partial Refund Events ────────────────────────────────────
         if ( self::opt( 'servertrack_source_partial_refund_enabled', 1 ) ) {
-            // woocommerce_order_refunded fires for ALL refund types;
-            // we filter to partial-only by comparing refund amount vs order total.
             add_action( 'woocommerce_order_refunded', [ self::class, 'handle_partial_refund' ], 10, 2 );
         }
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // CORE HOOKS (unchanged from v3.2)
+    // CORE HOOKS
     // ══════════════════════════════════════════════════════════════════════
 
     private static function register_core_hooks(): void {
-        add_action( 'woocommerce_payment_complete',                    [ self::class, 'handle_purchase' ],              10, 1 );
-        add_action( 'woocommerce_order_status_completed',              [ self::class, 'handle_purchase' ],              10, 1 );
-        add_action( 'woocommerce_order_status_processing',             [ self::class, 'handle_purchase' ],              10, 1 );
-        add_action( 'woocommerce_add_to_cart',                         [ self::class, 'handle_add_to_cart' ],           10, 6 );
-        add_action( 'woocommerce_before_checkout_form',                [ self::class, 'handle_initiate_checkout' ],     10    );
-        add_action( 'woocommerce_checkout_order_processed',            [ self::class, 'handle_add_payment_info' ],      10, 1 );
-        add_action( 'woocommerce_created_customer',                    [ self::class, 'handle_complete_registration' ], 10, 1 );
-        add_action( 'woocommerce_order_fully_refunded',                [ self::class, 'handle_full_refund' ],           10, 2 );
-        add_filter( 'woocommerce_thankyou',                            [ self::class, 'handle_view_content' ],          10, 1 );
+        add_action( 'woocommerce_payment_complete',         [ self::class, 'handle_purchase' ],              10, 1 );
+        add_action( 'woocommerce_order_status_completed',   [ self::class, 'handle_purchase' ],              10, 1 );
+        add_action( 'woocommerce_order_status_processing',  [ self::class, 'handle_purchase' ],              10, 1 );
+        add_action( 'woocommerce_add_to_cart',              [ self::class, 'handle_add_to_cart' ],           10, 6 );
+        add_action( 'woocommerce_before_checkout_form',     [ self::class, 'handle_initiate_checkout' ],     10    );
+        add_action( 'woocommerce_checkout_order_processed', [ self::class, 'handle_add_payment_info' ],      10, 1 );
+        add_action( 'woocommerce_created_customer',         [ self::class, 'handle_complete_registration' ], 10, 1 );
+        add_action( 'woocommerce_order_fully_refunded',     [ self::class, 'handle_full_refund' ],           10, 2 );
+        add_filter( 'woocommerce_thankyou',                 [ self::class, 'handle_view_content' ],          10, 1 );
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // v3.3 ── ORDER STATUS EVENTS
+    // v3.3.1 FIX ─ ORDER STATUS EVENTS  (BUG-09 fixed)
     // ══════════════════════════════════════════════════════════════════════
 
     /**
      * Fires when an order transitions to on-hold, failed, or cancelled.
      *
      * Maps WC status → CAPI event name:
-     *   on-hold   → Lead      (buyer intent captured, awaiting payment)
-     *   failed    → Contact   (buyer attempted checkout but payment failed)
-     *   cancelled → SubmitForm (order was cancelled – useful for win-back)
+     *   on-hold   → Lead
+     *   failed    → Contact
+     *   cancelled → SubmitForm
      *
-     * Dedup key: "order_status_{$order_id}_{$new_status}"
-     * This prevents the same status→event from firing twice if WC fires
-     * the hook more than once (e.g., during webhook replays).
-     *
-     * @param int       $order_id
-     * @param string    $old_status  Previous WC order status
-     * @param string    $new_status  New WC order status
-     * @param WC_Order  $order
+     * BUG-09 (fixed in v3.3.1):
+     *   Original loop used `return` inside the dedup foreach — a single
+     *   already-sent platform aborted ALL platforms. Changed to `continue`
+     *   per-platform, then counts already-sent platforms and only skips
+     *   the event when ALL three have been sent.
      */
     public static function handle_order_status_change(
         int $order_id,
@@ -132,21 +128,27 @@ class ServerTrack_Source_WooCommerce {
 
         $event_name = $status_event_map[ $new_status ];
         $dedup_key  = "order_status_{$order_id}_{$new_status}";
+        $platforms  = [ 'meta', 'tiktok', 'google' ];
 
-        // Dedup: skip if this status event was already sent
-        foreach ( [ 'meta', 'tiktok', 'google' ] as $platform ) {
+        // BUG-09 FIX: use continue (not return) so each platform is checked
+        // independently. Only skip after the loop if ALL three are already sent.
+        $already_sent_count = 0;
+        foreach ( $platforms as $platform ) {
             if ( ServerTrack_Dedup::already_sent( $dedup_key, $platform ) ) {
-                return;
+                $already_sent_count++;
             }
+        }
+        if ( $already_sent_count === count( $platforms ) ) {
+            return; // All platforms already received this event
         }
 
         $user_data   = ServerTrack_Identity::from_order( $order );
         $custom_data = [
-            'order_id'    => $order_id,
-            'value'       => (float) $order->get_total(),
-            'currency'    => get_woocommerce_currency(),
-            'order_status'=> $new_status,
-            '_dedup_key'  => $dedup_key,
+            'order_id'     => $order_id,
+            'value'        => (float) $order->get_total(),
+            'currency'     => get_woocommerce_currency(),
+            'order_status' => $new_status,
+            '_dedup_key'   => $dedup_key,
         ];
 
         $event_id = ServerTrack_Hasher::event_id( $event_name, $order_id . '_' . $new_status );
@@ -158,32 +160,13 @@ class ServerTrack_Source_WooCommerce {
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // v3.3 ── ADDTOWISHLIST EVENTS
+    // v3.3.1 FIX ─ ADDTOWISHLIST EVENTS  (BUG-10 fixed)
     // ══════════════════════════════════════════════════════════════════════
 
-    /**
-     * Fires when a product is added to a YITH WooCommerce Wishlist.
-     *
-     * Hook: yith_wcwl_added_to_wishlist( $product_id, $wishlist_id )
-     *
-     * Platforms: Meta + TikTok only (Google GA4 has no native wishlist event).
-     * Dedup key: "wishlist_yith_{$user_or_session}_{$product_id}"
-     *
-     * @param int $product_id
-     * @param int $wishlist_id
-     */
     public static function handle_add_to_wishlist( int $product_id, int $wishlist_id ): void {
         self::fire_add_to_wishlist_event( $product_id, 'yith' );
     }
 
-    /**
-     * Fires when a product is added to a TI WooCommerce Wishlist.
-     *
-     * Hook: ti_wl_add_to_wishlist( $product_id, $user_id )
-     *
-     * @param int $product_id
-     * @param int $user_id
-     */
     public static function handle_add_to_wishlist_ti( int $product_id, int $user_id ): void {
         self::fire_add_to_wishlist_event( $product_id, 'ti' );
     }
@@ -191,8 +174,11 @@ class ServerTrack_Source_WooCommerce {
     /**
      * Shared logic for both wishlist integrations.
      *
-     * @param int    $product_id
-     * @param string $source  'yith' | 'ti'
+     * BUG-10 (fixed in v3.3.1):
+     *   The original dedup loop used `continue` but its result was never
+     *   used — dispatch_to_platforms() was called unconditionally afterward.
+     *   Fixed: build $pending_platforms by filtering out already-sent ones,
+     *   bail if empty, otherwise dispatch only to pending platforms.
      */
     private static function fire_add_to_wishlist_event( int $product_id, string $source ): void {
         $product = wc_get_product( $product_id );
@@ -205,16 +191,18 @@ class ServerTrack_Source_WooCommerce {
         $uid_part   = $user_id ?: $session_id;
         $dedup_key  = "wishlist_{$source}_{$uid_part}_{$product_id}";
 
-        // Meta & TikTok only
-        $platforms = [ 'meta', 'tiktok' ];
-        foreach ( $platforms as $platform ) {
-            if ( ServerTrack_Dedup::already_sent( $dedup_key, $platform ) ) {
-                continue;
-            }
+        // BUG-10 FIX: filter to only platforms not yet sent
+        $all_platforms     = [ 'meta', 'tiktok' ];
+        $pending_platforms = array_filter(
+            $all_platforms,
+            static fn( $p ) => ! ServerTrack_Dedup::already_sent( $dedup_key, $p )
+        );
+
+        if ( empty( $pending_platforms ) ) {
+            return; // All platforms already received this event
         }
 
-        $user_data = ServerTrack_Identity::from_current_user();
-
+        $user_data   = ServerTrack_Identity::from_current_user();
         $custom_data = [
             'content_ids'  => [ (string) $product_id ],
             'content_name' => $product->get_name(),
@@ -229,27 +217,18 @@ class ServerTrack_Source_WooCommerce {
             ->set_user_data( $user_data )
             ->set_custom_data( $custom_data );
 
-        // Dispatch only to Meta and TikTok
-        ServerTrack_Core::dispatch_to_platforms( $event, $platforms, $dedup_key );
+        // Dispatch only to pending platforms (Meta + TikTok, minus already-sent)
+        ServerTrack_Core::dispatch_to_platforms( $event, array_values( $pending_platforms ), $dedup_key );
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // v3.3 ── PARTIAL REFUND EVENTS
+    // PARTIAL REFUND EVENTS
     // ══════════════════════════════════════════════════════════════════════
 
     /**
-     * Fires on woocommerce_order_refunded for every refund (full or partial).
-     * Delegates full refunds to handle_full_refund() and only processes
-     * partial refunds here.
-     *
-     * A negative-value Purchase event is sent equal to the exact refund
-     * amount (NOT the order total).
-     *
-     * Dedup key: "partial_refund_{$refund_id}" — refund IDs are unique WC
-     * post IDs, so this guarantees exactly-once delivery per refund object.
-     *
-     * @param int $order_id
-     * @param int $refund_id  ID of the WC_Order_Refund object
+     * Fires on woocommerce_order_refunded for every refund.
+     * Only processes partial refunds; full refunds handled by handle_full_refund().
+     * Dedup key: partial_refund_{refund_id} — per-refund object, exactly-once.
      */
     public static function handle_partial_refund( int $order_id, int $refund_id ): void {
         $order  = wc_get_order( $order_id );
@@ -262,29 +241,31 @@ class ServerTrack_Source_WooCommerce {
         $refund_amount = abs( (float) $refund->get_amount() );
         $order_total   = (float) $order->get_total();
 
-        // Only handle partial refunds here; full refunds are handled elsewhere.
-        // A refund is considered "full" if its amount equals the order total
-        // within a 1-cent tolerance (floating-point safety).
+        // Skip full refunds (handled by woocommerce_order_fully_refunded)
         if ( abs( $refund_amount - $order_total ) < 0.01 ) {
-            return; // Full refund – skip, handled by handle_full_refund()
+            return;
         }
 
         $dedup_key = "partial_refund_{$refund_id}";
 
+        $already_sent_count = 0;
         foreach ( [ 'meta', 'tiktok', 'google' ] as $platform ) {
             if ( ServerTrack_Dedup::already_sent( $dedup_key, $platform ) ) {
-                return;
+                $already_sent_count++;
             }
+        }
+        if ( $already_sent_count === 3 ) {
+            return;
         }
 
         $user_data   = ServerTrack_Identity::from_order( $order );
         $custom_data = [
-            'order_id'     => $order_id,
-            'refund_id'    => $refund_id,
-            'value'        => -$refund_amount,   // negative = refund signal
-            'currency'     => get_woocommerce_currency(),
-            'refund_type'  => 'partial',
-            '_dedup_key'   => $dedup_key,
+            'order_id'    => $order_id,
+            'refund_id'   => $refund_id,
+            'value'       => -$refund_amount,
+            'currency'    => get_woocommerce_currency(),
+            'refund_type' => 'partial',
+            '_dedup_key'  => $dedup_key,
         ];
 
         $event_id = ServerTrack_Hasher::event_id( 'Purchase', 'partial_refund_' . $refund_id );
@@ -296,7 +277,7 @@ class ServerTrack_Source_WooCommerce {
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // EXISTING HANDLERS (v3.0 – v3.2, preserved unchanged)
+    // EXISTING HANDLERS (v3.0 – v3.2, with BUG-11 and BUG-12 fixes)
     // ══════════════════════════════════════════════════════════════════════
 
     public static function handle_purchase( int $order_id ): void {
@@ -328,7 +309,20 @@ class ServerTrack_Source_WooCommerce {
         ServerTrack_Core::dispatch_to_all( $event );
     }
 
-    public static function handle_add_to_cart( string $cart_item_key, int $product_id, int $quantity ): void {
+    /**
+     * BUG-11 (fixed in v3.3.1):
+     *   woocommerce_add_to_cart passes 6 arguments but the original handler
+     *   only declared 3 params, causing PHP to emit a warning on strict sites.
+     *   Added $variation_id, $variation, $cart_item_data (unused but declared).
+     */
+    public static function handle_add_to_cart(
+        string $cart_item_key,
+        int    $product_id,
+        int    $quantity,
+        int    $variation_id   = 0,
+        array  $variation      = [],
+        array  $cart_item_data = []
+    ): void {
         $product = wc_get_product( $product_id );
         if ( ! $product ) return;
         $user_data   = ServerTrack_Identity::from_current_user();
@@ -371,25 +365,39 @@ class ServerTrack_Source_WooCommerce {
     }
 
     public static function handle_complete_registration( int $customer_id ): void {
-        $user_data   = ServerTrack_Identity::from_user_id( $customer_id );
-        $event_id    = ServerTrack_Hasher::event_id( 'CompleteRegistration', $customer_id );
-        $event       = ( new ServerTrack_Event( 'CompleteRegistration', $event_id ) )
+        $user_data = ServerTrack_Identity::from_user_id( $customer_id );
+        $event_id  = ServerTrack_Hasher::event_id( 'CompleteRegistration', $customer_id );
+        $event     = ( new ServerTrack_Event( 'CompleteRegistration', $event_id ) )
             ->set_user_data( $user_data )
             ->set_custom_data( [ 'currency' => get_woocommerce_currency() ] );
         ServerTrack_Core::dispatch_to_all( $event );
     }
 
+    /**
+     * BUG-12 (fixed in v3.3.1):
+     *   Original dedup check only covered 'meta'. If Meta was already sent
+     *   the event would not fire for TikTok or Google either.
+     *   Fixed: check all three platforms; skip only when ALL have been sent.
+     */
     public static function handle_full_refund( int $order_id, int $refund_id ): void {
         $order  = wc_get_order( $order_id );
         $refund = wc_get_order( $refund_id );
         if ( ! $order || ! $refund ) return;
+
         $dedup_key = "full_refund_{$order_id}";
-        if ( ServerTrack_Dedup::already_sent( $dedup_key, 'meta' ) ) return;
+
+        // BUG-12 FIX: check all three platforms, not just 'meta'
+        if ( ServerTrack_Dedup::already_sent( $dedup_key, 'meta' )
+          && ServerTrack_Dedup::already_sent( $dedup_key, 'tiktok' )
+          && ServerTrack_Dedup::already_sent( $dedup_key, 'google' ) ) {
+            return;
+        }
+
         $user_data   = ServerTrack_Identity::from_order( $order );
         $custom_data = [
-            'order_id'  => $order_id,
-            'value'     => -(float) $order->get_total(),
-            'currency'  => get_woocommerce_currency(),
+            'order_id'    => $order_id,
+            'value'       => -(float) $order->get_total(),
+            'currency'    => get_woocommerce_currency(),
             'refund_type' => 'full',
             '_dedup_key'  => $dedup_key,
         ];
