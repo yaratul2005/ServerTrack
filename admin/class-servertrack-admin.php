@@ -4,20 +4,30 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Admin — v2.1
+ * ServerTrack_Admin — v2.2
+ *
+ * Changes in v2.2:
+ *   - CRITICAL FIX: All internal URLs updated from
+ *     options-general.php?page=servertrack  (old Settings submenu)
+ *     to admin.php?page=servertrack-settings  (current top-level submenu).
+ *     The old URL caused WordPress to redirect users to the Dashboard
+ *     whenever they clicked any tab, Configure link, or OAuth redirect.
+ *   - register_menu(): Removed stale add_options_page() registration.
+ *     The menu is now registered exclusively by ServerTrack_Dashboard.
+ *   - enqueue_assets(): Hook check updated to match the new page hook
+ *     'servertrack_page_servertrack-settings'.
+ *   - handle_oauth_callback() / handle_oauth_revoke(): All wp_safe_redirect()
+ *     calls updated to admin.php?page=servertrack-settings&tab=google.
+ *   - render_page(): Tab hrefs updated to admin.php?page=servertrack-settings&tab=...
+ *   - render_health_notice(): All settings URLs updated.
+ *   - Added ST_SETTINGS_URL helper constant for DRY URL construction.
  *
  * Changes in v2.1:
  *   - register_settings(): added servertrack_source_abandonment_enabled and
  *     servertrack_abandonment_window_minutes to the sources option group.
- *     Previously these were registered only via Core::register_v32_options()
- *     which added them to allowed_options but did NOT call register_setting().
- *     This meant the Sources tab save form silently dropped both values.
  *
- * Changes from v1 → v2.0 (Dashboard overhaul — unchanged here):
- *   - New 'dashboard' tab with KPIs, platform health, activity feed
- *   - New AJAX handler: servertrack_get_dashboard_stats
- *   - render_page_header() dark gradient header strip
- *   - Tab nav uses .st-tab-nav CSS class
+ * Changes from v1 → v2.0 (Dashboard overhaul):
+ *   - New 'dashboard' tab, AJAX handler, dark gradient header strip.
  */
 class ServerTrack_Admin {
 
@@ -33,8 +43,22 @@ class ServerTrack_Admin {
         'sources' => 'servertrack_sources_settings',
     ];
 
+    /**
+     * Base URL for the Settings sub-page.
+     * Use this instead of hardcoding options-general.php or admin.php anywhere.
+     */
+    private static function settings_url( string $tab = '', array $extra = [] ): string {
+        $args = array_merge( [ 'page' => 'servertrack-settings' ], $extra );
+        if ( $tab !== '' ) {
+            $args['tab'] = $tab;
+        }
+        return admin_url( 'admin.php?' . http_build_query( $args ) );
+    }
+
     public static function init() {
-        add_action( 'admin_menu',            [ self::class, 'register_menu' ] );
+        // NOTE: Menu registration is handled by ServerTrack_Dashboard::register_menu().
+        // ServerTrack_Admin::register_menu() is intentionally removed in v2.2 to
+        // avoid registering a duplicate/stale entry under Settings → Settings.
         add_action( 'admin_init',            [ self::class, 'register_settings' ] );
         add_action( 'admin_init',            [ self::class, 'handle_oauth_callback' ] );
         add_action( 'admin_init',            [ self::class, 'handle_oauth_revoke' ] );
@@ -47,21 +71,26 @@ class ServerTrack_Admin {
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // Menu & Assets
+    // Assets
     // ─────────────────────────────────────────────────────────────────
 
-    public static function register_menu() {
-        add_options_page(
-            __( 'ServerTrack Settings', 'servertrack' ),
-            __( 'ServerTrack', 'servertrack' ),
-            'manage_options',
-            'servertrack',
-            [ self::class, 'render_page' ]
-        );
-    }
-
+    /**
+     * Enqueue admin CSS + JS.
+     *
+     * The Settings sub-page is registered under the ServerTrack top-level menu,
+     * so its hook slug is 'servertrack_page_servertrack-settings', NOT
+     * 'settings_page_servertrack' (which only fires for pages registered via
+     * add_options_page()). We match both to be safe, and also accept the
+     * top-level dashboard hook.
+     */
     public static function enqueue_assets( string $hook ) {
-        if ( 'settings_page_servertrack' !== $hook ) return;
+        $allowed_hooks = [
+            'settings_page_servertrack',            // legacy / fallback
+            'servertrack_page_servertrack-settings', // current top-level submenu
+            'toplevel_page_servertrack',             // dashboard top-level
+        ];
+        if ( ! in_array( $hook, $allowed_hooks, true ) ) return;
+
         wp_enqueue_style(
             'servertrack-admin',
             SERVERTRACK_URL . 'admin/assets/admin.css',
@@ -107,7 +136,7 @@ class ServerTrack_Admin {
 
     public static function register_settings() {
 
-        // ── General tab ──────────────────────────────────────────────
+        // ── General tab ────────────────────────────────────────────
         $general_options = [
             'servertrack_enabled'      => [ 'type' => 'integer', 'sanitize' => 'absint',                              'default' => 1      ],
             'servertrack_test_mode'    => [ 'type' => 'integer', 'sanitize' => 'absint',                              'default' => 0      ],
@@ -115,7 +144,7 @@ class ServerTrack_Admin {
         ];
         self::register_group( 'servertrack_general_settings', $general_options );
 
-        // ── Meta CAPI tab ─────────────────────────────────────────────
+        // ── Meta CAPI tab ──────────────────────────────────────────
         $meta_options = [
             'servertrack_meta_enabled'         => [ 'type' => 'integer', 'sanitize' => 'absint',              'default' => 0  ],
             'servertrack_meta_pixel_id'        => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
@@ -124,7 +153,7 @@ class ServerTrack_Admin {
         ];
         self::register_group( 'servertrack_meta_settings', $meta_options );
 
-        // ── Google Ads tab ────────────────────────────────────────────
+        // ── Google Ads tab ─────────────────────────────────────────
         $google_options = [
             'servertrack_google_enabled'         => [ 'type' => 'integer', 'sanitize' => 'absint',              'default' => 0  ],
             'servertrack_google_customer_id'     => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
@@ -138,7 +167,7 @@ class ServerTrack_Admin {
         ];
         self::register_group( 'servertrack_google_settings', $google_options );
 
-        // ── TikTok Events tab ─────────────────────────────────────────
+        // ── TikTok Events tab ─────────────────────────────────────
         $tiktok_options = [
             'servertrack_tiktok_enabled'      => [ 'type' => 'integer', 'sanitize' => 'absint',              'default' => 0  ],
             'servertrack_tiktok_pixel_id'     => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
@@ -146,12 +175,7 @@ class ServerTrack_Admin {
         ];
         self::register_group( 'servertrack_tiktok_settings', $tiktok_options );
 
-        // ── Sources tab ───────────────────────────────────────────────
-        // FIX (v2.1): servertrack_source_abandonment_enabled and
-        // servertrack_abandonment_window_minutes were missing here —
-        // Core::register_v32_options() added them to allowed_options
-        // but never called register_setting(), so the Sources tab save
-        // silently dropped both values on every save.
+        // ── Sources tab ─────────────────────────────────────────────
         $sources_options = [
             'servertrack_source_woo_enabled'         => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1  ],
             'servertrack_source_cf7_enabled'         => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
@@ -216,8 +240,8 @@ class ServerTrack_Admin {
     public static function handle_oauth_callback() {
         // phpcs:disable WordPress.Security.NonceVerification.Recommended
         if ( empty( $_GET['code'] )
-            || empty( $_GET['page'] ) || 'servertrack' !== $_GET['page']
-            || empty( $_GET['tab'] )  || 'google'      !== $_GET['tab'] ) {
+            || empty( $_GET['page'] ) || 'servertrack-settings' !== $_GET['page']
+            || empty( $_GET['tab'] )  || 'google'               !== $_GET['tab'] ) {
             return;
         }
         // phpcs:enable
@@ -229,18 +253,22 @@ class ServerTrack_Admin {
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         $state = isset( $_GET['state'] ) ? sanitize_text_field( wp_unslash( $_GET['state'] ) ) : '';
         if ( ! wp_verify_nonce( $state, 'servertrack_google_oauth' ) ) {
-            wp_safe_redirect( admin_url( 'options-general.php?page=servertrack&tab=google&st_notice=oauth_error' ) );
+            wp_safe_redirect( self::settings_url( 'google', [ 'st_notice' => 'oauth_error' ] ) );
             exit;
         }
 
         $client_id     = get_option( 'servertrack_google_client_id', '' );
         $client_secret = get_option( 'servertrack_google_client_secret', '' );
-        $redirect_uri  = admin_url( 'options-general.php?page=servertrack&tab=google' );
+
+        // Redirect URI must exactly match what was registered in Google Cloud Console.
+        // It now points to admin.php?page=servertrack-settings&tab=google.
+        $redirect_uri = self::settings_url( 'google' );
+
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         $code = sanitize_text_field( wp_unslash( $_GET['code'] ) );
 
         if ( ! $client_id || ! $client_secret ) {
-            wp_safe_redirect( admin_url( 'options-general.php?page=servertrack&tab=google&st_notice=oauth_no_creds' ) );
+            wp_safe_redirect( self::settings_url( 'google', [ 'st_notice' => 'oauth_no_creds' ] ) );
             exit;
         }
 
@@ -256,7 +284,7 @@ class ServerTrack_Admin {
         ] );
 
         if ( is_wp_error( $response ) ) {
-            wp_safe_redirect( admin_url( 'options-general.php?page=servertrack&tab=google&st_notice=oauth_error' ) );
+            wp_safe_redirect( self::settings_url( 'google', [ 'st_notice' => 'oauth_error' ] ) );
             exit;
         }
 
@@ -268,7 +296,7 @@ class ServerTrack_Admin {
                 'OAuth token exchange failed: ' . ( $body['error_description'] ?? $body['error'] ?? 'Unknown error' ),
                 '', '', 0, 'OAuth'
             );
-            wp_safe_redirect( admin_url( 'options-general.php?page=servertrack&tab=google&st_notice=oauth_error' ) );
+            wp_safe_redirect( self::settings_url( 'google', [ 'st_notice' => 'oauth_error' ] ) );
             exit;
         }
 
@@ -278,7 +306,7 @@ class ServerTrack_Admin {
 
         ServerTrack_Logger::log( 'success', 'google', 'Google OAuth authorised. Refresh token stored.', '', '', 0, 'OAuth' );
 
-        wp_safe_redirect( admin_url( 'options-general.php?page=servertrack&tab=google&st_notice=oauth_success' ) );
+        wp_safe_redirect( self::settings_url( 'google', [ 'st_notice' => 'oauth_success' ] ) );
         exit;
     }
 
@@ -299,7 +327,7 @@ class ServerTrack_Admin {
 
         ServerTrack_Logger::log( 'success', 'google', 'Google OAuth tokens revoked by admin.', '', '', 0, 'OAuth' );
 
-        wp_safe_redirect( admin_url( 'options-general.php?page=servertrack&tab=google&st_notice=oauth_revoked' ) );
+        wp_safe_redirect( self::settings_url( 'google', [ 'st_notice' => 'oauth_revoked' ] ) );
         exit;
     }
 
@@ -313,17 +341,20 @@ class ServerTrack_Admin {
         }
 
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-        $active_tab = isset( $_GET['tab'] ) ? sanitize_text_field( wp_unslash( $_GET['tab'] ) ) : 'dashboard';
+        $active_tab = isset( $_GET['tab'] ) ? sanitize_text_field( wp_unslash( $_GET['tab'] ) ) : 'general';
 
+        // Validate against known tabs; fall back to 'general' on invalid input.
         $tabs = [
-            'dashboard' => __( 'Dashboard', 'servertrack' ),
-            'general'   => __( 'General', 'servertrack' ),
-            'meta'      => __( 'Meta CAPI', 'servertrack' ),
-            'google'    => __( 'Google Ads', 'servertrack' ),
-            'tiktok'    => __( 'TikTok Events', 'servertrack' ),
-            'sources'   => __( 'Sources', 'servertrack' ),
-            'debug'     => __( 'Debug Log', 'servertrack' ),
+            'general' => __( 'General', 'servertrack' ),
+            'meta'    => __( 'Meta CAPI', 'servertrack' ),
+            'google'  => __( 'Google Ads', 'servertrack' ),
+            'tiktok'  => __( 'TikTok Events', 'servertrack' ),
+            'sources' => __( 'Sources', 'servertrack' ),
+            'debug'   => __( 'Debug Log', 'servertrack' ),
         ];
+        if ( ! array_key_exists( $active_tab, $tabs ) ) {
+            $active_tab = 'general';
+        }
 
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         $st_notice = isset( $_GET['st_notice'] ) ? sanitize_key( wp_unslash( $_GET['st_notice'] ) ) : '';
@@ -348,7 +379,7 @@ class ServerTrack_Admin {
 
             <nav class="nav-tab-wrapper st-tab-nav" id="servertrack-tab-nav">
                 <?php foreach ( $tabs as $slug => $label ) : ?>
-                    <a href="?page=servertrack&tab=<?php echo esc_attr( $slug ); ?>"
+                    <a href="<?php echo esc_url( self::settings_url( $slug ) ); ?>"
                        class="nav-tab <?php echo $active_tab === $slug ? 'nav-tab-active' : ''; ?>"
                        data-tab="<?php echo esc_attr( $slug ); ?>">
                         <?php echo esc_html( $label ); ?>
@@ -359,15 +390,14 @@ class ServerTrack_Admin {
             <div class="servertrack-tab-content">
                 <?php
                 $view_map = [
-                    'dashboard' => 'dashboard',
-                    'general'   => 'settings-general',
-                    'meta'      => 'settings-meta',
-                    'google'    => 'settings-google',
-                    'tiktok'    => 'settings-tiktok',
-                    'sources'   => 'settings-sources',
-                    'debug'     => 'settings-debug',
+                    'general' => 'settings-general',
+                    'meta'    => 'settings-meta',
+                    'google'  => 'settings-google',
+                    'tiktok'  => 'settings-tiktok',
+                    'sources' => 'settings-sources',
+                    'debug'   => 'settings-debug',
                 ];
-                $view_slug = $view_map[ $active_tab ] ?? 'dashboard';
+                $view_slug = $view_map[ $active_tab ] ?? 'settings-general';
                 $view_file = SERVERTRACK_DIR . 'admin/views/' . $view_slug . '.php';
                 if ( file_exists( $view_file ) ) {
                     include $view_file;
@@ -422,11 +452,15 @@ class ServerTrack_Admin {
     public static function render_health_notice() {
         if ( ! current_user_can( 'manage_options' ) ) return;
         $screen = get_current_screen();
-        if ( $screen && 'settings_page_servertrack' === $screen->id ) return;
+        // Suppress the banner on our own Settings page (either hook slug).
+        if ( $screen && in_array( $screen->id, [
+            'settings_page_servertrack',
+            'servertrack_page_servertrack-settings',
+        ], true ) ) return;
         if ( ! get_option( 'servertrack_enabled', 1 ) ) return;
 
         if ( get_option( 'servertrack_source_woo_enabled', 1 ) && ! class_exists( 'WooCommerce' ) ) {
-            $settings_url = admin_url( 'options-general.php?page=servertrack&tab=sources' );
+            $settings_url = self::settings_url( 'sources' );
             echo '<div class="notice notice-warning is-dismissible"><p>';
             echo '<strong>' . esc_html__( 'ServerTrack:', 'servertrack' ) . '</strong> ';
             echo esc_html__( 'WooCommerce source is enabled but WooCommerce is not active.', 'servertrack' );
@@ -440,7 +474,7 @@ class ServerTrack_Admin {
 
         if ( $meta_ok || $google_ok || $tiktok_ok ) return;
 
-        $settings_url = admin_url( 'options-general.php?page=servertrack&tab=meta' );
+        $settings_url = self::settings_url( 'meta' );
         echo '<div class="notice notice-warning is-dismissible"><p>';
         echo '<strong>' . esc_html__( 'ServerTrack:', 'servertrack' ) . '</strong> ';
         echo esc_html__( 'Plugin is active but no ad platforms are configured.', 'servertrack' );
