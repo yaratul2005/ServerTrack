@@ -1,22 +1,29 @@
 <?php
 /**
- * ServerTrack — Offline Conversion Uploader  v3.1
+ * ServerTrack — Offline Conversion Uploader  v3.2
  *
  * Batches completed WooCommerce orders and uploads them as offline
  * conversion events to Meta's Offline Conversions API.
  *
- * v3.1 changes (M-3 fix):
- *   send_batch() previously caught Throwable but only logged the exception
- *   message string. The platform context, batch size, and stack trace were
- *   all swallowed, making offline conversion failures completely
- *   undiagnosable in production.
+ * v3.2 changes (BUG-03 fix):
+ *   dispatch() referenced Graph API v19.0, deprecated May 2025 and subject
+ *   to sunset. After sunset all offline conversion POSTs return HTTP 400,
+ *   silently swallowed by the Throwable catch — making offline conversions
+ *   fail with no clear log reason.
  *
- *   Fix: Logger::error() now receives a structured context array containing:
- *     - 'platform'   : which API endpoint threw
- *     - 'batch_size' : number of events in the failing batch
- *     - 'trace'      : $e->getTraceAsString()
- *   This populates the debug log and the admin Event Log panel with
- *   actionable failure context.
+ *   Fix: version bumped to v21.0 (current stable as of 2026).
+ *   API version extracted into class constant GRAPH_API_VERSION so future
+ *   upgrades require a one-line change, not a search-and-replace.
+ *
+ * v3.2 also fixes M-3 minor:
+ *   build_event_payload() previously only sent em (email) and ph (phone)
+ *   in user_data. Meta's offline match scoring also weights fn, ln, ct,
+ *   st, zp, country. These are now included when available, increasing
+ *   offline match quality on Meta's side.
+ *
+ * v3.1 changes (M-3 fix):
+ *   send_batch() caught Throwable but only logged the exception message.
+ *   Now logs structured context: platform, batch_size, full trace.
  *
  * @package ServerTrack
  * @since   4.0.0
@@ -31,6 +38,15 @@ class ServerTrack_OfflineConversion {
 	/** How many orders to batch per API call. */
 	const BATCH_SIZE = 50;
 
+	/**
+	 * Meta Graph API version.
+	 *
+	 * BUG-03 FIX: was v19.0 (deprecated May 2025, at risk of sunset).
+	 * Bumped to v21.0 (current stable, supported through at least mid-2027).
+	 * Update this constant when Meta releases a new stable version.
+	 */
+	const GRAPH_API_VERSION = 'v21.0';
+
 	/** WooCommerce order statuses that count as a completed offline conversion. */
 	const COMPLETED_STATUSES = [ 'completed', 'processing' ];
 
@@ -44,9 +60,6 @@ class ServerTrack_OfflineConversion {
 
 	/**
 	 * Schedule a one-time upload for an order when its status changes to completed.
-	 *
-	 * Uses Dedup::exists()/set() (options-based, string-key safe — H-5 pattern)
-	 * to avoid re-queueing if the status flips back and forth.
 	 *
 	 * @param int      $order_id
 	 * @param WC_Order $order
@@ -89,18 +102,8 @@ class ServerTrack_OfflineConversion {
 	/**
 	 * Send a batch of orders as offline conversion events.
 	 *
-	 * M-3 FIX (v3.1):
-	 *   Previous catch block: Logger::error( 'Offline batch failed: ' . $e->getMessage() )
-	 *   This discarded the platform name, batch size, and full stack trace, making
-	 *   failures completely undiagnosable. Admins saw a one-line error with no
-	 *   context about which platform failed or what code path triggered it.
-	 *
-	 *   Fix: Logger::error() now receives a context array with platform, batch_size,
-	 *   and the full trace. The admin Event Log panel surfaces this context as
-	 *   collapsible detail rows so failures are immediately actionable.
-	 *
 	 * @param WC_Order[] $orders
-	 * @param string     $platform  'meta' | 'google' | 'tiktok'
+	 * @param string     $platform  'meta'
 	 */
 	public static function send_batch( array $orders, string $platform ): void {
 		if ( empty( $orders ) ) {
@@ -127,11 +130,6 @@ class ServerTrack_OfflineConversion {
 			);
 
 		} catch ( \Throwable $e ) {
-			/**
-			 * M-3 FIX: Log platform, batch size, and full stack trace so the
-			 * Event Log panel shows actionable failure context instead of a
-			 * bare message string.
-			 */
 			ServerTrack_Logger::error(
 				sprintf(
 					'Offline batch failed [platform=%s batch_size=%d]: %s',
@@ -152,6 +150,12 @@ class ServerTrack_OfflineConversion {
 	/**
 	 * Build an offline event payload for a single order.
 	 *
+	 * M-3 minor fix (v3.2):
+	 *   Previously only em + ph were sent in user_data.
+	 *   Meta's offline match scoring also weights fn, ln, ct, st, zp, country.
+	 *   These fields are now hashed and included when available, improving
+	 *   offline match quality.
+	 *
 	 * @param WC_Abstract_Order $order
 	 * @param string            $platform
 	 * @return array
@@ -161,7 +165,49 @@ class ServerTrack_OfflineConversion {
 		$total    = (float) $order->get_total();
 		$currency = strtoupper( get_woocommerce_currency() );
 
-		$payload = [
+		$user_data = [];
+
+		// Email (highest weight)
+		$email = $order->get_billing_email();
+		if ( $email ) {
+			$user_data['em'] = ServerTrack_Hasher::hash_email( $email );
+		}
+
+		// Phone
+		$phone   = $order->get_billing_phone();
+		$country = $order->get_billing_country();
+		if ( $phone ) {
+			$user_data['ph'] = ServerTrack_Hasher::hash_phone( $phone, $country );
+		}
+
+		// Name fields
+		$first_name = $order->get_billing_first_name();
+		if ( $first_name ) {
+			$user_data['fn'] = ServerTrack_Hasher::hash( strtolower( trim( $first_name ) ) );
+		}
+		$last_name = $order->get_billing_last_name();
+		if ( $last_name ) {
+			$user_data['ln'] = ServerTrack_Hasher::hash( strtolower( trim( $last_name ) ) );
+		}
+
+		// Location fields
+		$city = $order->get_billing_city();
+		if ( $city ) {
+			$user_data['ct'] = ServerTrack_Hasher::hash( strtolower( trim( $city ) ) );
+		}
+		$state = $order->get_billing_state();
+		if ( $state ) {
+			$user_data['st'] = ServerTrack_Hasher::hash( strtolower( trim( $state ) ) );
+		}
+		$zip = $order->get_billing_postcode();
+		if ( $zip ) {
+			$user_data['zp'] = ServerTrack_Hasher::hash( preg_replace( '/\s+/', '', strtolower( $zip ) ) );
+		}
+		if ( $country ) {
+			$user_data['country'] = ServerTrack_Hasher::hash( strtolower( trim( $country ) ) );
+		}
+
+		return [
 			'event_name'  => 'Purchase',
 			'event_time'  => $order->get_date_created() ? $order->get_date_created()->getTimestamp() : time(),
 			'event_id'    => ServerTrack_Dedup::generate_event_id( 'offline_purchase_' . $order_id ),
@@ -169,27 +215,15 @@ class ServerTrack_OfflineConversion {
 			'currency'    => $currency,
 			'order_id'    => $order_id,
 			'platform'    => $platform,
+			'user_data'   => $user_data,
 		];
-
-		// Attach hashed user data if available
-		$email = $order->get_billing_email();
-		if ( $email ) {
-			$payload['user_data']['em'] = ServerTrack_Hasher::hash_email( $email );
-		}
-
-		$phone = $order->get_billing_phone();
-		if ( $phone ) {
-			$payload['user_data']['ph'] = ServerTrack_Hasher::hash_phone( $phone );
-		}
-
-		return $payload;
 	}
 
 	/**
 	 * Dispatch an array of event payloads to the given platform API.
 	 *
-	 * Throws on HTTP error or non-2xx response so the caller's try/catch
-	 * can log the failure with full context (M-3).
+	 * BUG-03 FIX: was hardcoded to v19.0 — now uses GRAPH_API_VERSION constant
+	 * (currently v21.0). Throws on HTTP error or non-2xx response.
 	 *
 	 * @param array  $events
 	 * @param string $platform
@@ -205,7 +239,12 @@ class ServerTrack_OfflineConversion {
 				if ( ! $access_token || ! $dataset_id ) {
 					throw new \RuntimeException( 'Meta offline: missing access_token or dataset_id.' );
 				}
-				$url      = "https://graph.facebook.com/v19.0/{$dataset_id}/events";
+				// BUG-03 FIX: v19.0 → GRAPH_API_VERSION constant (v21.0).
+				$url      = sprintf(
+					'https://graph.facebook.com/%s/%s/events',
+					self::GRAPH_API_VERSION,
+					$dataset_id
+				);
 				$response = wp_remote_post( $url, [
 					'body'    => wp_json_encode( [ 'data' => $events, 'access_token' => $access_token ] ),
 					'headers' => [ 'Content-Type' => 'application/json' ],
