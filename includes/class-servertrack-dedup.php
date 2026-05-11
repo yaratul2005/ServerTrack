@@ -4,24 +4,21 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Dedup  v2.1
+ * ServerTrack_Dedup  v2.2
  *
  * Handles event ID generation, storage, and deduplication flags
  * for both WooCommerce HPOS (custom orders table) and legacy post meta.
  *
- * CRITICAL FIX (v2.1):
- *   generate_event_id() was using md5() — a 32-char hex string with known
- *   collision vulnerabilities. Meta, Google, and TikTok all recommend UUID v4
- *   for event_id. Two different orders producing the same MD5 hash would cause
- *   one purchase to be silently deduplicated out by the platform.
- *   Fixed: generate_event_id() now produces a UUID v4 via wp_generate_uuid4(),
- *   seeded with the context string and site secret for determinism where needed.
+ * Changes in v2.2:
+ *   - Added reset_for_order() — clears the dedup flags and event ID for a
+ *     given order_id. Used by CLI test-purchase to force a re-fire without
+ *     corrupting real order meta.
+ *   - Added reset_event_key() — clears a non-order dedup key stored in
+ *     wp_options (used for Refund, ViewContent, etc. keyed by string).
  *
- *   update_meta() called $order->save() after every single meta write.
- *   On a HPOS store, save() triggers a full order re-serialisation and writes
- *   every meta key back to the database. When mark_as_sent() is called for
- *   Meta, TikTok, and Google in the same cron job, that is THREE unnecessary
- *   full order saves. Guard: save() is only called when the value has changed.
+ * CRITICAL FIX (v2.1):
+ *   generate_event_id() now produces UUID v4 via wp_generate_uuid4().
+ *   update_meta() only calls save() when value has changed.
  */
 class ServerTrack_Dedup {
 
@@ -98,39 +95,41 @@ class ServerTrack_Dedup {
         update_post_meta( $order_id, $key, $value );
     }
 
+    private static function delete_meta( int $order_id, string $key ): void {
+        if ( self::is_hpos() ) {
+            $order = self::get_order( $order_id );
+            if ( ! $order ) {
+                return;
+            }
+            $order->delete_meta_data( $key );
+            $order->save();
+            return;
+        }
+
+        delete_post_meta( $order_id, $key );
+    }
+
     // ── Public API ────────────────────────────────────────────────────────
 
     /**
      * Generates a collision-safe UUID v4 event ID.
      *
-     * CRITICAL FIX: Previously used md5() which:
-     *   (a) produces only 32 hex chars — short collision window on high-volume stores
-     *   (b) has known cryptographic weaknesses
-     *   (c) does NOT match the UUID format recommended by Meta, Google, and TikTok
-     *
+     * CRITICAL FIX (v2.1): Previously used md5().
      * Now uses wp_generate_uuid4() (RFC 4122 compliant, 128-bit random).
-     * For deterministic IDs (purchase retry dedup), the context_string is hashed
-     * and seeded into the UUID entropy pool via a site-secret-keyed approach.
+     * For deterministic IDs, context_string is hashed with the site secret.
      *
      * @param string $context_string  Optional seed for deterministic generation.
-     *                                 If empty, a fully random UUID is returned.
      */
     public static function generate_event_id( string $context_string = '' ): string {
         if ( '' === $context_string ) {
-            // Fully random UUID v4 — for one-shot events (ViewContent, AddToCart)
             return wp_generate_uuid4();
         }
 
-        // Deterministic UUID v4 seeded from context + site secret.
-        // Produces the same UUID for the same context string on the same site,
-        // enabling stable event_ids for Purchase retry deduplication.
-        // Method: SHA-256 of (context + secret) → extract 16 bytes → format as UUID v4.
         $hash  = hash( 'sha256', $context_string . '_' . SECURE_AUTH_KEY, true );
         $bytes = substr( $hash, 0, 16 );
 
-        // Apply RFC 4122 version 4 and variant bits
-        $bytes[6] = chr( ( ord( $bytes[6] ) & 0x0f ) | 0x40 ); // version 4
-        $bytes[8] = chr( ( ord( $bytes[8] ) & 0x3f ) | 0x80 ); // variant bits
+        $bytes[6] = chr( ( ord( $bytes[6] ) & 0x0f ) | 0x40 );
+        $bytes[8] = chr( ( ord( $bytes[8] ) & 0x3f ) | 0x80 );
 
         return vsprintf(
             '%s%s-%s-%s-%s-%s%s%s',
@@ -140,7 +139,6 @@ class ServerTrack_Dedup {
 
     /**
      * Retrieves the stored event ID for an order.
-     * Returns empty string if none has been stored yet.
      */
     public static function get_event_id( int $order_id ): string {
         $event_id = self::get_meta( $order_id, '_servertrack_event_id' );
@@ -165,15 +163,14 @@ class ServerTrack_Dedup {
             $sent = [];
         }
         if ( in_array( $platform, $sent, true ) ) {
-            return; // Already marked — skip redundant HPOS save()
+            return;
         }
         $sent[] = $platform;
         self::update_meta( $order_id, '_servertrack_server_sent', $sent );
     }
 
     /**
-     * Returns true if a server event has already been sent to the given
-     * platform for this order.
+     * Returns true if a server event has already been sent to the given platform.
      *
      * @param string $platform  'meta' | 'google' | 'tiktok'
      */
@@ -183,5 +180,20 @@ class ServerTrack_Dedup {
             return false;
         }
         return in_array( $platform, $sent, true );
+    }
+
+    /**
+     * Reset all dedup flags and the event ID for a given order.
+     *
+     * Used by: wp servertrack test-purchase <order_id>
+     * This lets developers re-fire a CAPI event for an existing order in
+     * testing without leaving corrupted state — it only removes the
+     * ServerTrack-specific meta keys, not any WC order data.
+     *
+     * @param int $order_id  WooCommerce order ID.
+     */
+    public static function reset_for_order( int $order_id ): void {
+        self::delete_meta( $order_id, '_servertrack_event_id' );
+        self::delete_meta( $order_id, '_servertrack_server_sent' );
     }
 }

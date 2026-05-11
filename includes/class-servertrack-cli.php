@@ -47,20 +47,20 @@ class ServerTrack_CLI {
             [ 'Setting', 'Value' ],
         ];
 
-        $rows[] = [ 'Plugin enabled',    get_option( 'servertrack_enabled' ) ? 'Yes' : 'No' ];
-        $rows[] = [ 'Debug mode',         get_option( 'servertrack_debug_mode' ) ? 'ON' : 'off' ];
-        $rows[] = [ 'Meta pixel ID',      get_option( 'servertrack_meta_pixel_id', '—' ) ?: '—' ];
-        $rows[] = [ 'Meta access token',  get_option( 'servertrack_meta_access_token' ) ? '*** set ***' : 'NOT SET' ];
-        $rows[] = [ 'TikTok pixel ID',    get_option( 'servertrack_tiktok_pixel_id', '—' ) ?: '—' ];
-        $rows[] = [ 'TikTok access token',get_option( 'servertrack_tiktok_access_token' ) ? '*** set ***' : 'NOT SET' ];
-        $rows[] = [ 'Google MP secret',   get_option( 'servertrack_google_api_secret' ) ? '*** set ***' : 'NOT SET' ];
-        $rows[] = [ 'Webhook enabled',    get_option( 'servertrack_webhook_enabled' ) ? 'Yes' : 'No' ];
-        $rows[] = [ 'Webhook URL',        get_option( 'servertrack_webhook_url', '—' ) ?: '—' ];
+        $rows[] = [ 'Plugin enabled',     get_option( 'servertrack_enabled' ) ? 'Yes' : 'No' ];
+        $rows[] = [ 'Debug mode',          get_option( 'servertrack_debug_mode' ) ? 'ON' : 'off' ];
+        $rows[] = [ 'Meta pixel ID',       get_option( 'servertrack_meta_pixel_id', '—' ) ?: '—' ];
+        $rows[] = [ 'Meta access token',   get_option( 'servertrack_meta_access_token' ) ? '*** set ***' : 'NOT SET' ];
+        $rows[] = [ 'TikTok pixel ID',     get_option( 'servertrack_tiktok_pixel_id', '—' ) ?: '—' ];
+        $rows[] = [ 'TikTok access token', get_option( 'servertrack_tiktok_access_token' ) ? '*** set ***' : 'NOT SET' ];
+        $rows[] = [ 'Google MP secret',    get_option( 'servertrack_google_api_secret' ) ? '*** set ***' : 'NOT SET' ];
+        $rows[] = [ 'Webhook enabled',     get_option( 'servertrack_webhook_enabled' ) ? 'Yes' : 'No' ];
+        $rows[] = [ 'Webhook URL',         get_option( 'servertrack_webhook_url', '—' ) ?: '—' ];
 
         $log   = (array) get_option( 'servertrack_debug_log', [] );
         $retry = (array) get_option( 'servertrack_retry_queue', [] );
-        $rows[] = [ 'Log entries',   count( $log ) ];
-        $rows[] = [ 'Retry queue',   count( $retry ) . ' item(s)' ];
+        $rows[] = [ 'Log entries', count( $log ) ];
+        $rows[] = [ 'Retry queue', count( $retry ) . ' item(s)' ];
 
         WP_CLI\Utils\format_items( 'table', array_slice( $rows, 1 ), [ 'Setting', 'Value' ] );
     }
@@ -88,7 +88,7 @@ class ServerTrack_CLI {
      * @when after_wp_load
      */
     public function log( array $args, array $assoc_args ): void {
-        $sub   = $args[0] ?? '';
+        $sub = $args[0] ?? '';
         if ( $sub === 'clear' ) {
             update_option( 'servertrack_debug_log', [] );
             WP_CLI::success( 'Log cleared.' );
@@ -115,14 +115,17 @@ class ServerTrack_CLI {
             return;
         }
 
+        // FIX #6: Logger v2.0 stores 'timestamp', not 'time'
         $rows = array_map( function ( $entry ) {
             return [
-                'time'     => $entry['time']       ?? '',
+                'time'     => $entry['timestamp']  ?? '',  // fixed: was $entry['time']
                 'platform' => $entry['platform']   ?? '',
                 'event'    => $entry['event_type'] ?? '',
                 'order_id' => $entry['order_id']   ?? '',
                 'status'   => $entry['status']     ?? '',
-                'emq'      => isset( $entry['emq_score'] ) ? $entry['emq_score'] . ' (' . ( $entry['emq_grade'] ?? '' ) . ')' : '—',
+                'emq'      => isset( $entry['emq_score'] )
+                    ? $entry['emq_score'] . ' (' . ( $entry['emq_grade'] ?? '' ) . ')'
+                    : '—',
             ];
         }, $log );
 
@@ -131,6 +134,10 @@ class ServerTrack_CLI {
 
     /**
      * Re-fire the Purchase CAPI event for an existing order.
+     *
+     * Resets all ServerTrack dedup flags for the order so the event passes
+     * through all guards as if it had never been sent before.
+     * Does NOT remove any WooCommerce order data.
      *
      * ## OPTIONS
      *
@@ -157,14 +164,16 @@ class ServerTrack_CLI {
 
         WP_CLI::line( "Re-firing Purchase event for order #{$order_id}..." );
 
-        // Temporarily clear dedup so the re-fire goes through
-        $key = 'purchase_' . $order_id;
-        ServerTrack_Dedup::delete( $key );
+        // FIX #1: ServerTrack_Dedup::delete() never existed.
+        // Use reset_for_order() which correctly clears _servertrack_event_id
+        // and _servertrack_server_sent via HPOS-aware delete_meta().
+        ServerTrack_Dedup::reset_for_order( $order_id );
 
-        // Schedule and immediately run
-        do_action( 'servertrack_send_woo_purchase', $order_id );
+        // Pass 'thankyou' trigger so Meta + TikTok blocks execute
+        // (the Google block runs regardless of trigger).
+        do_action( 'servertrack_send_woo_purchase', $order_id, 'thankyou' );
 
-        WP_CLI::success( "Done. Check log: wp servertrack log --limit=5" );
+        WP_CLI::success( 'Done. Check log: wp servertrack log --limit=5' );
     }
 
     /**
@@ -215,11 +224,10 @@ class ServerTrack_CLI {
             WP_CLI::error( "Order #{$order_id} not found." );
         }
 
-        // Build user_data the same way WooCommerce source does
-        $email   = $order->get_billing_email();
-        $phone   = preg_replace( '/[^0-9+]/', '', $order->get_billing_phone() );
-        $fbc     = $order->get_meta( '_servertrack_fbc' );
-        $fbp     = $order->get_meta( '_servertrack_fbp' );
+        $email = $order->get_billing_email();
+        $phone = preg_replace( '/[^0-9+]/', '', $order->get_billing_phone() );
+        $fbc   = $order->get_meta( '_servertrack_fbc' );
+        $fbp   = $order->get_meta( '_servertrack_fbp' );
 
         $user_data = array_filter( [
             'em'  => $email ? ServerTrack_Hasher::hash( strtolower( trim( $email ) ) ) : '',

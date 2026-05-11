@@ -4,21 +4,25 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_WooCommerce  v3.0
+ * ServerTrack_WooCommerce  v3.1
+ *
+ * Changes in v3.1 (Bug Fixes):
+ *   - Bug #3: apply_filters('servertrack_purchase_custom_data', $data, $order)
+ *     is now called in build_purchase_custom_data() so ServerTrack_Catalog and
+ *     ServerTrack_LTV enrichment actually fires on every Purchase event.
+ *   - Bug #3: apply_filters('servertrack_view_content_custom_data', $data, $product_id)
+ *     is now called in send_view_content_async() for catalog enrichment.
+ *   - Bug #3: apply_filters('servertrack_add_to_cart_custom_data', $data, $cart_item)
+ *     is now called in on_add_to_cart() for catalog enrichment.
+ *   - Bug #5: on_order_completed() now checks for subscription renewal meta
+ *     before queuing so Offline Conversion does not double-count renewals.
  *
  * Changes in v3.0 (Feature #9 — Identity & Click ID wiring):
- *   - build_order_user_data() now uses ServerTrack_Identity::get_external_id_for_order()
- *     instead of the previous hashed order-ID fallback. This gives every order the
- *     strongest possible external_id (stable WP user UID > guest email match > order ID).
- *   - build_order_user_data() now merges ServerTrack_ClickCapture::get_for_order() as
- *     the PRIMARY source of click IDs (fbc, fbp, ttclid, gclid), before falling back
- *     to order meta and cookie values. This recovers click IDs that were lost to
- *     Safari ITP / Firefox ETP / ad blockers.
- *   - send_purchase_async() and send_refund_async() now call
+ *   - build_order_user_data() uses ServerTrack_Identity::get_external_id_for_order().
+ *   - build_order_user_data() uses ServerTrack_ClickCapture::get_for_order().
+ *   - send_purchase_async() and send_refund_async() call
  *     ServerTrack_MatchQuality::annotate() on each event before sending.
- *     The EMQ score is stripped from the payload before API dispatch but
- *     persisted to the logger so the dashboard can display per-event scores.
- *   - All logger calls updated to pass event_type as 7th argument (v2.0 signature).
+ *   - All logger calls updated to pass event_type as 7th argument.
  *
  * Changes in v2.3:
  *   - on_order_refunded() fires real Refund CAPI event.
@@ -51,7 +55,7 @@ class ServerTrack_WooCommerce {
 
         // Async cron callbacks
         add_action( 'servertrack_send_woo_purchase',      [ self::class, 'send_purchase_async' ],     10, 2 );
-        add_action( 'servertrack_send_woo_view_content',  [ self::class, 'send_view_content_async' ], 10, 1 );
+        add_action( 'servertrack_send_woo_view_content',  [ self::class, 'send_view_content_async' ], 10, 2 );
         add_action( 'servertrack_send_woo_refund',        [ self::class, 'send_refund_async' ],       10, 1 );
     }
 
@@ -84,6 +88,15 @@ class ServerTrack_WooCommerce {
     public static function on_order_completed( int $order_id ) {
         if ( ! get_option( 'servertrack_enabled', 1 ) ) return;
         if ( ! get_option( 'servertrack_google_enabled', 0 ) ) return;
+
+        // FIX #5: Skip subscription renewals — ServerTrack_Subscriptions handles those.
+        // Without this guard, a renewal completion fires an extra Offline Conversion
+        // on top of the renewal event, causing double-counted conversions.
+        $order = wc_get_order( $order_id );
+        if ( $order && $order->get_meta( '_subscription_renewal' ) ) {
+            return;
+        }
+
         if ( ServerTrack_Dedup::was_sent( $order_id, 'google' ) ) {
             ServerTrack_Logger::log( 'dedup_blocked', 'google', 'order_status_completed: already sent', '', ServerTrack_Dedup::get_event_id( $order_id ), $order_id, 'Purchase' );
             return;
@@ -126,7 +139,6 @@ class ServerTrack_WooCommerce {
         $custom_data = self::build_purchase_custom_data( $order );
         $custom_data['content_name'] = 'Refund';
 
-        // v3.0: compute and attach EMQ
         $temp_event = ( new ServerTrack_Event( 'Purchase', $event_id ) )->set_user_data( $user_data );
         $emq        = ServerTrack_MatchQuality::score( $user_data );
 
@@ -186,7 +198,6 @@ class ServerTrack_WooCommerce {
         $user_data   = self::build_order_user_data( $order );
         $custom_data = self::build_purchase_custom_data( $order );
 
-        // v3.0: compute EMQ once, pass to all logger calls
         $emq = ServerTrack_MatchQuality::score( $user_data );
 
         if ( 'thankyou' === $trigger && get_option( 'servertrack_meta_enabled', 0 ) ) {
@@ -260,14 +271,21 @@ class ServerTrack_WooCommerce {
         $price    = (float) wc_get_price_to_display( $product );
         $sku      = $product->get_sku() ?: (string) $product->get_id();
         $event_id = ServerTrack_Dedup::generate_event_id();
-        $event    = new ServerTrack_Event( 'ViewContent', $event_id );
-        $event->set_user_data( $context )->set_custom_data( [
+
+        $custom_data = [
             'currency'     => get_woocommerce_currency(),
             'value'        => $price,
             'contents'     => [ [ 'id' => $sku, 'quantity' => 1, 'item_price' => $price ] ],
             'content_ids'  => [ $sku ],
             'content_type' => 'product',
-        ] );
+        ];
+
+        // FIX #3: Apply catalog enrichment filter (ServerTrack_Catalog hooks here)
+        $custom_data = apply_filters( 'servertrack_view_content_custom_data', $custom_data, $product_id );
+
+        $event = new ServerTrack_Event( 'ViewContent', $event_id );
+        $event->set_user_data( $context )->set_custom_data( $custom_data );
+
         if ( get_option( 'servertrack_meta_enabled', 0 ) && ServerTrack_Consent::is_granted( 'meta' ) ) {
             $result = ServerTrack_Meta::send( $event );
             if ( ( $result['status'] ?? '' ) !== 'success' ) {
@@ -299,14 +317,21 @@ class ServerTrack_WooCommerce {
         $price    = (float) wc_get_price_to_display( $product );
         $sku      = $product->get_sku() ?: (string) $product_id;
         $event_id = ServerTrack_Dedup::generate_event_id();
-        $event    = new ServerTrack_Event( 'AddToCart', $event_id );
-        $event->set_user_data( self::build_browser_user_data() )->set_custom_data( [
+
+        $custom_data = [
             'currency'     => get_woocommerce_currency(),
             'value'        => round( $price * $quantity, 2 ),
             'content_ids'  => [ $sku ],
             'contents'     => [ [ 'id' => $sku, 'quantity' => $quantity, 'item_price' => $price ] ],
             'content_type' => 'product',
-        ] );
+        ];
+
+        // FIX #3: Apply catalog enrichment filter
+        $cart_item_context = [ 'product_id' => $product_id, 'quantity' => $quantity, 'variation_id' => $variation_id ];
+        $custom_data       = apply_filters( 'servertrack_add_to_cart_custom_data', $custom_data, $cart_item_context );
+
+        $event = new ServerTrack_Event( 'AddToCart', $event_id );
+        $event->set_user_data( self::build_browser_user_data() )->set_custom_data( $custom_data );
         self::send_to_platforms( $event, $meta_on, $tiktok_on );
     }
 
@@ -390,7 +415,6 @@ class ServerTrack_WooCommerce {
         if ( $first ) $user_data['first_name'] = ServerTrack_Hasher::hash( $first );
         $last = sanitize_text_field( $new_customer_data['last_name'] ?? '' );
         if ( $last ) $user_data['last_name'] = ServerTrack_Hasher::hash( $last );
-        // v3.0: use stable identity UID
         $user_data['external_id'] = ServerTrack_Identity::get_external_id_for_user( $customer_id );
         $event = new ServerTrack_Event( 'CompleteRegistration', $event_id );
         $event->set_user_data( $user_data )->set_custom_data( [
@@ -457,7 +481,6 @@ class ServerTrack_WooCommerce {
         if ( is_user_logged_in() ) {
             $user = wp_get_current_user();
             if ( $user->user_email ) $data['email'] = ServerTrack_Hasher::hash_email( $user->user_email );
-            // v3.0: stable identity UID for logged-in users
             $data['external_id'] = ServerTrack_Identity::get_external_id_for_user( $user->ID );
         }
         return $data;
@@ -466,10 +489,8 @@ class ServerTrack_WooCommerce {
     /**
      * Build user_data from a WC order.
      *
-     * v3.0 changes:
-     *   - external_id now uses ServerTrack_Identity (stable UID > guest match > order ID)
-     *   - Click IDs now use ServerTrack_ClickCapture::get_for_order() as primary source
-     *     (server-side persistent store), with order meta + cookie as fallbacks.
+     * v3.0: external_id uses ServerTrack_Identity.
+     *       Click IDs use ServerTrack_ClickCapture as primary source.
      */
     private static function build_order_user_data( WC_Order $order ): array {
         $data = [];
@@ -479,12 +500,10 @@ class ServerTrack_WooCommerce {
         $ua = $order->get_customer_user_agent();
         if ( $ua ) $data['user_agent'] = $ua;
 
-        // v3.0: server-side click ID store (primary source)
-        $customer_id = (int) $order->get_customer_id();
-        $session_id  = (string) ( $order->get_meta( '_servertrack_session_id' ) ?: '' );
+        $customer_id   = (int) $order->get_customer_id();
+        $session_id    = (string) ( $order->get_meta( '_servertrack_session_id' ) ?: '' );
         $stored_clicks = ServerTrack_ClickCapture::get_for_order( $customer_id, $session_id );
 
-        // fbc — server store > order meta > cookie > build from fbclid
         $fbc = $stored_clicks['fbc'] ?? '';
         if ( empty( $fbc ) ) $fbc = (string) $order->get_meta( '_servertrack_fbc' );
         if ( empty( $fbc ) && ! empty( $_COOKIE['_fbc'] ) ) $fbc = sanitize_text_field( wp_unslash( $_COOKIE['_fbc'] ) ); // phpcs:ignore
@@ -497,19 +516,16 @@ class ServerTrack_WooCommerce {
         }
         if ( $fbc ) $data['fbc'] = $fbc;
 
-        // fbp
         $fbp = $stored_clicks['fbp'] ?? '';
         if ( empty( $fbp ) ) $fbp = (string) $order->get_meta( '_servertrack_fbp' );
         if ( empty( $fbp ) && ! empty( $_COOKIE['_fbp'] ) ) $fbp = sanitize_text_field( wp_unslash( $_COOKIE['_fbp'] ) ); // phpcs:ignore
         if ( $fbp ) $data['fbp'] = $fbp;
 
-        // ttclid
         $ttclid = $stored_clicks['ttclid'] ?? '';
         if ( empty( $ttclid ) ) $ttclid = (string) $order->get_meta( '_servertrack_ttclid' );
         if ( empty( $ttclid ) && ! empty( $_COOKIE['ttclid'] ) ) $ttclid = sanitize_text_field( wp_unslash( $_COOKIE['ttclid'] ) ); // phpcs:ignore
         if ( $ttclid ) $data['ttclid'] = $ttclid;
 
-        // gclid
         $gclid = $stored_clicks['gclid'] ?? '';
         if ( empty( $gclid ) ) $gclid = (string) $order->get_meta( '_servertrack_gclid' );
         if ( empty( $gclid ) && ! empty( $_COOKIE['_gcl_aw'] ) ) $gclid = sanitize_text_field( wp_unslash( $_COOKIE['_gcl_aw'] ) ); // phpcs:ignore
@@ -541,11 +557,21 @@ class ServerTrack_WooCommerce {
         foreach ( $pii as $key => $val ) {
             if ( $val ) $data[ $key ] = ServerTrack_Hasher::hash( $val );
         }
-        // v3.0: stable identity UID
         $data['external_id'] = ServerTrack_Identity::get_external_id_for_order( $order );
         return $data;
     }
 
+    /**
+     * Build custom_data for a Purchase event.
+     *
+     * FIX #3: Now calls apply_filters('servertrack_purchase_custom_data')
+     * so ServerTrack_Catalog::enrich_purchase() and ServerTrack_LTV filters
+     * actually fire on every Purchase event (they were registered but never
+     * triggered in v3.0 because this filter call was missing).
+     *
+     * @param WC_Order $order
+     * @return array
+     */
     private static function build_purchase_custom_data( WC_Order $order ): array {
         $contents    = [];
         $content_ids = [];
@@ -557,7 +583,8 @@ class ServerTrack_WooCommerce {
             $contents[]    = [ 'id' => $sku, 'quantity' => $qty, 'item_price' => round( $price, 2 ) ];
             $content_ids[] = $sku;
         }
-        return [
+
+        $custom_data = [
             'currency'     => $order->get_currency(),
             'value'        => (float) $order->get_total(),
             'contents'     => $contents,
@@ -566,5 +593,10 @@ class ServerTrack_WooCommerce {
             'order_id'     => $order->get_id(),
             'num_items'    => count( $contents ),
         ];
+
+        // Allow Catalog and LTV classes to enrich the payload.
+        // $order is passed as second arg so enrichment callbacks can access
+        // category/brand/LTV data without re-fetching the order.
+        return apply_filters( 'servertrack_purchase_custom_data', $custom_data, $order );
     }
 }

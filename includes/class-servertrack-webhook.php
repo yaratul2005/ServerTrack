@@ -29,7 +29,6 @@
  *
  * Security: X-ServerTrack-Signature header contains
  *   HMAC-SHA256(secret, raw_body) in hex.
- *   Recipients should verify this before processing.
  *
  * @package ServerTrack
  * @since   6.0.0
@@ -45,17 +44,23 @@ class ServerTrack_Webhook {
      * Register hooks.
      */
     public static function init(): void {
-        // Hook into the logger so every event automatically fires the webhook
+        // Hook into the logger action added in Logger v2.1
         add_action( 'servertrack_event_logged', [ __CLASS__, 'maybe_fire_webhook' ], 10, 5 );
+
+        // Async delivery handler
+        add_action( 'servertrack_deliver_webhook', [ __CLASS__, 'deliver_webhook' ], 10, 6 );
     }
 
     /**
      * Decide whether to fire the webhook and dispatch async.
      *
+     * Signature matches do_action('servertrack_event_logged', ...) in Logger v2.1:
+     *   ( $platform, $event_type, $order_id, $status, $emq )
+     *
      * @param string $platform   e.g. 'meta', 'tiktok', 'google'
      * @param string $event_name e.g. 'Purchase', 'ViewContent'
      * @param int    $order_id
-     * @param string $status     'success'|'error'
+     * @param string $status     'success'|'error'|...
      * @param array  $emq        EMQ score data
      */
     public static function maybe_fire_webhook(
@@ -120,10 +125,10 @@ class ServerTrack_Webhook {
         $secret   = (string) get_option( 'servertrack_webhook_secret', '' );
 
         $headers = [
-            'Content-Type'              => 'application/json',
-            'X-ServerTrack-Version'     => SERVERTRACK_VERSION,
-            'X-ServerTrack-Event'       => $event_name,
-            'X-ServerTrack-Platform'    => $platform,
+            'Content-Type'           => 'application/json',
+            'X-ServerTrack-Version'  => SERVERTRACK_VERSION,
+            'X-ServerTrack-Event'    => $event_name,
+            'X-ServerTrack-Platform' => $platform,
         ];
 
         if ( $secret ) {
@@ -138,17 +143,23 @@ class ServerTrack_Webhook {
             'sslverify' => true,
         ] );
 
-        // Log delivery result (debug mode only)
+        // FIX #4: Logger::log() correct arg order:
+        //   ( status, platform, message, response, event_id, order_id, event_type )
         if ( get_option( 'servertrack_debug_mode' ) ) {
             $http_code = is_wp_error( $response )
                 ? 0
                 : wp_remote_retrieve_response_code( $response );
 
+            $log_status = ( $http_code >= 200 && $http_code < 300 ) ? 'success' : 'error';
+
             ServerTrack_Logger::log(
-                'webhook',
-                $event_name,
-                $order_id,
-                ( $http_code >= 200 && $http_code < 300 ) ? 'success' : 'error'
+                $log_status,                     // status
+                'webhook',                       // platform
+                'Webhook delivery → ' . $url,   // message
+                (string) $http_code,             // response
+                '',                              // event_id
+                $order_id,                       // order_id
+                $event_name                      // event_type
             );
         }
     }
@@ -176,7 +187,6 @@ class ServerTrack_Webhook {
 
     /**
      * Send a test webhook to verify the endpoint is reachable.
-     * Called from the admin settings page.
      *
      * @param string $url
      * @param string $secret
@@ -197,15 +207,15 @@ class ServerTrack_Webhook {
         $raw_body = wp_json_encode( $payload );
 
         $headers = [
-            'Content-Type'           => 'application/json',
-            'X-ServerTrack-Version'  => SERVERTRACK_VERSION,
-            'X-ServerTrack-Event'    => 'Test',
+            'Content-Type'          => 'application/json',
+            'X-ServerTrack-Version' => SERVERTRACK_VERSION,
+            'X-ServerTrack-Event'   => 'Test',
         ];
         if ( $secret ) {
             $headers['X-ServerTrack-Signature'] = 'sha256=' . hash_hmac( 'sha256', $raw_body, $secret );
         }
 
-        $response  = wp_remote_post( $url, [
+        $response = wp_remote_post( $url, [
             'headers'  => $headers,
             'body'     => $raw_body,
             'timeout'  => 15,
