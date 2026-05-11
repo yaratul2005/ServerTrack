@@ -85,10 +85,8 @@ function servertrack_load_classes(): void {
     // ── Admin ─────────────────────────────────────────────────────────────────────
     if ( is_admin() ) {
         require_once SERVERTRACK_DIR . 'admin/class-servertrack-dashboard.php';
-
-        if ( file_exists( SERVERTRACK_DIR . 'admin/class-servertrack-settings.php' ) ) {
-            require_once SERVERTRACK_DIR . 'admin/class-servertrack-settings.php';
-        }
+        // FIX: load the actual admin/settings class (ServerTrack_Admin)
+        require_once SERVERTRACK_DIR . 'admin/class-servertrack-admin.php';
     }
 }
 
@@ -118,9 +116,8 @@ function servertrack_init(): void {
     // Admin
     if ( is_admin() ) {
         ServerTrack_Dashboard::init();
-        if ( class_exists( 'ServerTrack_Settings' ) ) {
-            ServerTrack_Settings::init();
-        }
+        // FIX: ServerTrack_Admin is the real settings class
+        ServerTrack_Admin::init();
     }
 }
 add_action( 'plugins_loaded', 'servertrack_init', 5 );
