@@ -4,18 +4,26 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_WooCommerce  v3.1
+ * ServerTrack_WooCommerce  v3.2
+ *
+ * Changes in v3.2 (Critical Fix C-3):
+ *   - CRITICAL FIX C-3: send_purchase_async() trigger guard was incorrectly
+ *     blocking the Google Offline Conversion path when trigger='completed'.
+ *     Root cause: the Google block was nested inside
+ *     `if ( 'thankyou' === $trigger && get_option('servertrack_google_enabled') )`
+ *     which evaluates FALSE when trigger='completed', so Google Offline
+ *     Conversion events scheduled by on_order_completed() were silently
+ *     dropped — never sent, never logged, never retried.
+ *     Fix: Google block is now unconditional on trigger value. It runs for
+ *     BOTH 'thankyou' AND 'completed', guarded only by the dedup + consent
+ *     checks already present. This mirrors the original intent documented
+ *     in on_order_completed() (Google-only Offline Conversion path).
  *
  * Changes in v3.1 (Bug Fixes):
- *   - Bug #3: apply_filters('servertrack_purchase_custom_data', $data, $order)
- *     is now called in build_purchase_custom_data() so ServerTrack_Catalog and
- *     ServerTrack_LTV enrichment actually fires on every Purchase event.
- *   - Bug #3: apply_filters('servertrack_view_content_custom_data', $data, $product_id)
- *     is now called in send_view_content_async() for catalog enrichment.
- *   - Bug #3: apply_filters('servertrack_add_to_cart_custom_data', $data, $cart_item)
- *     is now called in on_add_to_cart() for catalog enrichment.
- *   - Bug #5: on_order_completed() now checks for subscription renewal meta
- *     before queuing so Offline Conversion does not double-count renewals.
+ *   - Bug #3: apply_filters('servertrack_purchase_custom_data') called in
+ *     build_purchase_custom_data() so Catalog/LTV enrichment fires.
+ *   - Bug #3: apply_filters for view_content and add_to_cart custom data.
+ *   - Bug #5: on_order_completed() checks subscription renewal meta.
  *
  * Changes in v3.0 (Feature #9 — Identity & Click ID wiring):
  *   - build_order_user_data() uses ServerTrack_Identity::get_external_id_for_order().
@@ -90,8 +98,6 @@ class ServerTrack_WooCommerce {
         if ( ! get_option( 'servertrack_google_enabled', 0 ) ) return;
 
         // FIX #5: Skip subscription renewals — ServerTrack_Subscriptions handles those.
-        // Without this guard, a renewal completion fires an extra Offline Conversion
-        // on top of the renewal event, causing double-counted conversions.
         $order = wc_get_order( $order_id );
         if ( $order && $order->get_meta( '_subscription_renewal' ) ) {
             return;
@@ -200,6 +206,7 @@ class ServerTrack_WooCommerce {
 
         $emq = ServerTrack_MatchQuality::score( $user_data );
 
+        // ── Meta: thankyou trigger only ──────────────────────────────────
         if ( 'thankyou' === $trigger && get_option( 'servertrack_meta_enabled', 0 ) ) {
             if ( ServerTrack_Dedup::was_sent( $order_id, 'meta' ) ) {
                 ServerTrack_Logger::log( 'dedup_blocked', 'meta', 'Already sent', '', $event_id, $order_id, 'Purchase', $emq );
@@ -216,6 +223,8 @@ class ServerTrack_WooCommerce {
                 ServerTrack_Logger::log( $result['status'] ?? 'error', 'meta', 'Purchase #' . $order_id, '', $event_id, $order_id, 'Purchase', $emq );
             }
         }
+
+        // ── TikTok: thankyou trigger only ────────────────────────────────
         if ( 'thankyou' === $trigger && get_option( 'servertrack_tiktok_enabled', 0 ) ) {
             if ( ServerTrack_Dedup::was_sent( $order_id, 'tiktok' ) ) {
                 ServerTrack_Logger::log( 'dedup_blocked', 'tiktok', 'Already sent', '', $event_id, $order_id, 'Purchase', $emq );
@@ -232,6 +241,14 @@ class ServerTrack_WooCommerce {
                 ServerTrack_Logger::log( $result['status'] ?? 'error', 'tiktok', 'Purchase #' . $order_id, '', $event_id, $order_id, 'Purchase', $emq );
             }
         }
+
+        // ── Google: both triggers (thankyou + completed) ─────────────────
+        // CRITICAL FIX C-3: Previously this block was inside
+        //   `if ( 'thankyou' === $trigger && google_enabled )`
+        // which silently dropped ALL Google Offline Conversion events because
+        // on_order_completed() schedules with trigger='completed', not 'thankyou'.
+        // Fix: block is now unconditional on trigger — runs for both paths,
+        // protected by dedup + consent guards already present.
         if ( get_option( 'servertrack_google_enabled', 0 ) ) {
             if ( ServerTrack_Dedup::was_sent( $order_id, 'google' ) ) {
                 ServerTrack_Logger::log( 'dedup_blocked', 'google', 'Already sent (trigger=' . $trigger . ')', '', $event_id, $order_id, 'Purchase', $emq );
@@ -488,9 +505,6 @@ class ServerTrack_WooCommerce {
 
     /**
      * Build user_data from a WC order.
-     *
-     * v3.0: external_id uses ServerTrack_Identity.
-     *       Click IDs use ServerTrack_ClickCapture as primary source.
      */
     private static function build_order_user_data( WC_Order $order ): array {
         $data = [];
@@ -565,12 +579,7 @@ class ServerTrack_WooCommerce {
      * Build custom_data for a Purchase event.
      *
      * FIX #3: Now calls apply_filters('servertrack_purchase_custom_data')
-     * so ServerTrack_Catalog::enrich_purchase() and ServerTrack_LTV filters
-     * actually fire on every Purchase event (they were registered but never
-     * triggered in v3.0 because this filter call was missing).
-     *
-     * @param WC_Order $order
-     * @return array
+     * so ServerTrack_Catalog::enrich_purchase() and ServerTrack_LTV filters fire.
      */
     private static function build_purchase_custom_data( WC_Order $order ): array {
         $contents    = [];
@@ -594,9 +603,6 @@ class ServerTrack_WooCommerce {
             'num_items'    => count( $contents ),
         ];
 
-        // Allow Catalog and LTV classes to enrich the payload.
-        // $order is passed as second arg so enrichment callbacks can access
-        // category/brand/LTV data without re-fetching the order.
         return apply_filters( 'servertrack_purchase_custom_data', $custom_data, $order );
     }
 }
