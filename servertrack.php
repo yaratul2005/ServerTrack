@@ -3,7 +3,7 @@
  * Plugin Name:       ServerTrack
  * Plugin URI:        https://github.com/yaratul2005/ServerTrack
  * Description:       Professional server-side CAPI tracking for Meta, TikTok & Google — with identity stitching, click ID persistence, EMQ scoring, offline conversions, pixel dedup, LTV signals, catalog enrichment, webhook outbound, cart abandonment, subscriptions, and admin dashboard.
- * Version:           6.0.0
+ * Version:           6.0.1
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * Author:            MD. Yaser Ahmmed Ratul
@@ -15,7 +15,8 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'SERVERTRACK_VERSION', '6.0.0' );
+// v6.0.1 — Bumped to bust browser cache for admin.css after duplicate-handle fix.
+define( 'SERVERTRACK_VERSION', '6.0.1' );
 define( 'SERVERTRACK_DIR',     plugin_dir_path( __FILE__ ) );
 define( 'SERVERTRACK_URL',     plugin_dir_url( __FILE__ ) );
 
@@ -154,24 +155,15 @@ function servertrack_maybe_upgrade(): void {
 
 /**
  * Plugin activation: set default options.
- *
- * FIX-BUG-03: Added registration of all three platform enable flags
- * (servertrack_meta_enabled, servertrack_tiktok_enabled, servertrack_google_enabled)
- * which were previously missing, causing get_option() to return an empty
- * string (falsy) instead of integer 0.
  */
 register_activation_hook( __FILE__, function (): void {
     add_option( 'servertrack_enabled',           1 );
     add_option( 'servertrack_debug_mode',         0 );
     add_option( 'servertrack_debug_log',          [] );
     add_option( 'servertrack_retry_queue',        [] );
-
-    // FIX-BUG-03: Register platform enable flags.
     add_option( 'servertrack_meta_enabled',       0 );
     add_option( 'servertrack_tiktok_enabled',     0 );
     add_option( 'servertrack_google_enabled',     0 );
-
-    // v6.0 webhook options
     add_option( 'servertrack_webhook_enabled',    0 );
     add_option( 'servertrack_webhook_url',        '' );
     add_option( 'servertrack_webhook_secret',     '' );
@@ -180,17 +172,6 @@ register_activation_hook( __FILE__, function (): void {
 
 /**
  * Plugin deactivation: clear all scheduled cron events and transient state.
- *
- * FIX-09: Added delete_option( 'servertrack_retry_queue' ).
- *   Previously only cron hooks were cleared. The retry queue persisted in
- *   wp_options across deactivation/re-activation cycles, causing stale events
- *   to fire immediately on re-activation — potentially double-sending conversions
- *   that had already been delivered before deactivation.
- *
- * FIX-BUG-06: Delete all sensitive API credential options on deactivation
- *   so tokens and secrets are not left sitting in wp_options after the plugin
- *   is turned off.  Permanent uninstall cleanup is handled by uninstall.php;
- *   this covers the deactivate-then-reactivate security window.
  */
 register_deactivation_hook( __FILE__, function (): void {
     $hooks = [
@@ -209,11 +190,8 @@ register_deactivation_hook( __FILE__, function (): void {
         wp_clear_scheduled_hook( $hook );
     }
 
-    // FIX-09: Purge the retry queue so stale events don't re-fire on re-activation.
     delete_option( 'servertrack_retry_queue' );
 
-    // FIX-BUG-06: Remove sensitive API credentials from the database.
-    // These are re-entered by the admin after re-activation.
     $credential_options = [
         'servertrack_meta_access_token',
         'servertrack_tiktok_access_token',

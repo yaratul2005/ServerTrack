@@ -4,54 +4,31 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Dashboard  v3.0
+ * ServerTrack_Dashboard  v3.1
+ *
+ * FIX in v3.1 — Removed duplicate CSS enqueue that caused browser-cache
+ * poisoning on the Dashboard page.
+ *
+ *   ROOT CAUSE: This class registered the stylesheet under the handle
+ *   'servertrack-dashboard' at priority 5.  ServerTrack_Admin::enqueue_assets()
+ *   then registered the *same* file under the handle 'servertrack-admin' at
+ *   priority 10.  WordPress emitted two <link> tags for the same URL —
+ *   one with the old cached version and one with the current version —
+ *   leaving the browser to use whichever it had cached.  Net result: the
+ *   dashboard rendered with no styles (the cached stylesheet was stale and
+ *   the newer handle was dequeued as a duplicate URL by some hosts).
+ *
+ *   FIX: Removed the wp_enqueue_style() call from this class entirely.
+ *   ServerTrack_Admin::enqueue_assets() already covers the same
+ *   'toplevel_page_servertrack' hook at priority 10 and correctly loads
+ *   admin.css under the canonical 'servertrack-admin' handle.
+ *   Chart.js is still enqueued here (only this class needs it).
  *
  * FIX in v3.0 — Removed premature wp_localize_script call from enqueue_assets().
  *
- *   ROOT CAUSE: enqueue_assets() was hooked at priority 5, before
- *   ServerTrack_Admin::enqueue_assets() (priority 10) had a chance to
- *   register the 'servertrack-admin' script handle. wp_localize_script()
- *   silently no-ops when the handle doesn't exist yet, so the
- *   servertrack_admin JS object was undefined on the Dashboard page —
- *   breaking every AJAX call: auto-refresh, Clear Log, and Drain Retries.
- *
- *   FIX: Removed the wp_localize_script() call from this class entirely.
- *   ServerTrack_Admin::enqueue_assets() already runs at priority 10 and
- *   correctly registers + localises 'servertrack-admin' with the full
- *   platform config. No duplication needed.
- *
- *   Also tightened the hook allowlist to match ServerTrack_Admin exactly,
- *   so Chart.js is only loaded on ServerTrack admin pages.
- *
- * FIX in v2.9 — HTML class names realigned with admin.css selectors:
- *   1.  st-kpi-card  → st-kpi        (CSS §17 defines .st-kpi)
- *   2.  st-kpi-value → st-kpi-val    (CSS §17 uses .st-kpi-val)
- *   3.  st-platform-card → st-plat-row  (inside .st-plat-list)
- *   4.  st-status    → st-dot        (CSS §17 uses .st-dot with modifiers)
- *
- * FIX in v2.8:
- *   1.  register_menu(): Settings submenu callback changed from
- *       render_settings() (which called wp_safe_redirect+exit, killing
- *       the page during the admin_menu hook) to ServerTrack_Admin::render_page.
- *       render_settings() method removed entirely.
- *   2.  register_menu(): Event Sources submenu callback changed from
- *       render_sources() (undefined) to ServerTrack_Admin::render_page.
- *       Visiting ?page=servertrack-sources will load the Settings page
- *       with the Sources tab pre-selected via the tab query arg.
- *   3.  The above two changes eliminate the fatal error on the Dashboard
- *       page caused by wp_safe_redirect+exit firing inside the menu hook.
- *
- * FIX in v2.7 — All remaining bugs resolved:
- *   1.  KPI element IDs added so JS count-up animation works.
- *   2.  enqueue_assets() now localises servertrack_dashboard nonce so
- *       admin.js cfg.nonce is defined on the Dashboard page.
- *   3.  compute_breakdown() counts all log statuses (not only 'success')
- *       so Platform / Event-type charts reflect true volume.
- *   4.  KPI icon spans carry aria-hidden="true".
- *   5.  Inline auto-refresh timer stored in a variable and cleared on
- *       beforeunload so the interval doesn't leak.
- *   6.  Dead `lastCount` variable removed.
- *
+ * FIX in v2.9 — HTML class names realigned with admin.css selectors.
+ * FIX in v2.8 — Settings/Sources submenu callbacks fixed.
+ * FIX in v2.7 — KPI IDs, nonce, breakdown, auto-refresh, dead variable.
  * FIX in v2.6 — Class name mismatch after v2.3 brand overhaul.
  */
 class ServerTrack_Dashboard {
@@ -120,14 +97,14 @@ class ServerTrack_Dashboard {
     }
 
     /**
-     * Enqueue Chart.js for all ServerTrack admin pages.
+     * Enqueue Chart.js only (CSS is handled by ServerTrack_Admin::enqueue_assets).
+     *
+     * v3.1 FIX: Removed wp_enqueue_style( 'servertrack-dashboard', … ).
+     *   The duplicate handle caused browser-cache poisoning — see class docblock.
+     *   ServerTrack_Admin::enqueue_assets() (priority 10) owns the stylesheet.
      *
      * v3.0 FIX: Removed the wp_localize_script( 'servertrack-admin', … ) call
-     * that previously lived here. It ran at priority 5 — before
-     * ServerTrack_Admin::enqueue_assets() (priority 10) registered the
-     * 'servertrack-admin' handle — so wp_localize_script silently no-oped and
-     * the servertrack_admin JS object was always undefined on the Dashboard.
-     * ServerTrack_Admin::enqueue_assets() already handles localisation correctly.
+     *   that ran before the handle was registered.
      */
     public static function enqueue_assets( string $hook ): void {
         $allowed_hooks = [
@@ -145,16 +122,11 @@ class ServerTrack_Dashboard {
             true
         );
 
-        wp_enqueue_style(
-            'servertrack-dashboard',
-            SERVERTRACK_URL . 'admin/assets/admin.css',
-            [],
-            SERVERTRACK_VERSION
-        );
-
-        // NOTE: wp_localize_script for 'servertrack-admin' intentionally
-        // removed here (v3.0). ServerTrack_Admin::enqueue_assets() runs at
-        // priority 10 and registers + localises the handle correctly.
+        // NOTE: wp_enqueue_style intentionally NOT called here (v3.1 FIX).
+        // ServerTrack_Admin::enqueue_assets() runs at priority 10 on the same
+        // hooks and registers admin.css under the canonical handle
+        // 'servertrack-admin'.  A second handle pointing to the same URL
+        // was causing browser-cache collisions — see class docblock.
     }
 
     // ────────────────────────────────────────────────────────────────────────
@@ -651,7 +623,6 @@ class ServerTrack_Dashboard {
             $ts = substr( $entry['timestamp'] ?? '', 0, 10 );
             if ( $ts < $week_ago ) continue;
 
-            // v2.7 FIX: count all statuses, not only 'success'.
             $plat = strtolower( $entry['platform'] ?? '' );
             if ( isset( $by_platform[ $plat ] ) ) {
                 $by_platform[ $plat ]++;
