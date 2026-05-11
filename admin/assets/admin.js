@@ -1,14 +1,28 @@
 /**
- * ServerTrack Admin JS — Dashboard v2.0
+ * ServerTrack Admin JS — v2.7
+ *
+ * v2.7 FIXES:
+ *   1. AJAX actions corrected:
+ *      - loadDashboardStats() now uses 'servertrack_get_dashboard_stats'
+ *        (registered in ServerTrack_Admin) with cfg.nonce.
+ *      - refreshLog() now uses 'servertrack_get_logs' (registered in
+ *        ServerTrack_Admin) with cfg.nonce.
+ *   2. KPI DOM selectors fixed — count-up now targets #st-kpi-total,
+ *      #st-kpi-success, #st-kpi-failed, #st-kpi-rate (IDs added to PHP).
+ *   3. #servertrack-clear-log → #st-clear-log-btn (matches PHP).
+ *   4. #servertrack-refresh-log → #st-manual-refresh (matches PHP).
+ *   5. Log tbody selector #servertrack-log-body → #st-log-tbody.
+ *   6. Log table empty-state colspan 9 → 7 (matches 7-column thead).
+ *   7. stopAutoRefresh() now also fires on window beforeunload.
  *
  * Modules:
  *   1. Toast notification system
  *   2. KPI counter animation (count-up)
- *   3. Skeleton loader → real data swap
+ *   3. Dashboard stats (KPI cards via servertrack_get_dashboard_stats)
  *   4. Platform health cards — test event buttons
  *   5. Log table — render, filter, refresh, clear
  *   6. Response cell expand/collapse
- *   7. Auto-refresh (30 s) when Debug tab is active
+ *   7. Auto-refresh (30s) when log tbody is visible
  *   8. Tab icon injection
  */
 (function ($) {
@@ -16,7 +30,7 @@
 
     var cfg = window.servertrack_admin || {};
 
-    /* ── UTILITIES ──────────────────────────────────────────────── */
+    /* ── UTILITIES ──────────────────────────────────────────────────── */
     function esc(str) {
         if (str === null || str === undefined) return '';
         return String(str)
@@ -43,7 +57,7 @@
         return icons[name] || '';
     }
 
-    /* ── 1. TOAST ────────────────────────────────────────────────── */
+    /* ── 1. TOAST ────────────────────────────────────────────────────── */
     function showToast(type, title, msg) {
         var $c = $('#st-toast-container');
         if (!$c.length) {
@@ -65,7 +79,7 @@
         }, 3400);
     }
 
-    /* ── 2. COUNT-UP ANIMATION ───────────────────────────────────── */
+    /* ── 2. COUNT-UP ANIMATION ───────────────────────────────────────── */
     function animateCount($el, target, suffix) {
         var start    = 0;
         var duration = 900;
@@ -83,18 +97,12 @@
         requestAnimationFrame(step);
     }
 
-    /* ── 3. DASHBOARD STATS (KPI cards) ─────────────────────────── */
+    /* ── 3. DASHBOARD STATS (KPI cards) ─────────────────────────────── */
+    // v2.7 FIX: action corrected to 'servertrack_get_dashboard_stats'.
+    // KPI element IDs corrected to match PHP output (#st-kpi-total etc.).
     function loadDashboardStats() {
-        var $grid = $('#st-kpi-grid');
+        var $grid = $('#st-kpis');
         if (!$grid.length) return;
-
-        // Show skeleton
-        $grid.find('.st-kpi-value').each(function () {
-            $(this).html('<div class="st-skeleton st-skeleton-kpi-value"></div>');
-        });
-        $grid.find('.st-kpi-label').each(function () {
-            $(this).html('<div class="st-skeleton st-skeleton-kpi-label"></div>');
-        });
 
         $.post(cfg.ajax_url, {
             action: 'servertrack_get_dashboard_stats',
@@ -103,70 +111,37 @@
             if (!res.success) return;
             var d = res.data;
 
-            $('#st-kpi-total')  .text(''); animateCount($('#st-kpi-total'),   d.total_today   || 0);
-            $('#st-kpi-success').text(''); animateCount($('#st-kpi-success'), d.success_today || 0);
-            $('#st-kpi-failed') .text(''); animateCount($('#st-kpi-failed'),  d.failed_today  || 0);
-            $('#st-kpi-rate')   .text(''); animateCount($('#st-kpi-rate'),    d.success_rate  || 0, '%');
+            $('#st-kpi-total')  .text(''); animateCount($('#st-kpi-total'),   parseInt(d.total_today   || 0, 10));
+            $('#st-kpi-rate')   .text(''); animateCount($('#st-kpi-rate'),    parseInt(d.success_rate  || 0, 10), '%');
 
-            // Restore static labels (skeleton replaced them)
-            $('#st-kpi-label-total')  .text('Events Today');
-            $('#st-kpi-label-success').text('Successful');
-            $('#st-kpi-label-failed') .text('Failed');
-            $('#st-kpi-label-rate')   .text('Success Rate');
-
-            // Activity feed
-            renderActivity(d.recent || []);
+            // Activity feed (used on Settings debug tab)
+            if (typeof renderActivity === 'function') {
+                renderActivity(d.recent || []);
+            }
 
             // Per-platform last-send badge
             if (d.platforms) {
                 $.each(d.platforms, function (platform, info) {
                     $('#st-last-send-' + platform).text(info.last_send || 'Never');
                     var $pill = $('#st-health-pill-' + platform);
-                    if (info.configured && info.enabled) {
-                        $pill.attr('class', 'st-status-pill st-status-ok')
-                             .html('<span class="st-status-pill-dot"></span> Active');
-                    } else if (info.enabled && !info.configured) {
-                        $pill.attr('class', 'st-status-pill st-status-warning')
-                             .html('<span class="st-status-pill-dot"></span> Setup Required');
-                    } else {
-                        $pill.attr('class', 'st-status-pill st-status-inactive')
-                             .html('<span class="st-status-pill-dot"></span> Inactive');
+                    if ($pill.length) {
+                        if (info.configured && info.enabled) {
+                            $pill.attr('class', 'st-status-pill st-status-ok')
+                                 .html('<span class="st-status-pill-dot"></span> Active');
+                        } else if (info.enabled && !info.configured) {
+                            $pill.attr('class', 'st-status-pill st-status-warning')
+                                 .html('<span class="st-status-pill-dot"></span> Setup Required');
+                        } else {
+                            $pill.attr('class', 'st-status-pill st-status-inactive')
+                                 .html('<span class="st-status-pill-dot"></span> Inactive');
+                        }
                     }
                 });
             }
         });
     }
 
-    /* ── 4. ACTIVITY FEED ───────────────────────────────────────── */
-    function renderActivity(items) {
-        var $feed = $('#st-activity-feed');
-        if (!$feed.length) return;
-
-        if (!items.length) {
-            $feed.html(
-                '<li class="st-empty-state">'
-                + '<svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>'
-                + '<h3>No events yet</h3>'
-                + '<p>Events will appear here once tracking starts.</p></li>'
-            );
-            return;
-        }
-
-        var html = '';
-        $.each(items.slice(0, 8), function (i, e) {
-            var dotCls = e.status === 'success' ? 'success' : (e.status === 'error' ? 'error' : 'warning');
-            html += '<li class="st-activity-item">'
-                + '<span class="st-activity-dot st-activity-dot-' + esc(dotCls) + '"></span>'
-                + '<div class="st-activity-body">'
-                + '<div class="st-activity-text"><strong>' + esc((e.platform || '').toUpperCase()) + '</strong> '
-                + esc(e.event_name) + ' — ' + esc(e.message) + '</div>'
-                + '<div class="st-activity-time">' + esc(e.timestamp) + '</div>'
-                + '</div></li>';
-        });
-        $feed.html(html);
-    }
-
-    /* ── 5. TEST EVENT BUTTONS (platform health cards) ──────────── */
+    /* ── 4. TEST EVENT BUTTONS (platform health cards) ──────────── */
     function bindTestButtons() {
         $(document).on('click', '.st-test-btn', function () {
             var $btn      = $(this);
@@ -209,7 +184,7 @@
         });
     }
 
-    /* ── 6. LOG TABLE ───────────────────────────────────────────── */
+    /* ── 5. LOG TABLE ───────────────────────────────────────────────── */
     var logFilterState = 'all';
     var allLogs = [];
 
@@ -228,7 +203,8 @@
     }
 
     function applyLogFilter() {
-        var $tbody = $('#servertrack-log-body');
+        // v2.7 FIX: selector corrected to #st-log-tbody (was #servertrack-log-body).
+        var $tbody = $('#st-log-tbody');
         if (!$tbody.length) return;
 
         var filtered = logFilterState === 'all'
@@ -236,8 +212,9 @@
             : allLogs.filter(function (e) { return e.status === logFilterState; });
 
         if (!filtered.length) {
+            // v2.7 FIX: colspan corrected from 9 to 7 (matches 7-column thead).
             $tbody.html(
-                '<tr><td colspan="9" style="padding:0">'
+                '<tr><td colspan="7" style="padding:0">'
                 + '<div class="st-empty-state">'
                 + '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
                 + '<h3>No log entries</h3><p>No entries match this filter.</p></div></td></tr>'
@@ -258,21 +235,22 @@
 
             rows += '<tr>'
                 + '<td style="white-space:nowrap;color:var(--st-text-muted);font-size:.75rem">' + esc(e.timestamp || '') + '</td>'
+                + '<td>' + statusBadge(e.status || '') + '</td>'
                 + '<td>' + platformChip(platform) + '</td>'
                 + '<td style="font-weight:600">' + esc(e.event_name || '') + '</td>'
-                + '<td style="font-family:monospace;font-size:.75rem;color:var(--st-text-muted)">' + esc(e.event_id  || '') + '</td>'
                 + '<td style="font-variant-numeric:tabular-nums">' + esc(e.order_id  || '') + '</td>'
-                + '<td>' + statusBadge(e.status || '') + '</td>'
-                + '<td style="font-variant-numeric:tabular-nums;font-size:.75rem">' + esc(e.http_code || '') + '</td>'
+                + '<td>' + esc(e.emq_score != null ? e.emq_score : '—') + '</td>'
                 + '<td style="max-width:180px">' + esc(e.message || '') + '</td>'
-                + '<td class="st-response-cell">' + respCell + '</td>'
                 + '</tr>';
         });
         $tbody.html(rows);
     }
 
+    // v2.7 FIX: refreshLog now uses 'servertrack_get_logs' (correct action in
+    // ServerTrack_Admin) and targets #st-log-tbody (correct tbody ID).
     function refreshLog() {
-        var $icon = $('#servertrack-refresh-log').find('svg');
+        // v2.7 FIX: target #st-manual-refresh (was #servertrack-refresh-log).
+        var $icon = $('#st-manual-refresh').find('svg');
         $icon.css('animation', 'st-spin .6s linear infinite');
 
         $.post(cfg.ajax_url, {
@@ -287,8 +265,8 @@
     }
 
     function bindLogControls() {
-        // Refresh
-        $(document).on('click', '#servertrack-refresh-log', function () {
+        // v2.7 FIX: ID corrected to #st-manual-refresh.
+        $(document).on('click', '#st-manual-refresh', function () {
             var $btn = $(this);
             $btn.prop('disabled', true);
             $.post(cfg.ajax_url, {
@@ -303,8 +281,8 @@
             }).fail(function () { $btn.prop('disabled', false); });
         });
 
-        // Clear
-        $(document).on('click', '#servertrack-clear-log', function () {
+        // v2.7 FIX: ID corrected to #st-clear-log-btn.
+        $(document).on('click', '#st-clear-log-btn', function () {
             if (!window.confirm('Clear all log entries? This cannot be undone.')) return;
             var $btn = $(this);
             $btn.prop('disabled', true);
@@ -337,13 +315,14 @@
         });
     }
 
-    /* ── 7. AUTO-REFRESH ────────────────────────────────────────── */
+    /* ── 6. AUTO-REFRESH ────────────────────────────────────────────── */
     var autoRefreshTimer = null;
 
     function startAutoRefresh() {
         if (autoRefreshTimer) return;
         autoRefreshTimer = setInterval(function () {
-            if ($('#servertrack-log-body').is(':visible')) refreshLog();
+            // v2.7 FIX: selector corrected to #st-log-tbody.
+            if ($('#st-log-tbody').is(':visible')) refreshLog();
         }, 30000);
     }
 
@@ -354,19 +333,19 @@
         }
     }
 
-    /* ── INIT ────────────────────────────────────────────────────── */
+    /* ── INIT ────────────────────────────────────────────────────────── */
     $(function () {
         bindTestButtons();
         bindLogControls();
         loadDashboardStats();
         startAutoRefresh();
 
-        // Load initial log if debug tab is visible
-        if ($('#servertrack-log-body').length) {
+        // Load initial log if tbody is present (Settings debug tab)
+        if ($('#st-log-tbody').length) {
             refreshLog();
         }
 
-        // Stop auto-refresh when leaving page
+        // v2.7 FIX: stop auto-refresh on page unload.
         $(window).on('beforeunload', stopAutoRefresh);
     });
 

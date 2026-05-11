@@ -1,9 +1,6 @@
-/*
- * admin-dashboard.css — DEPRECATED since v2.3, confirmed removed in v2.4
- *
- * All dashboard styles have been merged into admin.css.
- * This file is intentionally left empty to avoid breaking
- * any existing wp_enqueue_style() calls that reference it.
- *
- * Safe to delete this file once all enqueue references are confirmed removed.
+/* admin-dashboard.css — DEPRECATED
+ * This file is intentionally kept as an empty stub for backwards compatibility
+ * with any third-party code that may reference the handle 'servertrack-dashboard'.
+ * All styles have been consolidated into admin.css since v2.3.
+ * Do not add styles here.
  */
