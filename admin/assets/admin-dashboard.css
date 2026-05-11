@@ -1,6 +1,2 @@
-/* admin-dashboard.css — DEPRECATED
- * This file is intentionally kept as an empty stub for backwards compatibility
- * with any third-party code that may reference the handle 'servertrack-dashboard'.
- * All styles have been consolidated into admin.css since v2.3.
- * Do not add styles here.
- */
+/* ServerTrack admin-dashboard.css — retired in v3.0.
+   All styles are now in admin.css. This file is intentionally empty. */
