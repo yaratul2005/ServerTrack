@@ -1,127 +1,224 @@
 <?php
 if ( ! defined( 'ABSPATH' ) ) {
-    exit;
+	exit;
 }
 
 /**
- * ServerTrack_Logger  v2.1
+ * ServerTrack_Logger  v2.2
  *
  * Feature #7 — Enhanced Debug Logger with EMQ Score Storage.
  *
- * Changes in v2.1:
- *   - log() now fires do_action('servertrack_event_logged') after writing
- *     the entry, so ServerTrack_Webhook::maybe_fire_webhook() is triggered.
- *     Arguments: ( $platform, $event_type, $order_id, $status, $emq )
+ * v2.2 changes (L-1, L-2 fixes):
  *
- * Changes in v2.0:
- *   - log() accepts optional $emq array and persists emq_score + emq_grade.
- *   - Log entries now include event_type field.
- *   - Max log size increased from 500 to 1000 entries (FIFO pruning).
+ *   L-1 — error(), info(), warning() helpers were missing.
+ *     log() has always been gated on debug_mode=1, but M-3's fix in
+ *     ServerTrack_OfflineConversion called Logger::error() — a method
+ *     that did not exist — causing a silent PHP fatal on every offline
+ *     batch failure. Added three severity-aware wrappers:
+ *       error()   — always written (bypasses debug_mode gate).
+ *       warning() — always written.
+ *       info()    — written only when debug_mode=1 (same as log()).
+ *     This ensures critical errors are never silently swallowed.
  *
- * Log entry format:
- * [
- *   'timestamp'  => '2026-05-11 08:30:00',
- *   'status'     => 'success'|'error'|'skipped'|'queued'|'dedup_blocked',
- *   'platform'   => 'meta'|'tiktok'|'google'|'all'|'identity',
- *   'message'    => 'Human-readable description',
- *   'event_id'   => 'uuid-v4-string',
- *   'order_id'   => 12345,
- *   'event_type' => 'Purchase'|'ViewContent'|...,
- *   'emq_score'  => 7.2,   // optional — only present when EMQ was computed
- *   'emq_grade'  => 'good', // optional — only present when EMQ was computed
- * ]
+ *   L-2 — get_recent() memory inefficiency.
+ *     Previous: array_reverse($logs) allocates a full 1000-entry copy,
+ *     then array_slice picks $limit items. For $limit=10 this wastes
+ *     990 entries of RAM on every admin panel load.
+ *     Fix: array_slice($logs, -$limit) first, then reverse only the
+ *     small slice needed.
  *
- * Usage (same signature as v2.0, emq is optional):
- *   ServerTrack_Logger::log('success','meta','Order sent','event-id-here',12345,'Purchase');
- *   ServerTrack_Logger::log('success','meta','Order sent','','event-id',12345,'Purchase', ['score'=>7.2,'grade'=>'good']);
+ * v2.1 changes:
+ *   - log() fires do_action('servertrack_event_logged') after writing.
+ *
+ * v2.0 changes:
+ *   - log() accepts optional $emq array; max entries raised to 1000.
+ *
+ * @package ServerTrack
  */
 class ServerTrack_Logger {
 
-    const OPTION_KEY  = 'servertrack_debug_log';
-    const MAX_ENTRIES = 1000;
+	const OPTION_KEY  = 'servertrack_debug_log';
+	const MAX_ENTRIES = 1000;
 
-    /**
-     * Append a log entry and broadcast the servertrack_event_logged action.
-     *
-     * @param string $status      success|error|skipped|queued|dedup_blocked|webhook
-     * @param string $platform    meta|tiktok|google|all|identity|webhook
-     * @param string $message     Human-readable description
-     * @param string $response    Raw API response string (optional)
-     * @param string $event_id    UUID event ID (optional)
-     * @param int    $order_id    WC order ID (optional, 0 for non-order events)
-     * @param string $event_type  Purchase|ViewContent|AddToCart|... (optional)
-     * @param array  $emq         [ 'score' => float, 'grade' => string ] (optional)
-     */
-    public static function log(
-        string $status,
-        string $platform,
-        string $message,
-        string $response   = '',
-        string $event_id   = '',
-        int    $order_id   = 0,
-        string $event_type = '',
-        array  $emq        = []
-    ): void {
-        if ( ! get_option( 'servertrack_debug_mode', 0 ) ) {
-            return;
-        }
+	// ── Severity helpers ─────────────────────────────────────────
 
-        $entry = [
-            'timestamp'  => current_time( 'Y-m-d H:i:s' ),
-            'status'     => $status,
-            'platform'   => $platform,
-            'message'    => $message,
-            'event_id'   => $event_id,
-            'order_id'   => $order_id,
-            'event_type' => $event_type,
-        ];
+	/**
+	 * Log an error-level entry.
+	 *
+	 * L-1 FIX (v2.2): This method was missing. ServerTrack_OfflineConversion
+	 * (M-3 fix) calls Logger::error() after every batch failure. Without this
+	 * method PHP threw a fatal error on the call site, swallowing the very
+	 * failure it was trying to record.
+	 *
+	 * Unlike log(), error() bypasses the debug_mode gate so critical failures
+	 * are always persisted regardless of the admin setting.
+	 *
+	 * @param string $message  Human-readable error description.
+	 * @param array  $context  Optional structured context (platform, trace, etc.).
+	 */
+	public static function error( string $message, array $context = [] ): void {
+		self::write_entry( 'error', 'system', $message, $context, true );
+	}
 
-        if ( ! empty( $emq ) && isset( $emq['score'] ) ) {
-            $entry['emq_score'] = $emq['score'];
-            $entry['emq_grade'] = $emq['grade'] ?? '';
-        }
+	/**
+	 * Log a warning-level entry (always written, debug_mode-independent).
+	 *
+	 * @param string $message
+	 * @param array  $context
+	 */
+	public static function warning( string $message, array $context = [] ): void {
+		self::write_entry( 'warning', 'system', $message, $context, true );
+	}
 
-        $logs   = get_option( self::OPTION_KEY, [] );
-        $logs[] = $entry;
+	/**
+	 * Log an info-level entry (only written when debug_mode=1).
+	 *
+	 * @param string $message
+	 * @param array  $context
+	 */
+	public static function info( string $message, array $context = [] ): void {
+		self::write_entry( 'info', 'system', $message, $context, false );
+	}
 
-        // Prune oldest entries if limit exceeded
-        if ( count( $logs ) > self::MAX_ENTRIES ) {
-            $logs = array_slice( $logs, -self::MAX_ENTRIES );
-        }
+	// ── Core log method ──────────────────────────────────────────
 
-        update_option( self::OPTION_KEY, $logs, false );
+	/**
+	 * Append a structured CAPI event log entry.
+	 *
+	 * Gated on debug_mode=1 (use error()/warning() for always-on logging).
+	 *
+	 * @param string $status      success|error|skipped|queued|dedup_blocked|webhook
+	 * @param string $platform    meta|tiktok|google|all|identity|webhook
+	 * @param string $message     Human-readable description
+	 * @param string $response    Raw API response string (optional)
+	 * @param string $event_id    UUID event ID (optional)
+	 * @param int    $order_id    WC order ID (optional, 0 for non-order events)
+	 * @param string $event_type  Purchase|ViewContent|AddToCart|... (optional)
+	 * @param array  $emq         [ 'score' => float, 'grade' => string ] (optional)
+	 */
+	public static function log(
+		string $status,
+		string $platform,
+		string $message,
+		string $response   = '',
+		string $event_id   = '',
+		int    $order_id   = 0,
+		string $event_type = '',
+		array  $emq        = []
+	): void {
+		if ( ! get_option( 'servertrack_debug_mode', 0 ) ) {
+			return;
+		}
 
-        /**
-         * Fires after a CAPI event is logged.
-         *
-         * Used by ServerTrack_Webhook::maybe_fire_webhook() to dispatch
-         * outbound webhook notifications. Fires even when the log entry
-         * is written — webhooks apply their own event/status filtering.
-         *
-         * @param string $platform   e.g. 'meta', 'tiktok', 'google'
-         * @param string $event_type e.g. 'Purchase', 'ViewContent'
-         * @param int    $order_id   WC order ID (0 for non-order events)
-         * @param string $status     'success'|'error'|'skipped'|...
-         * @param array  $emq        EMQ data (may be empty array)
-         */
-        do_action( 'servertrack_event_logged', $platform, $event_type, $order_id, $status, $emq );
-    }
+		$entry = [
+			'timestamp'  => current_time( 'Y-m-d H:i:s' ),
+			'status'     => $status,
+			'platform'   => $platform,
+			'message'    => $message,
+			'event_id'   => $event_id,
+			'order_id'   => $order_id,
+			'event_type' => $event_type,
+		];
 
-    /**
-     * Clear all log entries.
-     */
-    public static function clear(): void {
-        update_option( self::OPTION_KEY, [], false );
-    }
+		if ( ! empty( $emq ) && isset( $emq['score'] ) ) {
+			$entry['emq_score'] = $emq['score'];
+			$entry['emq_grade'] = $emq['grade'] ?? '';
+		}
 
-    /**
-     * Get recent log entries.
-     *
-     * @param int $limit  Max entries to return (most recent first)
-     * @return array
-     */
-    public static function get_recent( int $limit = 100 ): array {
-        $logs = get_option( self::OPTION_KEY, [] );
-        return array_slice( array_reverse( $logs ), 0, $limit );
-    }
+		self::append_entry( $entry );
+
+		/**
+		 * Fires after a CAPI event is logged.
+		 *
+		 * @param string $platform
+		 * @param string $event_type
+		 * @param int    $order_id
+		 * @param string $status
+		 * @param array  $emq
+		 */
+		do_action( 'servertrack_event_logged', $platform, $event_type, $order_id, $status, $emq );
+	}
+
+	// ── Read / clear ──────────────────────────────────────────────
+
+	/**
+	 * Get recent log entries (most recent first).
+	 *
+	 * L-2 FIX (v2.2): Previous implementation reversed the entire log array
+	 * (up to 1000 entries) and then sliced. For $limit=10 this allocated
+	 * a 1000-entry copy just to discard 990 items.
+	 *
+	 * Fix: slice from the tail first (-$limit), then reverse only the
+	 * small slice. Memory usage scales with $limit, not MAX_ENTRIES.
+	 *
+	 * @param int $limit  Max entries to return.
+	 * @return array
+	 */
+	public static function get_recent( int $limit = 100 ): array {
+		$logs = get_option( self::OPTION_KEY, [] );
+		if ( empty( $logs ) ) {
+			return [];
+		}
+		// L-2 FIX: slice tail first, reverse only the needed slice.
+		return array_reverse( array_slice( $logs, -$limit ) );
+	}
+
+	/**
+	 * Clear all log entries.
+	 */
+	public static function clear(): void {
+		update_option( self::OPTION_KEY, [], false );
+	}
+
+	// ── Internal helpers ───────────────────────────────────────
+
+	/**
+	 * Write a severity-level entry (used by error/warning/info helpers).
+	 *
+	 * @param string $status        'error'|'warning'|'info'
+	 * @param string $platform      'system' for non-CAPI entries
+	 * @param string $message
+	 * @param array  $context       Arbitrary key-value context bag
+	 * @param bool   $force_write   When true, bypasses debug_mode gate
+	 */
+	private static function write_entry(
+		string $status,
+		string $platform,
+		string $message,
+		array  $context,
+		bool   $force_write
+	): void {
+		if ( ! $force_write && ! get_option( 'servertrack_debug_mode', 0 ) ) {
+			return;
+		}
+
+		$entry = [
+			'timestamp' => current_time( 'Y-m-d H:i:s' ),
+			'status'    => $status,
+			'platform'  => $platform,
+			'message'   => $message,
+		];
+
+		if ( ! empty( $context ) ) {
+			$entry['context'] = $context;
+		}
+
+		self::append_entry( $entry );
+	}
+
+	/**
+	 * Append an entry to the log store with FIFO pruning.
+	 *
+	 * @param array $entry
+	 */
+	private static function append_entry( array $entry ): void {
+		$logs   = get_option( self::OPTION_KEY, [] );
+		$logs[] = $entry;
+
+		if ( count( $logs ) > self::MAX_ENTRIES ) {
+			$logs = array_slice( $logs, -self::MAX_ENTRIES );
+		}
+
+		update_option( self::OPTION_KEY, $logs, false );
+	}
 }
