@@ -4,9 +4,18 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Frontend  v2.0
+ * ServerTrack_Frontend  v2.1
  *
  * Injects browser pixel config for all page types.
+ *
+ * Changes in v2.1 (FIX-12):
+ *   rest_custom_event() accepted any arbitrary string as event_name, sanitised
+ *   only by sanitize_text_field(). An attacker could push arbitrary event names
+ *   into CAPI (e.g. injecting unexpected event types, bypassing platform-side
+ *   validation, or probing for backend errors). Added $allowed_events allowlist;
+ *   unknown event names are rejected with WP_Error 400 before any processing.
+ *   The allowlist covers all standard Meta CAPI + TikTok Events API event names
+ *   supported by ServerTrack. Custom events must be added to the list explicitly.
  *
  * Bugs fixed vs v1:
  *   - user_email was being sent as a pre-hashed SHA256 string to fbq('init').
@@ -27,6 +36,38 @@ if ( ! defined( 'ABSPATH' ) ) {
  *     Fixed: rate-limit by IP (10 req/min) using a transient bucket.
  */
 class ServerTrack_Frontend {
+
+    /**
+     * Allowlist of event names accepted by the /custom-event REST endpoint.
+     *
+     * FIX-12: Prevents arbitrary strings from reaching CAPI senders.
+     * All standard Meta CAPI and TikTok Events API event names are included.
+     * Add custom event names here when extending the plugin.
+     */
+    private const ALLOWED_EVENT_NAMES = [
+        // Standard purchase funnel
+        'Purchase',
+        'InitiateCheckout',
+        'AddPaymentInfo',
+        'AddToCart',
+        'AddToWishlist',
+        'ViewContent',
+        // Lead generation
+        'Lead',
+        'CompleteRegistration',
+        'Contact',
+        'Subscribe',
+        // Search & discovery
+        'Search',
+        'FindLocation',
+        'Schedule',
+        // Engagement
+        'PageView',
+        'CustomizeProduct',
+        'Donate',
+        'StartTrial',
+        'SubmitApplication',
+    ];
 
     public static function init() {
         add_action( 'wp_enqueue_scripts', [ self::class, 'enqueue_pixel_script' ] );
@@ -62,6 +103,22 @@ class ServerTrack_Frontend {
             return new WP_Error( 'disabled', 'ServerTrack disabled', [ 'status' => 403 ] );
         }
 
+        // FIX-12: Validate event_name against the allowlist before any processing.
+        // sanitize_text_field() alone only strips tags/extra whitespace — it does
+        // not prevent arbitrary event type strings from reaching CAPI senders.
+        $event_name = $request->get_param( 'event_name' );
+        if ( ! in_array( $event_name, self::ALLOWED_EVENT_NAMES, true ) ) {
+            return new WP_Error(
+                'invalid_event_name',
+                sprintf(
+                    'Unknown event type \'%s\'. Allowed values: %s.',
+                    esc_html( $event_name ),
+                    implode( ', ', self::ALLOWED_EVENT_NAMES )
+                ),
+                [ 'status' => 400 ]
+            );
+        }
+
         // FIX: Rate limit by IP — 10 events per minute per IP (prevents CAPI abuse)
         $ip         = self::get_request_ip();
         $rate_key   = 'st_rl_' . md5( $ip );
@@ -71,7 +128,6 @@ class ServerTrack_Frontend {
         }
         set_transient( $rate_key, $rate_count + 1, MINUTE_IN_SECONDS );
 
-        $event_name = $request->get_param( 'event_name' );
         $event_id   = $request->get_param( 'event_id' ) ?: ServerTrack_Dedup::generate_event_id( $event_name . '_rest_' . time() );
         // FIX: params must be cast to array, not sanitize_text_field'd as a string
         $params     = (array) ( $request->get_param( 'params' ) ?: [] );
@@ -281,6 +337,11 @@ class ServerTrack_Frontend {
                     set_transient( 'servertrack_fbclid_' . $session_id, $fbclid, 90 * DAY_IN_SECONDS );
                 }
             }
+            // NOTE: _fbc intentionally sets HttpOnly=false so the Meta browser
+            // pixel (fbevents.js) can read and attach it to pixel calls.
+            // This matches Meta's own _fbc cookie spec. Changing to true would
+            // break pixel-side fbc tracking. _gcl_aw and ttclid use true because
+            // those pixels do not require JS cookie access.
             setcookie( '_fbc', $fbc, $now + 90 * DAY_IN_SECONDS, '/', '', is_ssl(), false );
             $_COOKIE['_fbc'] = $fbc;
         }

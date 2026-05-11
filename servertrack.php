@@ -140,7 +140,13 @@ register_activation_hook( __FILE__, function (): void {
 } );
 
 /**
- * Plugin deactivation: clear all scheduled cron events.
+ * Plugin deactivation: clear all scheduled cron events and transient state.
+ *
+ * FIX-09: Added delete_option( 'servertrack_retry_queue' ).
+ *   Previously only cron hooks were cleared. The retry queue persisted in
+ *   wp_options across deactivation/re-activation cycles, causing stale events
+ *   to fire immediately on re-activation — potentially double-sending conversions
+ *   that had already been delivered before deactivation.
  */
 register_deactivation_hook( __FILE__, function (): void {
     $hooks = [
@@ -158,4 +164,7 @@ register_deactivation_hook( __FILE__, function (): void {
     foreach ( $hooks as $hook ) {
         wp_clear_scheduled_hook( $hook );
     }
+
+    // FIX-09: Purge the retry queue so stale events don't re-fire on re-activation.
+    delete_option( 'servertrack_retry_queue' );
 } );

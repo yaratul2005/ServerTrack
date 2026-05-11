@@ -4,10 +4,18 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_TikTok  v2.2
+ * ServerTrack_TikTok  v2.3
  *
  * TikTok Events API Sender.
  * Depends on: ServerTrack_Event, ServerTrack_Logger
+ *
+ * Changes in v2.3 (FIX-05):
+ *   Added platform-enabled guard at the top of send().
+ *   Google::send() already had this guard. TikTok lacked it, relying entirely
+ *   on call-site checks. This adds defence-in-depth: send() is now safe to
+ *   call directly without the caller being responsible for the enabled check.
+ *   Returns 'skipped' (matching Google's pattern) so callers can distinguish
+ *   disabled vs error vs success.
  *
  * Changes in v2.2 (Bug fixes):
  *
@@ -47,6 +55,12 @@ class ServerTrack_TikTok {
      * @return array { status, http_code, response }
      */
     public static function send( ServerTrack_Event $event ): array {
+        // FIX-05: Defence-in-depth enabled guard (mirrors Google::send() pattern).
+        // Call sites already check this option, but send() must be self-contained.
+        if ( ! get_option( 'servertrack_tiktok_enabled', 0 ) ) {
+            return [ 'status' => 'skipped', 'http_code' => 0 ];
+        }
+
         $pixel_id     = trim( (string) get_option( 'servertrack_tiktok_pixel_id', '' ) );
         $access_token = trim( (string) get_option( 'servertrack_tiktok_access_token', '' ) );
 

@@ -4,9 +4,20 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Retry  v2.2
+ * ServerTrack_Retry  v2.3
  *
  * Queues failed CAPI events for exponential-backoff retry via WP-Cron.
+ *
+ * v2.3 changes (BUG-08 definitive fix):
+ *   process() previously called Dedup::mark_as_sent( $dedup_key, $platform )
+ *   when a string $dedup_key was present. However mark_as_sent() signature is
+ *   mark_as_sent( int $order_id, string $platform ) — passing a string for an
+ *   int parameter is a TypeError in strict mode and stores corrupt meta
+ *   otherwise. The correct method for string-keyed non-order events is
+ *   Dedup::set( string $key ), which writes to wp_options under the
+ *   servertrack_dedup_{key} namespace (same system used by Subscriptions source).
+ *   Fix: split the success branch — string $dedup_key → Dedup::set(),
+ *        integer $order_id > 0 → Dedup::mark_as_sent().
  *
  * v2.2 changes (dashboard integration patch):
  *   1. process_queue() public alias added so the admin dashboard drain-all
@@ -21,7 +32,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  *   3. process() updates 'last_attempt' to time() on every attempt (success
  *      or failure) so the timestamp shown in the dashboard stays accurate.
  *
- * v2.1 changes (BUG-08 fix):
+ * v2.1 changes (BUG-08 partial fix — superseded by v2.3):
  *   process() called Dedup::mark_as_sent( $order_id, $platform ) only when
  *   order_id > 0. Subscription renewals, cart abandonment events, and other
  *   non-order events carry order_id = 0 in their event_args. When a retry
@@ -29,11 +40,8 @@ if ( ! defined( 'ABSPATH' ) ) {
  *   guard never recorded the success — the event could re-fire on the next
  *   cron cycle, causing double-attribution.
  *
- *   Fix: when order_id = 0 and event_args contains a 'dedup_key' field,
- *   call Dedup::mark_as_sent( $dedup_key, $platform ) using the string-safe
- *   options-based API (same pattern used by Subscriptions after BUG-01 fix).
- *   event_to_args() is updated to include 'dedup_key' from custom_data
- *   when present, so existing callers get BUG-08 protection automatically.
+ *   Partial fix in v2.1: added dedup_key string path but still routed through
+ *   mark_as_sent() which expects int. v2.3 corrects this to Dedup::set().
  */
 class ServerTrack_Retry {
 
@@ -141,24 +149,29 @@ class ServerTrack_Retry {
                 $updated = true;
 
                 /*
-                 * BUG-08 FIX (v2.1):
-                 *   Previously only called Dedup::mark_as_sent() for integer order IDs.
-                 *   Non-order events (subscriptions, cart abandonment) carry order_id = 0
-                 *   and a string 'dedup_key' in event_args. Without marking them as sent,
-                 *   a successful retry did not record dedup state, and the event could
-                 *   re-fire on the next cron pass.
+                 * BUG-08 DEFINITIVE FIX (v2.3):
                  *
-                 *   Fix: check for dedup_key first (string-safe options API), then fall
-                 *   back to order_id (order meta API) for backward compatibility.
+                 *   String-keyed non-order events (subscriptions, cart abandonment,
+                 *   offline conversions) carry a string $dedup_key in event_args
+                 *   and order_id = 0. The correct dedup method for these is
+                 *   Dedup::set( string $key ), which writes to wp_options.
+                 *
+                 *   Integer order_id events (standard WooCommerce purchases) use
+                 *   Dedup::mark_as_sent( int $order_id, string $platform ), which
+                 *   writes to order meta.
+                 *
+                 *   v2.1 mistakenly routed string keys through mark_as_sent() which
+                 *   requires int — causing a TypeError in strict mode and silent
+                 *   data corruption otherwise.
                  */
                 $order_id  = (int) ( $event_args['custom_data']['order_id'] ?? 0 );
-                $dedup_key = $event_args['dedup_key'] ?? '';
+                $dedup_key = (string) ( $event_args['dedup_key'] ?? '' );
 
-                if ( $dedup_key ) {
-                    // String-keyed event (subscription, abandonment, etc.)
-                    ServerTrack_Dedup::mark_as_sent( $dedup_key, $platform );
+                if ( '' !== $dedup_key ) {
+                    // Non-order event: use the options-based string-key dedup API.
+                    ServerTrack_Dedup::set( $dedup_key );
                 } elseif ( $order_id > 0 ) {
-                    // Integer order ID (standard WooCommerce purchase)
+                    // Standard WooCommerce order: use the order-meta dedup API.
                     ServerTrack_Dedup::mark_as_sent( $order_id, $platform );
                 }
 
@@ -227,7 +240,7 @@ class ServerTrack_Retry {
      * Convert a ServerTrack_Event into a serialisable args array for the queue.
      *
      * v2.1: now includes 'dedup_key' from custom_data['_dedup_key'] when present,
-     * so process() can call mark_as_sent() for non-order events (BUG-08 fix).
+     * so process() can call the correct dedup method for non-order events (BUG-08 fix).
      *
      * @param ServerTrack_Event $event
      * @return array
