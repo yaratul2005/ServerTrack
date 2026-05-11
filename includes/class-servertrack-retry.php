@@ -4,188 +4,215 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Retry  v3.0
+ * ServerTrack_Retry  v2.1
  *
- * Persistent retry queue for failed platform API calls.
+ * Queues failed CAPI events for exponential-backoff retry via WP-Cron.
  *
- * HIGH FIX (H-3) in v3.0:
- *   Retry UID was computed as md5(platform + event_id + attempt).
- *   Including the attempt number in the hash created a different options key
- *   for every retry attempt, bypassing the update_option() overwrite guard
- *   added in v2.1. Each failure queued an entirely new key, leaving orphaned
- *   option rows and scheduling duplicate cron entries for the same event.
+ * v2.1 changes (BUG-08 fix):
+ *   process() called Dedup::mark_as_sent( $order_id, $platform ) only when
+ *   order_id > 0. Subscription renewals, cart abandonment events, and other
+ *   non-order events carry order_id = 0 in their event_args. When a retry
+ *   succeeded for those events, mark_as_sent was never called, so the dedup
+ *   guard never recorded the success — the event could re-fire on the next
+ *   cron cycle, causing double-attribution.
  *
- *   Fix: UID is now md5(platform + event_id) — stable per logical event.
- *   Attempt count is stored inside the serialised payload, not in the key.
- *   update_option() always writes to the same key, so stale entries are
- *   correctly overwritten and the cron schedule is never duplicated.
- *
- * Backoff (max 3 attempts after initial failure):
- *   Attempt 1 → 5 min  |  Attempt 2 → 30 min  |  Attempt 3 → 2 hours
- *
- * Non-retryable (permanent): 400, 401, 403, 404, 422
+ *   Fix: when order_id = 0 and event_args contains a 'dedup_key' field,
+ *   call Dedup::mark_as_sent( $dedup_key, $platform ) using the string-safe
+ *   options-based API (same pattern used by Subscriptions after BUG-01 fix).
+ *   event_to_args() is updated to include 'dedup_key' from custom_data
+ *   when present, so existing callers get BUG-08 protection automatically.
  */
 class ServerTrack_Retry {
 
-    const RETRYABLE_CODES = [ 0, 429, 500, 502, 503 ];
-    const PERMANENT_CODES = [ 400, 401, 403, 404, 422 ];
-    const MAX_ATTEMPTS    = 3;
-    const BACKOFF         = [
-        1 => 5  * MINUTE_IN_SECONDS,
-        2 => 30 * MINUTE_IN_SECONDS,
-        3 => 2  * HOUR_IN_SECONDS,
-    ];
-    const KEY_PREFIX = 'servertrack_retry_';
+    /** Option key for the pending retry queue. */
+    const QUEUE_OPTION = 'servertrack_retry_queue';
+
+    /** Maximum retry attempts before an event is abandoned. */
+    const MAX_ATTEMPTS = 5;
+
+    /** Backoff base in seconds (doubles each attempt: 60, 120, 240, 480, 960). */
+    const BACKOFF_BASE = 60;
 
     public static function init(): void {
-        add_action( 'servertrack_process_retry', [ self::class, 'process' ], 10, 1 );
+        add_action( 'servertrack_process_retry_queue', [ self::class, 'process' ] );
     }
 
+    // ── Queue management ──────────────────────────────────────────────────
+
     /**
-     * Queue a failed send for retry if the HTTP code is retryable.
+     * Maybe queue a failed event for retry.
      *
-     * HIGH FIX (H-3 — v3.0):
-     *   UID = md5( platform + '_' + event_id )   ← stable, no attempt in hash
-     *   Attempt stored inside $item payload.
+     * Only queues if the result indicates a transient failure (network error,
+     * 5xx, 429). Hard failures (4xx except 429) are not retried.
      *
-     * @param string $platform    'meta'|'google'|'tiktok'
-     * @param array  $result      Return from platform send()
-     * @param array  $event_args  Serialised event (use event_to_args())
-     * @param int    $attempt     1-indexed retry attempt number
+     * @param string $platform  'meta' | 'tiktok' | 'google'
+     * @param array  $result    Result array from platform sender
+     * @param array  $event_args Serialisable event arguments
      */
-    public static function maybe_queue(
-        string $platform,
-        array  $result,
-        array  $event_args,
-        int    $attempt = 1
-    ): void {
-        $http_code = (int) ( $result['http_code'] ?? 0 );
+    public static function maybe_queue( string $platform, array $result, array $event_args ): void {
+        $status = $result['status'] ?? '';
+        $code   = (int) ( $result['http_code'] ?? 0 );
 
-        if ( ! in_array( $http_code, self::RETRYABLE_CODES, true ) ) return;
+        // Only retry transient failures
+        $should_retry = ( $status === 'error' )
+            && ( $code === 0 || $code === 429 || $code >= 500 );
 
-        if ( $attempt > self::MAX_ATTEMPTS ) {
-            ServerTrack_Logger::log(
-                'error', $platform,
-                'Retry exhausted after ' . self::MAX_ATTEMPTS . ' attempts — event permanently dropped.',
-                '', $event_args['event_id'] ?? '',
-                (int) ( $event_args['custom_data']['order_id'] ?? 0 ),
-                $event_args['event_name'] ?? '', $http_code
-            );
+        if ( ! $should_retry ) {
             return;
         }
 
-        // H-3 fix: stable UID — no attempt number in hash.
-        $event_id = $event_args['event_id'] ?? uniqid( $platform . '_', true );
-        $uid      = md5( $platform . '_' . $event_id );
+        $queue = get_option( self::QUEUE_OPTION, [] );
 
-        $item = [
+        // Stable UID prevents duplicate queue entries on race conditions
+        $uid = md5( $platform . ( $event_args['event_id'] ?? '' ) );
+
+        if ( isset( $queue[ $uid ] ) ) {
+            return; // Already queued
+        }
+
+        $attempts = 0;
+        $delay    = self::BACKOFF_BASE;
+
+        $queue[ $uid ] = [
             'platform'   => $platform,
             'event_args' => $event_args,
-            'attempt'    => $attempt,      // stored in payload, not in key
+            'attempts'   => $attempts,
+            'next_retry' => time() + $delay,
             'queued_at'  => time(),
-            'expires_at' => time() + DAY_IN_SECONDS,
         ];
 
-        // Always overwrites same key — prevents duplicate orphaned entries.
-        update_option( self::KEY_PREFIX . $uid, $item, false );
-
-        $delay = self::BACKOFF[ $attempt ] ?? self::BACKOFF[ self::MAX_ATTEMPTS ];
-        wp_schedule_single_event( time() + $delay, 'servertrack_process_retry', [ $uid ] );
-
-        ServerTrack_Logger::log(
-            'queued', $platform,
-            'Retry #' . $attempt . ' in ' . ( $delay / 60 ) . ' min (HTTP ' . $http_code . ')',
-            '', $event_args['event_id'] ?? '',
-            (int) ( $event_args['custom_data']['order_id'] ?? 0 ),
-            $event_args['event_name'] ?? '', $http_code
-        );
+        update_option( self::QUEUE_OPTION, $queue, false );
     }
 
     /**
-     * Cron handler — called by servertrack_process_retry hook.
+     * Process the retry queue.
+     * Called by WP-Cron every 5 minutes.
      */
-    public static function process( string $uid ): void {
-        $item = get_option( self::KEY_PREFIX . $uid, null );
-        if ( ! is_array( $item ) ) return;
-
-        if ( isset( $item['expires_at'] ) && time() > $item['expires_at'] ) {
-            delete_option( self::KEY_PREFIX . $uid );
+    public static function process(): void {
+        $queue = get_option( self::QUEUE_OPTION, [] );
+        if ( empty( $queue ) ) {
             return;
         }
 
-        $platform   = $item['platform']   ?? '';
-        $event_args = $item['event_args'] ?? [];
-        $attempt    = (int) ( $item['attempt'] ?? 1 );
+        $now     = time();
+        $updated = false;
 
-        // Remove before send — prevents duplicate runs on cron overlap.
-        delete_option( self::KEY_PREFIX . $uid );
-
-        if ( empty( $platform ) || empty( $event_args ) ) return;
-
-        $event = new ServerTrack_Event(
-            $event_args['event_name'] ?? 'Purchase',
-            $event_args['event_id']   ?? ''
-        );
-        $event->set_user_data(   $event_args['user_data']   ?? [] );
-        $event->set_custom_data( $event_args['custom_data'] ?? [] );
-        if ( ! empty( $event_args['event_source_url'] ) ) {
-            $event->set_source_url( $event_args['event_source_url'] );
-        }
-
-        $result    = self::send_to_platform( $platform, $event );
-        $http_code = (int) ( $result['http_code'] ?? 0 );
-        $success   = ( $result['status'] ?? '' ) === 'success';
-
-        if ( $success ) {
-            $order_id = (int) ( $event_args['custom_data']['order_id'] ?? 0 );
-            if ( $order_id > 0 ) {
-                ServerTrack_Dedup::mark_as_sent( $order_id, $platform );
+        foreach ( $queue as $uid => $item ) {
+            if ( $item['next_retry'] > $now ) {
+                continue; // Not yet due
             }
-            ServerTrack_Logger::log(
-                'success', $platform,
-                'Retry #' . $attempt . ' succeeded (HTTP ' . $http_code . ')',
-                $result['response'] ?? '', $event_args['event_id'] ?? '',
-                (int) ( $event_args['custom_data']['order_id'] ?? 0 ),
-                $event_args['event_name'] ?? '', $http_code
-            );
-            return;
+
+            if ( $item['attempts'] >= self::MAX_ATTEMPTS ) {
+                unset( $queue[ $uid ] );
+                $updated = true;
+                ServerTrack_Logger::warning(
+                    sprintf( 'Retry abandoned after %d attempts [uid=%s].', self::MAX_ATTEMPTS, $uid )
+                );
+                continue;
+            }
+
+            $platform   = $item['platform'];
+            $event_args = $item['event_args'];
+            $result     = self::dispatch_retry( $platform, $event_args );
+
+            if ( ( $result['status'] ?? '' ) === 'success' ) {
+                unset( $queue[ $uid ] );
+                $updated = true;
+
+                /*
+                 * BUG-08 FIX:
+                 *   Previously only called Dedup::mark_as_sent() for integer order IDs.
+                 *   Non-order events (subscriptions, cart abandonment) carry order_id = 0
+                 *   and a string 'dedup_key' in event_args. Without marking them as sent,
+                 *   a successful retry did not record dedup state, and the event could
+                 *   re-fire on the next cron pass.
+                 *
+                 *   Fix: check for dedup_key first (string-safe options API), then fall
+                 *   back to order_id (order meta API) for backward compatibility.
+                 */
+                $order_id  = (int) ( $event_args['custom_data']['order_id'] ?? 0 );
+                $dedup_key = $event_args['dedup_key'] ?? '';
+
+                if ( $dedup_key ) {
+                    // String-keyed event (subscription, abandonment, etc.)
+                    ServerTrack_Dedup::mark_as_sent( $dedup_key, $platform );
+                } elseif ( $order_id > 0 ) {
+                    // Integer order ID (standard WooCommerce purchase)
+                    ServerTrack_Dedup::mark_as_sent( $order_id, $platform );
+                }
+
+                ServerTrack_Logger::info(
+                    sprintf( 'Retry succeeded [uid=%s platform=%s attempt=%d].', $uid, $platform, $item['attempts'] + 1 )
+                );
+
+            } else {
+                $item['attempts']++;
+                $item['next_retry'] = time() + ( self::BACKOFF_BASE * ( 2 ** $item['attempts'] ) );
+                $queue[ $uid ]      = $item;
+                $updated            = true;
+            }
         }
 
-        self::maybe_queue( $platform, $result, $event_args, $attempt + 1 );
-    }
-
-    private static function send_to_platform( string $platform, ServerTrack_Event $event ): array {
-        switch ( $platform ) {
-            case 'meta':   return ServerTrack_Meta::send( $event );
-            case 'google': return ServerTrack_Google::send( $event );
-            case 'tiktok': return ServerTrack_TikTok::send( $event );
-            default:       return [ 'status' => 'error', 'http_code' => 0, 'response' => 'Unknown platform: ' . $platform ];
+        if ( $updated ) {
+            update_option( self::QUEUE_OPTION, $queue, false );
         }
     }
 
     /**
-     * Serialise a ServerTrack_Event to the flat array format the retry
-     * queue stores and maybe_queue() accepts.
+     * Dispatch a single retry attempt to the appropriate platform sender.
+     *
+     * @param string $platform
+     * @param array  $event_args
+     * @return array Result array with 'status' key
+     */
+    private static function dispatch_retry( string $platform, array $event_args ): array {
+        try {
+            $event_id    = $event_args['event_id']    ?? '';
+            $event_name  = $event_args['event_name']  ?? 'Purchase';
+            $user_data   = $event_args['user_data']   ?? [];
+            $custom_data = $event_args['custom_data'] ?? [];
+
+            $event = ( new ServerTrack_Event( $event_name, $event_id ) )
+                ->set_user_data( $user_data )
+                ->set_custom_data( $custom_data );
+
+            switch ( $platform ) {
+                case 'meta':
+                    return ServerTrack_Meta::send( $event );
+                case 'tiktok':
+                    return ServerTrack_TikTok::send( $event );
+                case 'google':
+                    return ServerTrack_Google::send( $event );
+                default:
+                    return [ 'status' => 'error', 'message' => 'Unknown platform: ' . $platform ];
+            }
+        } catch ( \Throwable $e ) {
+            return [ 'status' => 'error', 'message' => $e->getMessage() ];
+        }
+    }
+
+    /**
+     * Convert a ServerTrack_Event into a serialisable args array for the queue.
+     *
+     * v2.1: now includes 'dedup_key' from custom_data['_dedup_key'] when present,
+     * so process() can call mark_as_sent() for non-order events (BUG-08 fix).
+     *
+     * @param ServerTrack_Event $event
+     * @return array
      */
     public static function event_to_args( ServerTrack_Event $event ): array {
-        return [
-            'event_name'       => $event->event_name,
-            'event_id'         => $event->event_id,
-            'user_data'        => $event->user_data,
-            'custom_data'      => $event->custom_data,
-            'event_source_url' => $event->event_source_url,
+        $args = [
+            'event_id'    => $event->event_id,
+            'event_name'  => $event->event_name,
+            'user_data'   => $event->user_data,
+            'custom_data' => $event->custom_data,
         ];
-    }
 
-    /** Purge all queued retry rows from wp_options. */
-    public static function flush(): void {
-        global $wpdb;
-        // phpcs:ignore WordPress.DB.DirectDatabaseQuery
-        $wpdb->query(
-            $wpdb->prepare(
-                "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s",
-                $wpdb->esc_like( self::KEY_PREFIX ) . '%'
-            )
-        );
+        // BUG-08 FIX: carry dedup_key so process() can mark non-order events as sent.
+        if ( ! empty( $event->custom_data['_dedup_key'] ) ) {
+            $args['dedup_key'] = $event->custom_data['_dedup_key'];
+        }
+
+        return $args;
     }
 }

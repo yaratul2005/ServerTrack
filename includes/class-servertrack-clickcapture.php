@@ -4,7 +4,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_ClickCapture  v1.0
+ * ServerTrack_ClickCapture  v1.1
  *
  * Feature #2 — Server-Side Click ID Capture & Persistence.
  *
@@ -31,11 +31,25 @@ if ( ! defined( 'ABSPATH' ) ) {
  * ENDPOINT:
  *   POST /wp-json/servertrack/v1/capture
  *   Body: { fbclid, fbc, fbp, ttclid, gclid, session_id }
- *   Auth: nonce (wp_rest) — no authentication required (public endpoint)
+ *   Auth: none required (public endpoint — stores anonymous click data only)
  *
- * JS SNIPPET (injected by ServerTrack_Frontend):
- *   Reads URL params (fbclid, ttclid, gclid) and cookies (_fbc, _fbp, ttclid)
- *   and POSTs them to the endpoint in a fire-and-forget fetch().
+ * BUG-04 FIX (v1.1):
+ *   get_js_snippet() previously baked a server-rendered nonce directly into
+ *   the inline JS: 'X-WP-Nonce':'{$nonce}'.
+ *
+ *   On sites using full-page caching (LiteSpeed, WP Rocket, W3 Total Cache,
+ *   Cloudflare), the same cached HTML — including the same nonce — is served
+ *   to every visitor. WP nonces are user-scoped and expire after 12 hours,
+ *   so cached visitors received either the wrong user's nonce or an expired
+ *   one. The REST endpoint was silently rejecting these requests, meaning
+ *   click IDs were never captured on any cached page.
+ *
+ *   Fix: the /capture endpoint has permission_callback => __return_true because
+ *   it stores only anonymous click attribution data and does not perform any
+ *   privileged operation. There is no security benefit to nonce-gating it.
+ *   Removed wp_create_nonce() from the PHP side and removed the X-WP-Nonce
+ *   header from the JS fetch() call entirely.
+ *   The endpoint is now fully cache-safe and nonce-free.
  */
 class ServerTrack_ClickCapture {
 
@@ -61,7 +75,14 @@ class ServerTrack_ClickCapture {
             [
                 'methods'             => 'POST',
                 'callback'            => [ self::class, 'handle_capture' ],
-                'permission_callback' => '__return_true', // Public — validated by nonce
+                /*
+                 * BUG-04 FIX: Intentionally public. This endpoint stores only
+                 * anonymous click attribution data (fbclid, gclid, ttclid).
+                 * No user data, no privileged operations. Nonce validation
+                 * was removed because it caused silent failures on cached pages
+                 * (see class docblock). Cache-safe and correct.
+                 */
+                'permission_callback' => '__return_true',
                 'args'                => [
                     'fbclid'     => [ 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
                     'fbc'        => [ 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
@@ -95,7 +116,7 @@ class ServerTrack_ClickCapture {
             $user_id   = get_current_user_id();
             $existing  = get_user_meta( $user_id, self::USER_META_KEY, true );
             $existing  = is_array( $existing ) ? $existing : [];
-            $merged    = array_merge( $existing, $data ); // new values overwrite old
+            $merged    = array_merge( $existing, $data );
             update_user_meta( $user_id, self::USER_META_KEY, $merged );
         }
 
@@ -115,19 +136,12 @@ class ServerTrack_ClickCapture {
 
     /**
      * Retrieve stored click IDs for building order user_data.
-     * Call from WooCommerce source's build_order_user_data().
-     *
-     * Priority:
-     *   1. Logged-in user meta (most persistent)
-     *   2. Session transient (guest)
-     *   3. Empty array (no stored data)
      *
      * @param int    $customer_id  WC order customer_id (0 for guests)
      * @param string $session_id   WC session customer_id string
      * @return array { fbclid, fbc, fbp, ttclid, gclid } — only present keys
      */
     public static function get_for_order( int $customer_id, string $session_id = '' ): array {
-        // Logged-in user
         if ( $customer_id > 0 ) {
             $stored = get_user_meta( $customer_id, self::USER_META_KEY, true );
             if ( is_array( $stored ) && ! empty( $stored ) ) {
@@ -135,7 +149,6 @@ class ServerTrack_ClickCapture {
             }
         }
 
-        // Guest session transient
         if ( $session_id ) {
             $key    = self::TRANSIENT_PREFIX . md5( $session_id );
             $stored = get_transient( $key );
@@ -149,14 +162,18 @@ class ServerTrack_ClickCapture {
 
     /**
      * Returns the JS snippet for injection by ServerTrack_Frontend.
-     * Fires on every page load — reads URL params + cookies and POSTs
-     * to the capture endpoint in a fire-and-forget fetch.
+     *
+     * BUG-04 FIX (v1.1):
+     *   Removed wp_create_nonce() and the 'X-WP-Nonce' header from the
+     *   fetch() call. The /capture endpoint is intentionally public
+     *   (permission_callback => __return_true) — nonce validation was
+     *   causing silent capture failures on full-page-cached sites where
+     *   every visitor received the same stale nonce baked into the HTML.
      *
      * @return string Inline JavaScript (no <script> tags)
      */
     public static function get_js_snippet(): string {
         $endpoint = esc_url( rest_url( 'servertrack/v1/capture' ) );
-        $nonce    = wp_create_nonce( 'wp_rest' );
 
         // phpcs:disable
         return <<<JS
@@ -184,7 +201,7 @@ class ServerTrack_ClickCapture {
     fetch('{$endpoint}', {
         method: 'POST',
         credentials: 'same-origin',
-        headers: {'Content-Type':'application/json','X-WP-Nonce':'{$nonce}'},
+        headers: {'Content-Type':'application/json'},
         body: JSON.stringify({fbclid:fbclid,fbc:fbc,fbp:fbp,ttclid:ttclid,gclid:gclid,session_id:sid})
     }).catch(function(){});
 })();
