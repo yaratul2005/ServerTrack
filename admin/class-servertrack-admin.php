@@ -4,20 +4,20 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Admin — v2.0 (Dashboard overhaul)
+ * ServerTrack_Admin — v2.1
  *
- * Changes from v1:
- *   - New 'dashboard' tab (overview with KPIs, platform health, activity feed)
+ * Changes in v2.1:
+ *   - register_settings(): added servertrack_source_abandonment_enabled and
+ *     servertrack_abandonment_window_minutes to the sources option group.
+ *     Previously these were registered only via Core::register_v32_options()
+ *     which added them to allowed_options but did NOT call register_setting().
+ *     This meant the Sources tab save form silently dropped both values.
+ *
+ * Changes from v1 → v2.0 (Dashboard overhaul — unchanged here):
+ *   - New 'dashboard' tab with KPIs, platform health, activity feed
  *   - New AJAX handler: servertrack_get_dashboard_stats
- *   - New render_page_header() — dark gradient header strip with platform badges
- *   - Tab nav now uses .st-tab-nav CSS class for the new pill-style navigation
- *
- * Bug fixes carried from v1:
- *   - All tabs still have independent option groups (see TAB_GROUPS)
- *   - fire_test_event(): TikTok test sends 'Purchase' not 'Lead'
- *   - ajax_test_event(): proper wp_send_json_error on failure path
- *   - handle_oauth_callback(): state/nonce CSRF check
- *   - fire_test_event(): order_id => 0 and event_source_url set
+ *   - render_page_header() dark gradient header strip
+ *   - Tab nav uses .st-tab-nav CSS class
  */
 class ServerTrack_Admin {
 
@@ -40,10 +40,10 @@ class ServerTrack_Admin {
         add_action( 'admin_init',            [ self::class, 'handle_oauth_revoke' ] );
         add_action( 'admin_enqueue_scripts', [ self::class, 'enqueue_assets' ] );
         add_action( 'admin_notices',         [ self::class, 'render_health_notice' ] );
-        add_action( 'wp_ajax_servertrack_clear_log',          [ self::class, 'ajax_clear_log' ] );
-        add_action( 'wp_ajax_servertrack_test_event',         [ self::class, 'ajax_test_event' ] );
-        add_action( 'wp_ajax_servertrack_get_logs',           [ self::class, 'ajax_get_logs' ] );
-        add_action( 'wp_ajax_servertrack_get_dashboard_stats',[ self::class, 'ajax_get_dashboard_stats' ] );
+        add_action( 'wp_ajax_servertrack_clear_log',           [ self::class, 'ajax_clear_log' ] );
+        add_action( 'wp_ajax_servertrack_test_event',          [ self::class, 'ajax_test_event' ] );
+        add_action( 'wp_ajax_servertrack_get_logs',            [ self::class, 'ajax_get_logs' ] );
+        add_action( 'wp_ajax_servertrack_get_dashboard_stats', [ self::class, 'ajax_get_dashboard_stats' ] );
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -107,15 +107,15 @@ class ServerTrack_Admin {
 
     public static function register_settings() {
 
-        // ── General tab ──────────────────────────────────────────
+        // ── General tab ──────────────────────────────────────────────
         $general_options = [
-            'servertrack_enabled'      => [ 'type' => 'integer', 'sanitize' => 'absint',               'default' => 1      ],
-            'servertrack_test_mode'    => [ 'type' => 'integer', 'sanitize' => 'absint',               'default' => 0      ],
+            'servertrack_enabled'      => [ 'type' => 'integer', 'sanitize' => 'absint',                              'default' => 1      ],
+            'servertrack_test_mode'    => [ 'type' => 'integer', 'sanitize' => 'absint',                              'default' => 0      ],
             'servertrack_consent_mode' => [ 'type' => 'string',  'sanitize' => [ self::class, 'sanitize_consent_mode' ], 'default' => 'none' ],
         ];
         self::register_group( 'servertrack_general_settings', $general_options );
 
-        // ── Meta CAPI tab ─────────────────────────────────────────
+        // ── Meta CAPI tab ─────────────────────────────────────────────
         $meta_options = [
             'servertrack_meta_enabled'         => [ 'type' => 'integer', 'sanitize' => 'absint',              'default' => 0  ],
             'servertrack_meta_pixel_id'        => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
@@ -124,21 +124,21 @@ class ServerTrack_Admin {
         ];
         self::register_group( 'servertrack_meta_settings', $meta_options );
 
-        // ── Google Ads tab ────────────────────────────────────────
+        // ── Google Ads tab ────────────────────────────────────────────
         $google_options = [
-            'servertrack_google_enabled'          => [ 'type' => 'integer', 'sanitize' => 'absint',              'default' => 0  ],
-            'servertrack_google_customer_id'      => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
-            'servertrack_google_conversion_id'    => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
-            'servertrack_google_developer_token'  => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
-            'servertrack_google_client_id'        => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
-            'servertrack_google_client_secret'    => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
-            'servertrack_google_refresh_token'    => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
-            'servertrack_google_gtag_id'          => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
-            'servertrack_google_gtag_label'       => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_google_enabled'         => [ 'type' => 'integer', 'sanitize' => 'absint',              'default' => 0  ],
+            'servertrack_google_customer_id'     => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_google_conversion_id'   => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_google_developer_token' => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_google_client_id'       => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_google_client_secret'   => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_google_refresh_token'   => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_google_gtag_id'         => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_google_gtag_label'      => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
         ];
         self::register_group( 'servertrack_google_settings', $google_options );
 
-        // ── TikTok Events tab ─────────────────────────────────────
+        // ── TikTok Events tab ─────────────────────────────────────────
         $tiktok_options = [
             'servertrack_tiktok_enabled'      => [ 'type' => 'integer', 'sanitize' => 'absint',              'default' => 0  ],
             'servertrack_tiktok_pixel_id'     => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
@@ -146,14 +146,21 @@ class ServerTrack_Admin {
         ];
         self::register_group( 'servertrack_tiktok_settings', $tiktok_options );
 
-        // ── Sources tab ──────────────────────────────────────────
+        // ── Sources tab ───────────────────────────────────────────────
+        // FIX (v2.1): servertrack_source_abandonment_enabled and
+        // servertrack_abandonment_window_minutes were missing here —
+        // Core::register_v32_options() added them to allowed_options
+        // but never called register_setting(), so the Sources tab save
+        // silently dropped both values on every save.
         $sources_options = [
-            'servertrack_source_woo_enabled'   => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1 ],
-            'servertrack_source_cf7_enabled'   => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0 ],
-            'servertrack_source_edd_enabled'   => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0 ],
-            'servertrack_scroll_depth'         => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1 ],
-            'servertrack_video_tracking'       => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1 ],
-            'servertrack_wishlist_tracking'    => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1 ],
+            'servertrack_source_woo_enabled'         => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1  ],
+            'servertrack_source_cf7_enabled'         => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
+            'servertrack_source_edd_enabled'         => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
+            'servertrack_source_abandonment_enabled' => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
+            'servertrack_abandonment_window_minutes' => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 60 ],
+            'servertrack_scroll_depth'               => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1  ],
+            'servertrack_video_tracking'             => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1  ],
+            'servertrack_wishlist_tracking'          => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1  ],
         ];
         self::register_group( 'servertrack_sources_settings', $sources_options );
 
@@ -165,7 +172,7 @@ class ServerTrack_Admin {
     private static function register_group( string $group, array $options ) {
         $names = array_keys( $options );
         add_filter( 'allowed_options', function( array $allowed ) use ( $group, $names ): array {
-            $allowed[ $group ] = $names;
+            $allowed[ $group ] = array_merge( $allowed[ $group ] ?? [], $names );
             return $allowed;
         } );
         foreach ( $options as $name => $cfg ) {
@@ -371,10 +378,6 @@ class ServerTrack_Admin {
         <?php
     }
 
-    /**
-     * Render the dark gradient header strip above the tab nav.
-     * Shows plugin name, description tagline, and per-platform active badges.
-     */
     private static function render_page_header() {
         $meta_ok   = get_option( 'servertrack_meta_enabled', 0 ) && get_option( 'servertrack_meta_pixel_id', '' ) && get_option( 'servertrack_meta_access_token', '' );
         $google_ok = get_option( 'servertrack_google_enabled', 0 ) && get_option( 'servertrack_google_refresh_token', '' );
@@ -394,19 +397,13 @@ class ServerTrack_Admin {
             </div>
             <div class="st-header-badges">
                 <?php if ( $meta_ok ) : ?>
-                    <span class="st-badge st-badge-meta">
-                        <span class="st-badge-dot"></span> Meta
-                    </span>
+                    <span class="st-badge st-badge-meta"><span class="st-badge-dot"></span> Meta</span>
                 <?php endif; ?>
                 <?php if ( $google_ok ) : ?>
-                    <span class="st-badge st-badge-google">
-                        <span class="st-badge-dot"></span> Google
-                    </span>
+                    <span class="st-badge st-badge-google"><span class="st-badge-dot"></span> Google</span>
                 <?php endif; ?>
                 <?php if ( $tiktok_ok ) : ?>
-                    <span class="st-badge st-badge-tiktok">
-                        <span class="st-badge-dot"></span> TikTok
-                    </span>
+                    <span class="st-badge st-badge-tiktok"><span class="st-badge-dot"></span> TikTok</span>
                 <?php endif; ?>
                 <?php if ( ! $meta_ok && ! $google_ok && ! $tiktok_ok ) : ?>
                     <span class="st-badge" style="background:rgba(255,255,255,.1);color:rgba(255,255,255,.5)">
@@ -489,17 +486,6 @@ class ServerTrack_Admin {
         wp_send_json_success( $logs );
     }
 
-    /**
-     * Dashboard stats AJAX handler.
-     *
-     * Returns:
-     *   total_today    int   — number of log entries from today (UTC)
-     *   success_today  int   — entries with status=success today
-     *   failed_today   int   — entries with status=error today
-     *   success_rate   int   — % of successful vs total (0–100)
-     *   recent         array — last 8 log entries (newest first)
-     *   platforms      array — per-platform { enabled, configured, last_send }
-     */
     public static function ajax_get_dashboard_stats() {
         check_ajax_referer( 'servertrack_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Unauthorized' );
@@ -511,14 +497,12 @@ class ServerTrack_Admin {
         $success = 0;
         $failed  = 0;
 
-        // Per-platform tracking
         $platforms = [
             'meta'   => [ 'last_send' => null ],
             'google' => [ 'last_send' => null ],
             'tiktok' => [ 'last_send' => null ],
         ];
 
-        // Process in newest-first order (logs are appended, reverse for display)
         $sorted = array_reverse( $logs );
 
         foreach ( $sorted as $entry ) {
@@ -526,14 +510,12 @@ class ServerTrack_Admin {
             $platform = strtolower( $entry['platform'] ?? '' );
             $status   = $entry['status']     ?? '';
 
-            // Today's stats (compare YYYY-MM-DD prefix)
             if ( substr( $ts, 0, 10 ) === $today ) {
                 $total++;
                 if ( 'success' === $status ) $success++;
                 if ( 'error'   === $status ) $failed++;
             }
 
-            // Last-send per platform (first match = most recent, since we're iterating newest-first)
             if ( isset( $platforms[ $platform ] ) && null === $platforms[ $platform ]['last_send'] ) {
                 $platforms[ $platform ]['last_send'] = $ts;
             }
@@ -541,7 +523,6 @@ class ServerTrack_Admin {
 
         $rate = $total > 0 ? (int) round( ( $success / $total ) * 100 ) : 0;
 
-        // Add configured/enabled flags per platform
         $platforms['meta']['enabled']    = (bool) get_option( 'servertrack_meta_enabled', 0 );
         $platforms['meta']['configured'] = (bool) (
             get_option( 'servertrack_meta_pixel_id', '' ) &&
