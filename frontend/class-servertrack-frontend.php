@@ -4,9 +4,34 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Frontend  v2.1
+ * ServerTrack_Frontend  v2.2
  *
  * Injects browser pixel config for all page types.
+ *
+ * Changes in v2.2 (FIX-13):
+ *   get_request_ip() rewrote to fix two independent rate-limit bypass vectors:
+ *
+ *   Vector A — CDN shared-IP collapse:
+ *     Sites behind Cloudflare keyed the rate-limiter on Cloudflare's egress IP
+ *     (read from REMOTE_ADDR). All real visitors shared one bucket; a single
+ *     legitimate traffic spike tripped the limit for everyone. Fix: prefer
+ *     HTTP_CF_CONNECTING_IP (set by Cloudflare, client-uncontrollable) and
+ *     HTTP_X_REAL_IP (set by nginx upstream block) before falling through to
+ *     HTTP_X_FORWARDED_FOR or REMOTE_ADDR.
+ *
+ *   Vector B — XFF header spoofing:
+ *     The old code read the FIRST token of X-Forwarded-For, which is
+ *     entirely user-controlled. Any attacker could send
+ *     "X-Forwarded-For: 1.2.3.4" and the rate-limiter would key on 1.2.3.4
+ *     forever, making the limit trivially bypassable with a new fake IP per
+ *     request. Fix: read the LAST (rightmost) XFF token — the one appended
+ *     by the actual terminating proxy, which is not user-controlled.
+ *
+ *   Additionally: each IP candidate is validated with filter_var
+ *   FILTER_VALIDATE_IP + FILTER_FLAG_NO_PRIV_RANGE so private/reserved
+ *   addresses (10.x, 172.16.x, 192.168.x, 127.x) are rejected and the
+ *   next candidate in the chain is tried. Define
+ *   SERVERTRACK_TRUST_PRIVATE_IPS to skip this check in local dev.
  *
  * Changes in v2.1 (FIX-12):
  *   rest_custom_event() accepted any arbitrary string as event_name, sanitised
@@ -119,7 +144,7 @@ class ServerTrack_Frontend {
             );
         }
 
-        // FIX: Rate limit by IP — 10 events per minute per IP (prevents CAPI abuse)
+        // FIX-13: Use hardened IP resolution — see get_request_ip() below.
         $ip         = self::get_request_ip();
         $rate_key   = 'st_rl_' . md5( $ip );
         $rate_count = (int) get_transient( $rate_key );
@@ -166,15 +191,105 @@ class ServerTrack_Frontend {
         return rest_ensure_response( [ 'sent' => true, 'results' => $results ] );
     }
 
+    /**
+     * Resolve the real client IP, hardened against CDN IP collapse and
+     * X-Forwarded-For header spoofing.
+     *
+     * FIX-13 (v2.2) — two bypass vectors closed:
+     *
+     *   Vector A — CDN shared-IP collapse
+     *     Behind Cloudflare, REMOTE_ADDR is a Cloudflare egress IP shared by
+     *     thousands of visitors. All those visitors mapped to the same rate-limit
+     *     bucket. A single organic traffic spike would exhaust the 10 req/min
+     *     bucket and return 429 to legitimate users.
+     *
+     *     Fix: check HTTP_CF_CONNECTING_IP first. Cloudflare strips any
+     *     client-sent CF-Connecting-IP header and replaces it with the real
+     *     client IP — it cannot be spoofed from the browser. Similarly,
+     *     HTTP_X_REAL_IP is set by nginx's upstream block and is not
+     *     reachable by untrusted clients.
+     *
+     *   Vector B — XFF first-token spoofing
+     *     HTTP_X_FORWARDED_FOR is a comma-separated list where each proxy
+     *     appends the IP it received the request from. The FIRST token is
+     *     freely set by the client ("X-Forwarded-For: <anything>"). The old
+     *     code read [0] — the user-controlled value — letting any attacker
+     *     rotate IPs by sending a new fake XFF header with each request.
+     *
+     *     Fix: read the LAST (rightmost) token. That token was appended by
+     *     the last proxy in the chain (e.g. the CDN origin shield) and cannot
+     *     be forged by the client without controlling that proxy.
+     *
+     * Priority chain:
+     *   1. HTTP_CF_CONNECTING_IP  — Cloudflare real-client header
+     *   2. HTTP_X_REAL_IP         — nginx upstream real-client header
+     *   3. HTTP_X_FORWARDED_FOR   — last (rightmost) token only
+     *   4. REMOTE_ADDR            — direct TCP peer (kernel-level, unforgeable)
+     *
+     * Each candidate is validated with filter_var FILTER_VALIDATE_IP and
+     * rejected if it is a private/reserved range (RFC-1918: 10.x, 172.16.x,
+     * 192.168.x, 127.x, ::1) — those indicate we are still reading a proxy's
+     * internal address, not the real client. Define the constant
+     * SERVERTRACK_TRUST_PRIVATE_IPS to bypass this check in local dev.
+     *
+     * @return string Validated public IPv4 or IPv6 address, or '' on failure.
+     */
     private static function get_request_ip(): string {
-        $ip = '';
-        if ( ! empty( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
-            $ip = sanitize_text_field( wp_unslash( explode( ',', $_SERVER['HTTP_X_FORWARDED_FOR'] )[0] ) );
-        } elseif ( ! empty( $_SERVER['REMOTE_ADDR'] ) ) {
-            $ip = sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) );
+
+        $trust_private = defined( 'SERVERTRACK_TRUST_PRIVATE_IPS' ) && SERVERTRACK_TRUST_PRIVATE_IPS;
+        $ip_flags      = $trust_private ? FILTER_VALIDATE_IP : ( FILTER_VALIDATE_IP | FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE );
+
+        /**
+         * Normalise an IPv6-mapped IPv4 address (::ffff:1.2.3.4 → 1.2.3.4)
+         * and validate the result. Returns '' on failure.
+         */
+        $validate = static function( string $raw ) use ( $ip_flags ): string {
+            $raw = trim( $raw );
+            // Strip IPv6-mapped IPv4 prefix
+            if ( substr( $raw, 0, 7 ) === '::ffff:' ) {
+                $raw = substr( $raw, 7 );
+            }
+            $result = filter_var( $raw, $ip_flags );
+            return ( false !== $result ) ? $result : '';
+        };
+
+        // ── 1. Cloudflare ────────────────────────────────────────────────────
+        // CF-Connecting-IP is set by Cloudflare's edge and cannot be injected
+        // by the browser — Cloudflare strips client-sent headers with this name.
+        if ( ! empty( $_SERVER['HTTP_CF_CONNECTING_IP'] ) ) {
+            $ip = $validate( sanitize_text_field( wp_unslash( $_SERVER['HTTP_CF_CONNECTING_IP'] ) ) );
+            if ( '' !== $ip ) return $ip;
         }
-        if ( substr( $ip, 0, 7 ) === '::ffff:' ) $ip = substr( $ip, 7 );
-        return $ip;
+
+        // ── 2. nginx X-Real-IP ───────────────────────────────────────────────
+        // Set by `proxy_set_header X-Real-IP $remote_addr;` in nginx upstream
+        // config. Not user-reachable if nginx is the edge.
+        if ( ! empty( $_SERVER['HTTP_X_REAL_IP'] ) ) {
+            $ip = $validate( sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_REAL_IP'] ) ) );
+            if ( '' !== $ip ) return $ip;
+        }
+
+        // ── 3. X-Forwarded-For — LAST token (rightmost) ──────────────────────
+        // In a multi-hop proxy chain:  client → proxy1 → proxy2 → server
+        // XFF looks like: "client_ip, proxy1_ip, proxy2_ip"
+        //   - First token (index 0):  client-controlled — DO NOT trust.
+        //   - Last token  (index -1): appended by the last proxy in the chain
+        //     (proxy2 above) — user cannot forge this without owning proxy2.
+        if ( ! empty( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
+            $tokens   = explode( ',', wp_unslash( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ); // phpcs:ignore
+            $last_hop = sanitize_text_field( end( $tokens ) );
+            $ip       = $validate( $last_hop );
+            if ( '' !== $ip ) return $ip;
+        }
+
+        // ── 4. REMOTE_ADDR — kernel TCP peer (cannot be spoofed) ─────────────
+        if ( ! empty( $_SERVER['REMOTE_ADDR'] ) ) {
+            $ip = $validate( sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) );
+            if ( '' !== $ip ) return $ip;
+        }
+
+        // All candidates failed validation (edge case: local CLI / unit test).
+        return '';
     }
 
     // ────────────────────────────────────────────────────────────────────────
