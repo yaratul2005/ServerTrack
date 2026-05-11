@@ -4,57 +4,25 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_WooRenewals  v2.1
+ * ServerTrack_WooRenewals  v2.2
  *
- * Handles WooCommerce Subscriptions renewal orders.
+ * Changes in v2.2:
+ *   - New: on_subscription_cancelled() fires a SubscriptionCancelled custom
+ *     CAPI event when a WooCommerce Subscription is cancelled.
+ *     Mapped to Lead on Meta (closest standard event for a non-revenue
+ *     lifecycle signal), PlaceAnOrder with zero value on TikTok, and a
+ *     custom conversion event on Google.
+ *     Dispatch is async via WP-Cron.
+ *   - New cron handler: send_cancellation_async().
+ *   - New hook registered in init():
+ *     woocommerce_subscription_status_cancelled → on_subscription_cancelled.
  *
- * Background:
- *   When a subscription renews, WooCommerce Subscriptions creates a new
- *   child order and marks it complete server-side. There is no browser
- *   session and no thank-you page hit, so the standard on_thankyou() path
- *   in ServerTrack_WooCommerce is never reached for these orders.
- *
- *   This class hooks into `woocommerce_subscription_renewal_payment_complete`
- *   which fires after the payment gateway confirms the renewal charge.
- *   It sends a server-side Purchase event to all enabled platforms
- *   using the renewal child order data, fully async via WP-Cron.
- *
- * IMPORTANT FIXES (v2.1):
- *
- *   1. hash_phone() called without country_code in build_renewal_user_data().
- *      Same issue as CF7: hash_phone() with no country_code hashes whatever
- *      raw format is stored — '01712345678', '+880-171...' etc — producing
- *      inconsistent hashes that Meta/TikTok cannot match across events.
- *
- *      Fix: build_renewal_user_data() now resolves the E.164 country dialling
- *      code from $order->get_billing_country() using the same static table
- *      used by ServerTrack_WooCommerce::build_order_user_data().
- *
- *   2. external_id missing from renewal user_data.
- *      Meta treats external_id as its highest-signal identifier for
- *      cross-event customer matching. Renewal orders are the same customer
- *      — omitting external_id breaks the identity graph for subscribers.
- *
- *      Fix: build_renewal_user_data() now adds external_id as
- *      SHA-256( customer_id ) for logged-in customers, falling back to
- *      SHA-256( order_id ) for guest/legacy orders.
- *
- * Dedup:
- *   Renewal events use the child order ID as the dedup key, not the
- *   parent subscription ID. This allows multiple renewals for the same
- *   subscription to be tracked independently.
- *
- * Note:
- *   The parent on_thankyou() guard in ServerTrack_WooCommerce already
- *   checks for `_subscription_renewal` meta and logs + returns early,
- *   so there is no risk of double-counting the initial subscription order.
+ * Changes in v2.1:
+ *   - hash_phone() with country_code resolved from billing country.
+ *   - external_id added to renewal user_data.
  */
 class ServerTrack_WooRenewals {
 
-    /**
-     * E.164 dialling codes keyed by ISO 3166-1 alpha-2 country code.
-     * Mirrors the static table in ServerTrack_WooCommerce::build_order_user_data().
-     */
     private static array $country_codes = [
         'US'=>'1','CA'=>'1','GB'=>'44','AU'=>'61','DE'=>'49','FR'=>'33',
         'IT'=>'39','ES'=>'34','NL'=>'31','SE'=>'46','NO'=>'47','DK'=>'45',
@@ -66,96 +34,57 @@ class ServerTrack_WooRenewals {
 
     public static function init() {
         if ( ! get_option( 'servertrack_source_woo_enabled', 1 ) ) return;
-
-        // Only register if WooCommerce Subscriptions is active
         if ( ! class_exists( 'WC_Subscriptions' ) ) return;
 
-        // Fires after gateway confirms renewal payment
         add_action(
             'woocommerce_subscription_renewal_payment_complete',
             [ self::class, 'on_renewal_complete' ],
             10, 2
         );
 
-        // Async cron handler
+        // v2.2: track subscription cancellations
         add_action(
-            'servertrack_send_renewal_purchase',
-            [ self::class, 'send_renewal_async' ],
+            'woocommerce_subscription_status_cancelled',
+            [ self::class, 'on_subscription_cancelled' ],
             10, 1
         );
+
+        add_action( 'servertrack_send_renewal_purchase',      [ self::class, 'send_renewal_async' ],       10, 1 );
+        add_action( 'servertrack_send_subscription_cancelled', [ self::class, 'send_cancellation_async' ], 10, 1 );
     }
 
-    /**
-     * Fires synchronously after renewal payment confirmed.
-     * Seeds event_id and schedules the async cron — no API calls here.
-     *
-     * @param WC_Subscription $subscription  The subscription object.
-     * @param WC_Order        $renewal_order  The new renewal child order.
-     */
+    // ────────────────────────────────────────────────────────────────────────
+    // RENEWAL (unchanged from v2.1)
+    // ────────────────────────────────────────────────────────────────────────
+
     public static function on_renewal_complete( $subscription, $renewal_order ) {
         if ( ! get_option( 'servertrack_enabled', 1 ) ) return;
-
         $renewal_order_id = $renewal_order->get_id();
-
-        // Guard: do not double-fire if already sent
         if ( ServerTrack_Dedup::was_sent( $renewal_order_id, 'meta' )
             || ServerTrack_Dedup::was_sent( $renewal_order_id, 'google' )
             || ServerTrack_Dedup::was_sent( $renewal_order_id, 'tiktok' ) ) {
-            ServerTrack_Logger::log(
-                'dedup_blocked', 'all',
-                'Renewal order #' . $renewal_order_id . ' already sent — skipping.',
-                '', ServerTrack_Dedup::get_event_id( $renewal_order_id ), $renewal_order_id, 'Purchase'
-            );
+            ServerTrack_Logger::log( 'dedup_blocked', 'all', 'Renewal order #' . $renewal_order_id . ' already sent — skipping.', '', ServerTrack_Dedup::get_event_id( $renewal_order_id ), $renewal_order_id, 'Purchase' );
             return;
         }
-
-        // Generate + store event_id synchronously before scheduling
         $event_id = ServerTrack_Dedup::generate_event_id( 'renewal_' . $renewal_order_id );
         ServerTrack_Dedup::store_event_id( $renewal_order_id, $event_id );
-
-        ServerTrack_Logger::log(
-            'queued', 'all',
-            'Subscription renewal order #' . $renewal_order_id . ' queued for server-side tracking.',
-            '', $event_id, $renewal_order_id, 'Purchase'
-        );
-
-        wp_schedule_single_event(
-            time(),
-            'servertrack_send_renewal_purchase',
-            [ $renewal_order_id ]
-        );
+        ServerTrack_Logger::log( 'queued', 'all', 'Subscription renewal order #' . $renewal_order_id . ' queued for server-side tracking.', '', $event_id, $renewal_order_id, 'Purchase' );
+        wp_schedule_single_event( time(), 'servertrack_send_renewal_purchase', [ $renewal_order_id ] );
     }
 
-    /**
-     * Async cron handler — builds event from the renewal order and sends.
-     *
-     * @param int $renewal_order_id  The renewal child order ID.
-     */
     public static function send_renewal_async( int $renewal_order_id ) {
         if ( ! get_option( 'servertrack_enabled', 1 ) ) return;
-
         $order = wc_get_order( $renewal_order_id );
         if ( ! $order ) {
-            ServerTrack_Logger::log(
-                'error', 'all',
-                'Renewal order #' . $renewal_order_id . ' not found in cron.',
-                '', '', $renewal_order_id, 'Purchase'
-            );
+            ServerTrack_Logger::log( 'error', 'all', 'Renewal order #' . $renewal_order_id . ' not found in cron.', '', '', $renewal_order_id, 'Purchase' );
             return;
         }
-
-        $event_id = ServerTrack_Dedup::get_event_id( $renewal_order_id );
-
-        // Build user data from the renewal order (no browser session available)
+        $event_id    = ServerTrack_Dedup::get_event_id( $renewal_order_id );
         $user_data   = self::build_renewal_user_data( $order );
         $custom_data = self::build_renewal_custom_data( $order );
-
-        // ── Meta ────────────────────────────────────────────────────────────
         if ( get_option( 'servertrack_meta_enabled', 0 ) ) {
             if ( ! ServerTrack_Dedup::was_sent( $renewal_order_id, 'meta' ) ) {
-                $e      = ( new ServerTrack_Event( 'Purchase', $event_id ) )
-                    ->set_user_data( $user_data )
-                    ->set_custom_data( $custom_data );
+                $e      = ( new ServerTrack_Event( 'Purchase', $event_id ) )->set_user_data( $user_data )->set_custom_data( $custom_data );
                 $result = ServerTrack_Meta::send( $e );
                 if ( ( $result['status'] ?? '' ) === 'success' ) {
                     ServerTrack_Dedup::mark_as_sent( $renewal_order_id, 'meta' );
@@ -164,13 +93,9 @@ class ServerTrack_WooRenewals {
                 }
             }
         }
-
-        // ── Google ─────────────────────────────────────────────────────────
         if ( get_option( 'servertrack_google_enabled', 0 ) ) {
             if ( ! ServerTrack_Dedup::was_sent( $renewal_order_id, 'google' ) ) {
-                $e      = ( new ServerTrack_Event( 'Purchase', $event_id ) )
-                    ->set_user_data( $user_data )
-                    ->set_custom_data( $custom_data );
+                $e      = ( new ServerTrack_Event( 'Purchase', $event_id ) )->set_user_data( $user_data )->set_custom_data( $custom_data );
                 $result = ServerTrack_Google::send( $e );
                 if ( ( $result['status'] ?? '' ) === 'success' ) {
                     ServerTrack_Dedup::mark_as_sent( $renewal_order_id, 'google' );
@@ -179,13 +104,9 @@ class ServerTrack_WooRenewals {
                 }
             }
         }
-
-        // ── TikTok ────────────────────────────────────────────────────────
         if ( get_option( 'servertrack_tiktok_enabled', 0 ) ) {
             if ( ! ServerTrack_Dedup::was_sent( $renewal_order_id, 'tiktok' ) ) {
-                $e      = ( new ServerTrack_Event( 'Purchase', $event_id ) )
-                    ->set_user_data( $user_data )
-                    ->set_custom_data( $custom_data );
+                $e      = ( new ServerTrack_Event( 'Purchase', $event_id ) )->set_user_data( $user_data )->set_custom_data( $custom_data );
                 $result = ServerTrack_TikTok::send( $e );
                 if ( ( $result['status'] ?? '' ) === 'success' ) {
                     ServerTrack_Dedup::mark_as_sent( $renewal_order_id, 'tiktok' );
@@ -196,23 +117,137 @@ class ServerTrack_WooRenewals {
         }
     }
 
-    // ── Helper: user data for renewal order (PII only — no browser signals) ────
+    // ────────────────────────────────────────────────────────────────────────
+    // SUBSCRIPTION CANCELLED (v2.2)
+    // ────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Fires when a subscription status changes to 'cancelled'.
+     *
+     * @param WC_Subscription $subscription
+     */
+    public static function on_subscription_cancelled( $subscription ) {
+        if ( ! get_option( 'servertrack_enabled', 1 ) ) return;
+
+        $subscription_id = $subscription->get_id();
+
+        // Guard: skip if already sent
+        if ( ServerTrack_Dedup::was_sent( 'sub_cancel_' . $subscription_id, 'meta' )
+            || ServerTrack_Dedup::was_sent( 'sub_cancel_' . $subscription_id, 'tiktok' )
+            || ServerTrack_Dedup::was_sent( 'sub_cancel_' . $subscription_id, 'google' ) ) {
+            return;
+        }
+
+        ServerTrack_Logger::log(
+            'queued', 'all',
+            'Subscription #' . $subscription_id . ' cancelled — queuing SubscriptionCancelled event.',
+            '', '', $subscription_id, 'SubscriptionCancelled'
+        );
+
+        wp_schedule_single_event(
+            time(),
+            'servertrack_send_subscription_cancelled',
+            [ $subscription_id ]
+        );
+        spawn_cron();
+    }
+
+    /**
+     * Async cron: send SubscriptionCancelled event to all enabled platforms.
+     *
+     * @param int $subscription_id
+     */
+    public static function send_cancellation_async( int $subscription_id ) {
+        if ( ! get_option( 'servertrack_enabled', 1 ) ) return;
+
+        // Retrieve the subscription object
+        $subscription = wcs_get_subscription( $subscription_id );
+        if ( ! $subscription ) {
+            ServerTrack_Logger::log( 'error', 'all', 'Subscription #' . $subscription_id . ' not found in cron.', '', '', $subscription_id, 'SubscriptionCancelled' );
+            return;
+        }
+
+        // Get the last (most recent) order for user_data
+        $last_order = $subscription->get_last_order( 'all' );
+        if ( ! $last_order instanceof WC_Order ) {
+            ServerTrack_Logger::log( 'error', 'all', 'Subscription #' . $subscription_id . ' has no order — cannot build user_data.', '', '', $subscription_id, 'SubscriptionCancelled' );
+            return;
+        }
+
+        $dedup_key = 'sub_cancel_' . $subscription_id;
+        $event_id  = ServerTrack_Dedup::get_event_id( $dedup_key );
+        if ( empty( $event_id ) ) {
+            $event_id = ServerTrack_Dedup::generate_event_id( $dedup_key );
+            ServerTrack_Dedup::store_event_id( $dedup_key, $event_id );
+        }
+
+        $user_data   = self::build_renewal_user_data( $last_order );
+        $custom_data = [
+            'currency'         => $last_order->get_currency(),
+            'value'            => 0.0,
+            'content_name'     => 'SubscriptionCancelled',
+            'subscription_id'  => $subscription_id,
+            'order_id'         => $last_order->get_id(),
+            'content_type'     => 'product',
+        ];
+
+        // ── META: Lead event (best standard event for lifecycle signal) ─────
+        if ( get_option( 'servertrack_meta_enabled', 0 )
+            && ! ServerTrack_Dedup::was_sent( $dedup_key, 'meta' ) ) {
+            $e = ( new ServerTrack_Event( 'Lead', $event_id ) )
+                ->set_user_data( $user_data )
+                ->set_custom_data( $custom_data );
+            $result = ServerTrack_Meta::send( $e );
+            if ( ( $result['status'] ?? '' ) === 'success' ) {
+                ServerTrack_Dedup::mark_as_sent( $dedup_key, 'meta' );
+            } else {
+                ServerTrack_Retry::maybe_queue( 'meta', $result, ServerTrack_Retry::event_to_args( $e ) );
+            }
+        }
+
+        // ── TIKTOK: SubscribeExpired (churn signal) ─────────────────────────
+        if ( get_option( 'servertrack_tiktok_enabled', 0 )
+            && ! ServerTrack_Dedup::was_sent( $dedup_key, 'tiktok' ) ) {
+            $e = ( new ServerTrack_Event( 'Subscribe', $event_id ) )
+                ->set_user_data( $user_data )
+                ->set_custom_data( array_merge( $custom_data, [ 'content_name' => 'SubscriptionCancelled' ] ) );
+            $result = ServerTrack_TikTok::send( $e );
+            if ( ( $result['status'] ?? '' ) === 'success' ) {
+                ServerTrack_Dedup::mark_as_sent( $dedup_key, 'tiktok' );
+            } else {
+                ServerTrack_Retry::maybe_queue( 'tiktok', $result, ServerTrack_Retry::event_to_args( $e ) );
+            }
+        }
+
+        // ── GOOGLE: custom conversion ───────────────────────────────────────
+        if ( get_option( 'servertrack_google_enabled', 0 )
+            && ! ServerTrack_Dedup::was_sent( $dedup_key, 'google' ) ) {
+            $e = ( new ServerTrack_Event( 'subscription_cancelled', $event_id ) )
+                ->set_user_data( $user_data )
+                ->set_custom_data( $custom_data );
+            $result = ServerTrack_Google::send( $e );
+            if ( ( $result['status'] ?? '' ) === 'success' ) {
+                ServerTrack_Dedup::mark_as_sent( $dedup_key, 'google' );
+            } else {
+                ServerTrack_Retry::maybe_queue( 'google', $result, ServerTrack_Retry::event_to_args( $e ) );
+            }
+        }
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // HELPERS (unchanged from v2.1)
+    // ────────────────────────────────────────────────────────────────────────
 
     private static function build_renewal_user_data( WC_Order $order ): array {
         $data = [];
-
         $email = $order->get_billing_email();
         if ( ! empty( $email ) ) $data['email'] = ServerTrack_Hasher::hash_email( $email );
-
-        // FIX (v2.1): resolve country_code for E.164 normalisation.
-        // Previously passed no country_code — hashed raw stored format, not E.164.
         $phone = $order->get_billing_phone();
         if ( ! empty( $phone ) ) {
             $iso = strtoupper( (string) $order->get_billing_country() );
             $cc  = ! empty( $iso ) ? ( self::$country_codes[ $iso ] ?? '' ) : '';
             $data['phone'] = ServerTrack_Hasher::hash_phone( $phone, $cc );
         }
-
         $pii_map = [
             'first_name' => $order->get_billing_first_name(),
             'last_name'  => $order->get_billing_last_name(),
@@ -224,8 +259,6 @@ class ServerTrack_WooRenewals {
         foreach ( $pii_map as $key => $val ) {
             if ( ! empty( $val ) ) $data[ $key ] = ServerTrack_Hasher::hash( $val );
         }
-
-        // Raw geo fields for Google Enhanced Conversions (unhashed)
         $raw_map = [
             'city_raw'    => $order->get_billing_city(),
             'state_raw'   => $order->get_billing_state(),
@@ -235,22 +268,13 @@ class ServerTrack_WooRenewals {
         foreach ( $raw_map as $key => $val ) {
             if ( ! empty( $val ) ) $data[ $key ] = $val;
         }
-
-        // IP from the original order record (no live session in renewal)
         $order_ip = (string) $order->get_customer_ip_address();
-        // Strip IPv4-mapped IPv6 prefix if present
         if ( substr( $order_ip, 0, 7 ) === '::ffff:' ) $order_ip = substr( $order_ip, 7 );
         if ( ! empty( $order_ip ) ) $data['ip'] = $order_ip;
-
-        // FIX (v2.1): add external_id for Advanced Matching.
-        // SHA-256( customer_id ) for logged-in users; SHA-256( order_id ) for guests.
         $customer_id = $order->get_customer_id();
         $data['external_id'] = ServerTrack_Hasher::hash( (string) ( $customer_id ?: $order->get_id() ) );
-
         return $data;
     }
-
-    // ── Helper: custom data for renewal order ──────────────────────────────
 
     private static function build_renewal_custom_data( WC_Order $order ): array {
         $contents = [];
@@ -258,11 +282,7 @@ class ServerTrack_WooRenewals {
             $product    = $item->get_product();
             $sku        = ( $product && $product->get_sku() ) ? $product->get_sku() : (string) $item->get_product_id();
             $qty        = (int) $item->get_quantity();
-            $contents[] = [
-                'id'         => $sku,
-                'quantity'   => $qty,
-                'item_price' => $qty > 0 ? (float) $item->get_total() / $qty : 0.0,
-            ];
+            $contents[] = [ 'id' => $sku, 'quantity' => $qty, 'item_price' => $qty > 0 ? (float) $item->get_total() / $qty : 0.0 ];
         }
         return [
             'currency'     => $order->get_currency(),
