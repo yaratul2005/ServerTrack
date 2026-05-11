@@ -7,30 +7,23 @@
 
     <table class="form-table" role="presentation">
 
-        <!-- ── WooCommerce core ───────────────────────────────────────────── -->
+        <!-- ================================================================ -->
+        <!-- WooCommerce core -->
+        <!-- ================================================================ -->
         <tr>
             <th scope="row"><?php esc_html_e( 'WooCommerce', 'servertrack' ); ?></th>
             <td>
                 <label>
                     <input type="checkbox" name="servertrack_source_woo_enabled" value="1"
                         <?php checked( 1, get_option( 'servertrack_source_woo_enabled', 1 ) ); ?> />
-                    <?php esc_html_e( 'Enable WooCommerce tracking (Purchase, ViewContent, AddToCart, InitiateCheckout, AddPaymentInfo, CompleteRegistration, Refund, Renewal, SubscriptionCancelled)', 'servertrack' ); ?>
+                    <?php esc_html_e( 'Enable WooCommerce tracking (Purchase, ViewContent, AddToCart, InitiateCheckout, AddPaymentInfo, CompleteRegistration, Refund, Renewal)', 'servertrack' ); ?>
                 </label>
             </td>
         </tr>
 
-        <!-- ── WooCommerce sub-options heading ───────────────────────────── -->
-        <tr>
-            <th scope="row" colspan="2" style="padding-bottom:4px;padding-top:20px">
-                <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#9ca3af">
-                    <?php esc_html_e( 'WooCommerce — Additional Events', 'servertrack' ); ?>
-                </span>
-            </th>
-        </tr>
-
         <!-- Cart Abandonment -->
         <tr>
-            <th scope="row" style="padding-left:24px"><?php esc_html_e( 'Cart Abandonment', 'servertrack' ); ?></th>
+            <th scope="row"><?php esc_html_e( 'Cart Abandonment', 'servertrack' ); ?></th>
             <td>
                 <label>
                     <input type="checkbox" name="servertrack_source_abandonment_enabled" value="1"
@@ -38,7 +31,7 @@
                     <?php esc_html_e( 'Enable cart abandonment tracking (fires InitiateCheckout CAPI event after the abandonment window)', 'servertrack' ); ?>
                 </label>
                 <p class="description">
-                    <?php esc_html_e( 'Sends an InitiateCheckout event to Meta and TikTok, and a begin_checkout event to Google, when a cart is abandoned.', 'servertrack' ); ?>
+                    <?php esc_html_e( 'Requires WooCommerce. Sends InitiateCheckout (Meta/TikTok) and begin_checkout (Google) when a cart is abandoned.', 'servertrack' ); ?>
                 </p>
                 <br />
                 <label>
@@ -47,15 +40,18 @@
                         value="<?php echo esc_attr( get_option( 'servertrack_abandonment_window_minutes', 60 ) ); ?>"
                         min="5" max="1440" step="5" style="width:80px;" />
                 </label>
-                <p class="description">
-                    <?php esc_html_e( 'Minimum time (in minutes) of cart inactivity before the event fires. Default: 60. Minimum: 5.', 'servertrack' ); ?>
-                </p>
+                <p class="description"><?php esc_html_e( 'Minimum cart inactivity before event fires. Default: 60 min. Minimum: 5 min.', 'servertrack' ); ?></p>
             </td>
         </tr>
 
-        <!-- Order Status Events (v3.3) -->
-        <tr>
-            <th scope="row" style="padding-left:24px"><?php esc_html_e( 'Order Status Events', 'servertrack' ); ?></th>
+        <!-- ================================================================ -->
+        <!-- v3.3 NEW: Order Status Events -->
+        <!-- ================================================================ -->
+        <tr style="background:#f9fafb;">
+            <th scope="row">
+                <?php esc_html_e( 'Order Status Events', 'servertrack' ); ?>
+                <span style="display:block;font-size:11px;font-weight:400;color:#6b7280;margin-top:2px;">v3.3</span>
+            </th>
             <td>
                 <label>
                     <input type="checkbox" name="servertrack_source_order_status_enabled" value="1"
@@ -63,59 +59,50 @@
                     <?php esc_html_e( 'Enable order lifecycle events (on-hold, failed, cancelled)', 'servertrack' ); ?>
                 </label>
                 <p class="description">
-                    <?php esc_html_e( 'Sends a Lead event (Meta), Contact/SubmitForm (TikTok), and generate_lead (Google) when an order status changes to on-hold, failed, or cancelled. Useful for re-engagement and retargeting audiences.', 'servertrack' ); ?>
+                    <?php esc_html_e( 'Fires server-side Lead / Contact / SubmitForm events when an order transitions to on-hold, failed, or cancelled status. Useful for re-engagement and win-back audiences. Enabled by default.', 'servertrack' ); ?>
                 </p>
             </td>
         </tr>
 
-        <!-- Partial Refund Events (v3.3) -->
-        <tr>
-            <th scope="row" style="padding-left:24px"><?php esc_html_e( 'Partial Refund Events', 'servertrack' ); ?></th>
-            <td>
-                <label>
-                    <input type="checkbox" name="servertrack_source_partial_refund_enabled" value="1"
-                        <?php checked( 1, get_option( 'servertrack_source_partial_refund_enabled', 1 ) ); ?> />
-                    <?php esc_html_e( 'Enable partial refund tracking (separate from full-order refunds)', 'servertrack' ); ?>
-                </label>
-                <p class="description">
-                    <?php esc_html_e( 'Sends a negative-value Purchase (Meta/TikTok) or refund (Google) event for each partial refund, using the exact refund amount — not the full order total.', 'servertrack' ); ?>
-                </p>
-            </td>
-        </tr>
-
-        <!-- Add to Wishlist Events (v3.3) -->
-        <tr>
-            <th scope="row" style="padding-left:24px"><?php esc_html_e( 'Add to Wishlist Events', 'servertrack' ); ?></th>
+        <!-- v3.3 NEW: AddToWishlist Events -->
+        <tr style="background:#f9fafb;">
+            <th scope="row">
+                <?php esc_html_e( 'AddToWishlist Events', 'servertrack' ); ?>
+                <span style="display:block;font-size:11px;font-weight:400;color:#6b7280;margin-top:2px;">v3.3 · Opt-in</span>
+            </th>
             <td>
                 <label>
                     <input type="checkbox" name="servertrack_source_wishlist_enabled" value="1"
                         <?php checked( 1, get_option( 'servertrack_source_wishlist_enabled', 0 ) ); ?> />
-                    <?php esc_html_e( 'Enable AddToWishlist tracking (requires YITH or TI WooCommerce Wishlist plugin)', 'servertrack' ); ?>
+                    <?php esc_html_e( 'Enable AddToWishlist CAPI events (Meta & TikTok)', 'servertrack' ); ?>
                 </label>
                 <p class="description">
-                    <?php esc_html_e( 'Sends an AddToWishlist event to Meta and TikTok. Not available for Google (no standard equivalent). Disabled by default — enable only if a supported wishlist plugin is active.', 'servertrack' ); ?>
+                    <?php esc_html_e( 'Requires YITH WooCommerce Wishlist or TI WooCommerce Wishlist plugin. Fires AddToWishlist to Meta and TikTok when a customer adds a product to a wishlist. Disabled by default (opt-in).', 'servertrack' ); ?>
                 </p>
-                <?php
-                $yith_active = function_exists( 'YITH_WCWL' ) || class_exists( 'YITH_WCWL' );
-                $ti_active   = function_exists( 'TIWL' )       || defined( 'TIWL_VERSION' );
-                if ( ! $yith_active && ! $ti_active ) : ?>
-                <p class="description" style="color:#b91c1c;margin-top:4px">
-                    ⚠ <?php esc_html_e( 'No supported wishlist plugin detected. Install YITH WooCommerce Wishlist or TI WooCommerce Wishlist to use this feature.', 'servertrack' ); ?>
-                </p>
-                <?php endif; ?>
             </td>
         </tr>
 
-        <!-- ── Other sources ──────────────────────────────────────────────── -->
-        <tr>
-            <th scope="row" colspan="2" style="padding-bottom:4px;padding-top:20px">
-                <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#9ca3af">
-                    <?php esc_html_e( 'Other Sources', 'servertrack' ); ?>
-                </span>
+        <!-- v3.3 NEW: Partial Refund Events -->
+        <tr style="background:#f9fafb;">
+            <th scope="row">
+                <?php esc_html_e( 'Partial Refund Events', 'servertrack' ); ?>
+                <span style="display:block;font-size:11px;font-weight:400;color:#6b7280;margin-top:2px;">v3.3</span>
             </th>
+            <td>
+                <label>
+                    <input type="checkbox" name="servertrack_source_partial_refund_enabled" value="1"
+                        <?php checked( 1, get_option( 'servertrack_source_partial_refund_enabled', 1 ) ); ?> />
+                    <?php esc_html_e( 'Enable partial refund CAPI events (exact refund amount, not order total)', 'servertrack' ); ?>
+                </label>
+                <p class="description">
+                    <?php esc_html_e( 'Sends a Purchase event with a negative value equal to the exact partial refund amount. Handled separately from full refunds. Enabled by default.', 'servertrack' ); ?>
+                </p>
+            </td>
         </tr>
 
+        <!-- ================================================================ -->
         <!-- Contact Form 7 -->
+        <!-- ================================================================ -->
         <tr>
             <th scope="row"><?php esc_html_e( 'Contact Form 7', 'servertrack' ); ?></th>
             <td>
