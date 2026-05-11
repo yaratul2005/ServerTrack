@@ -4,33 +4,27 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_TikTok  v2.1
+ * ServerTrack_TikTok  v2.2
  *
  * TikTok Events API Sender.
  * Depends on: ServerTrack_Event, ServerTrack_Logger
  *
- * IMPORTANT FIX (v2.1) — page.url built from $_SERVER in async cron:
+ * Changes in v2.2 (Bug fixes):
  *
- *   Same root cause as the Meta event_source_url bug (fixed in class-servertrack-meta.php):
- *   page.url was built from $_SERVER['REQUEST_URI'] inside send(). In async WP-Cron,
- *   REQUEST_URI = '/wp-cron.php'. TikTok Events API uses page.url for:
- *     - Attribution (which landing page drove the conversion)
- *     - Audience building (retargeting visitors of specific pages)
- *     - Event Match Quality score
+ *   Bug #8c — Logger::log() arg 8 type mismatch:
+ *     Both Logger calls (WP_Error path and success path) passed (int) $code
+ *     or literal 0 as arg 8. Logger signature expects (array $emq = []).
+ *     Fix: arg 8 removed from both calls — defaults to [].
+ *     EMQ is computed upstream by the WooCommerce source and passed to
+ *     Logger directly there, so TikTok::send() does not need it.
  *
- *   Sending '/wp-cron.php' as the page URL poisons TikTok attribution on every
- *   Purchase / AddToCart event that runs through the async cron path.
+ *   Bug #12 — wp_json_encode() failure not caught:
+ *     If payload contains non-UTF-8 data, encode returns false.
+ *     Fix: checked; logs error + returns early on false.
  *
- *   Fix: send() now reads $event->event_source_url (set in browser context by the
- *   WooCommerce source via set_source_url()). Falls back to home_url() only when
- *   the field is empty — which is safe for synchronous browser-context sends
- *   (ViewContent, AddToCart, InitiateCheckout) where REQUEST_URI IS correct.
- *
- * Additional fix (v2.1) — missing external_id:
- *   TikTok's "Advanced Matching" uses external_id as its highest-confidence
- *   identifier for logged-in users. It was absent from the user object.
- *   Now included from $event->user_data['external_id'] when present (already
- *   SHA-256 hashed by build_order_user_data in the WooCommerce source).
+ * Changes in v2.1:
+ *   - page.url read from event DTO instead of $_SERVER (cron safety).
+ *   - external_id included for Advanced Matching.
  */
 class ServerTrack_TikTok {
 
@@ -62,7 +56,7 @@ class ServerTrack_TikTok {
 
         $tiktok_event = self::$event_name_map[ $event->event_name ] ?? $event->event_name;
 
-        // ── Build user object (omit absent fields entirely) ─────────────────
+        // ── Build user object ────────────────────────────────────────────────
         $user = [];
 
         $hashed_fields = [
@@ -88,27 +82,21 @@ class ServerTrack_TikTok {
             }
         }
 
-        // FIX (v2.1): include external_id for Advanced Matching.
-        // Already SHA-256 hashed. Strongest identity signal for logged-in users.
         if ( ! empty( $event->user_data['external_id'] ) ) {
             $user['external_id'] = $event->user_data['external_id'];
         }
 
-        // ── FIX (v2.1): page.url from event DTO instead of $_SERVER ─────────
-        // In async WP-Cron, REQUEST_URI = '/wp-cron.php' — not the real page.
-        // Read event_source_url captured in browser context by the source.
+        // ── page.url from event DTO ──────────────────────────────────────────
         if ( ! empty( $event->event_source_url ) ) {
             $page_url = $event->event_source_url;
         } else {
-            // Fallback: synchronous browser-context sends (ViewContent, AddToCart)
-            // where REQUEST_URI is the correct page URL.
             $request_uri = isset( $_SERVER['REQUEST_URI'] )
                 ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) )
                 : '/';
             $page_url = home_url( $request_uri );
         }
 
-        // ── Assemble event payload ──────────────────────────────────────────
+        // ── Assemble event payload ───────────────────────────────────────────
         $event_data = [
             'event'      => $tiktok_event,
             'event_time' => time(),
@@ -130,6 +118,20 @@ class ServerTrack_TikTok {
             'data'         => [ $event_data ],
         ];
 
+        // BUG #12 FIX: guard against wp_json_encode() returning false.
+        $json = wp_json_encode( $payload );
+        if ( false === $json ) {
+            ServerTrack_Logger::log(
+                'error', 'tiktok',
+                'wp_json_encode failed — payload contains non-serialisable data.',
+                '', $event->event_id,
+                (int) ( $event->custom_data['order_id'] ?? 0 ),
+                $event->event_name
+                // arg 8 (emq) omitted — defaults to []
+            );
+            return [ 'status' => 'error', 'http_code' => 0, 'message' => 'JSON encode failed.' ];
+        }
+
         $response = wp_remote_post( self::API_ENDPOINT, [
             'method'  => 'POST',
             'timeout' => 15,
@@ -137,16 +139,18 @@ class ServerTrack_TikTok {
                 'Content-Type' => 'application/json',
                 'Access-Token' => $access_token,
             ],
-            'body' => wp_json_encode( $payload ),
+            'body' => $json,
         ] );
 
         if ( is_wp_error( $response ) ) {
+            // BUG #8c FIX: removed (int) 0 as arg 8 — Logger expects array $emq.
             ServerTrack_Logger::log(
                 'error', 'tiktok',
                 $response->get_error_message(),
                 '', $event->event_id,
                 (int) ( $event->custom_data['order_id'] ?? 0 ),
-                $event->event_name, 0
+                $event->event_name
+                // arg 8 (emq) omitted — defaults to []
             );
             return [ 'status' => 'error', 'message' => $response->get_error_message() ];
         }
@@ -155,12 +159,14 @@ class ServerTrack_TikTok {
         $body_raw = wp_remote_retrieve_body( $response );
         $status   = ( $code >= 200 && $code < 300 ) ? 'success' : 'error';
 
+        // BUG #8c FIX: removed (int) $code as arg 8 — was corrupting emq log field.
         ServerTrack_Logger::log(
             $status, 'tiktok',
             (string) $code, $body_raw,
             $event->event_id,
             (int) ( $event->custom_data['order_id'] ?? 0 ),
-            $event->event_name, $code
+            $event->event_name
+            // arg 8 (emq) omitted — defaults to []
         );
 
         return [ 'status' => $status, 'http_code' => $code, 'response' => $body_raw ];

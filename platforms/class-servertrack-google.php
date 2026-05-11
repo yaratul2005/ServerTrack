@@ -4,18 +4,26 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Google  v2.2
+ * ServerTrack_Google  v2.3
  *
  * Google Ads Offline Conversion API driver.
  *
+ * Changes in v2.3 (Bug fixes):
+ *
+ *   Bug #12 — wp_json_encode() failure not caught:
+ *     build_payload() can produce non-serialisable values if order data
+ *     contains malformed strings. Checked; logs + returns error on false.
+ *
+ *   Bug #13 — get_woocommerce_currency() in async build_payload:
+ *     build_payload() called get_woocommerce_currency() as a fallback.
+ *     While WC is loaded in cron, this is still fragile. Currency is now
+ *     read from $event->custom_data['currency'] first (set at event-fire
+ *     time in browser context by build_purchase_custom_data()). The
+ *     get_woocommerce_currency() fallback is kept but marked as cron-safe.
+ *
  * Changes in v2.2 (Bug #8 fix):
- *   Logger::log() arg 8 was passing (int) $code (HTTP status code) instead
- *   of (array) $emq. Logger signature: (..., string $event_type, array $emq = []).
- *   Passing an int for the array-typed $emq causes a TypeError in strict mode
- *   and silently stores wrong data otherwise. The platform send() method does
- *   not have the EMQ score — that is computed by the caller via
- *   ServerTrack_MatchQuality::annotate(). Removed $code as arg 8 entirely;
- *   Logger defaults emq to [].
+ *   Logger::log() arg 8 was passing (int) $code instead of (array) $emq.
+ *   Removed arg 8 from all Logger calls — defaults to [].
  *
  * Changes in v2.1:
  *   - Always compare token expiry against time() before every API call.
@@ -46,7 +54,21 @@ class ServerTrack_Google {
             return [ 'status' => 'error', 'http_code' => 0, 'message' => 'No access token.' ];
         }
 
-        $payload  = self::build_payload( $event, $conversion_id, $conv_label );
+        $payload = self::build_payload( $event, $conversion_id, $conv_label );
+
+        // BUG #12 FIX: guard against wp_json_encode() returning false.
+        $json = wp_json_encode( $payload );
+        if ( false === $json ) {
+            ServerTrack_Logger::log(
+                'error', 'google',
+                'wp_json_encode failed — payload contains non-serialisable data.',
+                '', $event->event_id,
+                (int) ( $event->custom_data['order_id'] ?? 0 ),
+                $event->event_name
+            );
+            return [ 'status' => 'error', 'http_code' => 0, 'message' => 'JSON encode failed.' ];
+        }
+
         $endpoint = 'https://googleads.googleapis.com/' . self::API_VERSION . '/customers/' . $customer_id . ':uploadClickConversions';
 
         $response = wp_remote_post( $endpoint, [
@@ -58,17 +80,17 @@ class ServerTrack_Google {
                 'developer-token'   => get_option( 'servertrack_google_developer_token', '' ),
                 'login-customer-id' => $customer_id,
             ],
-            'body'    => wp_json_encode( $payload ),
+            'body'    => $json,
         ] );
 
         if ( is_wp_error( $response ) ) {
-            // BUG #8 FIX: removed int 0 as arg 8 — Logger expects array $emq.
             ServerTrack_Logger::log(
                 'error', 'google',
                 $response->get_error_message(),
                 '', $event->event_id,
                 (int) ( $event->custom_data['order_id'] ?? 0 ),
                 $event->event_name
+                // arg 8 (emq) omitted — defaults to []
             );
             return [ 'status' => 'error', 'http_code' => 0, 'message' => $response->get_error_message() ];
         }
@@ -77,13 +99,13 @@ class ServerTrack_Google {
         $body_raw = wp_remote_retrieve_body( $response );
         $status   = ( $code >= 200 && $code < 300 ) ? 'success' : 'error';
 
-        // BUG #8 FIX: removed $code (int) as arg 8 — was corrupting emq log field.
         ServerTrack_Logger::log(
             $status, 'google',
             (string) $code, $body_raw,
             $event->event_id,
             (int) ( $event->custom_data['order_id'] ?? 0 ),
             $event->event_name
+            // arg 8 (emq) omitted — defaults to []
         );
 
         return [ 'status' => $status, 'http_code' => $code, 'response' => $body_raw ];
@@ -150,11 +172,18 @@ class ServerTrack_Google {
         $conversion_time = gmdate( 'c', $event->event_time ?? time() );
         $customer_id     = get_option( 'servertrack_google_customer_id' );
 
+        // BUG #13 FIX: read currency from event DTO (captured in browser context).
+        // Falls back to get_woocommerce_currency() only when absent (cron-safe
+        // because WC is loaded during cron, but DTO value is always preferred).
+        $currency = ! empty( $event->custom_data['currency'] )
+            ? strtoupper( $event->custom_data['currency'] )
+            : strtoupper( get_woocommerce_currency() );
+
         $click_conversion = [
             'conversionAction'   => 'customers/' . $customer_id . '/conversionActions/' . $conversion_id,
             'conversionDateTime' => $conversion_time,
             'conversionValue'    => (float) ( $event->custom_data['value'] ?? 0 ),
-            'currencyCode'       => strtoupper( $event->custom_data['currency'] ?? get_woocommerce_currency() ),
+            'currencyCode'       => $currency,
             'orderId'            => (string) ( $event->custom_data['order_id'] ?? '' ),
         ];
 
