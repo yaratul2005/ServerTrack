@@ -1,68 +1,60 @@
 /*
- * ServerTrack Admin Styles — v2.3 Rebrand
- *
- * Full rebrand: dark navy header, teal primary accent, amber highlight.
- * Logo: assets/logo/bglogo.png (transparent background PNG).
- *
- * Token prefix: --st-  (isolated from WP admin globals)
+ * ServerTrack Admin Styles — v2.3
+ * Brand overhaul: bglogo.png integrated, new dark-teal brand tokens,
+ * responsive dashboard grid fixed, admin-dashboard.css fully merged.
  */
 
 /* ─────────────────────────────────────────────────────────────────
    0. TOKENS
 ───────────────────────────────────────────────────────────────── */
 :root {
-    /* Brand — Teal primary, Amber accent */
-    --st-brand:           #0ea5a0;
-    --st-brand-light:     #e0f5f4;
-    --st-brand-dark:      #0b7a76;
-    --st-accent:          #f59e0b;
-    --st-accent-light:    #fef3c7;
+    /* Brand — Dark Teal (matches bglogo.png palette) */
+    --st-brand:          #0ea5a0;
+    --st-brand-light:    #e0f5f4;
+    --st-brand-dark:     #0b7a76;
+    --st-brand-deeper:   #065e5b;
 
     /* Surfaces */
-    --st-bg:              #f1f4f8;
-    --st-surface:         #ffffff;
-    --st-surface-2:       #f8fafc;
-    --st-border:          rgba(0,0,0,.07);
-    --st-divider:         #e4e8ee;
+    --st-bg:             #f4f6f9;
+    --st-surface:        #ffffff;
+    --st-surface-2:      #f9fafc;
+    --st-border:         rgba(0,0,0,.08);
+    --st-divider:        #e8eaed;
 
     /* Text */
-    --st-text:            #0f1923;
-    --st-text-muted:      #5a6478;
-    --st-text-faint:      #9aa3b2;
+    --st-text:           #1a1d23;
+    --st-text-muted:     #6b7280;
+    --st-text-faint:     #9ca3af;
 
     /* Status */
-    --st-success:         #16a34a;
-    --st-success-bg:      #f0fdf4;
-    --st-success-text:    #15803d;
-    --st-error:           #dc2626;
-    --st-error-bg:        #fef2f2;
-    --st-error-text:      #b91c1c;
-    --st-warning:         #d97706;
-    --st-warning-bg:      #fffbeb;
-    --st-warning-text:    #92400e;
-    --st-info:            #2563eb;
-    --st-info-bg:         #eff6ff;
-    --st-info-text:       #1d4ed8;
+    --st-success:        #22c55e;
+    --st-success-bg:     #f0fdf4;
+    --st-success-text:   #15803d;
+    --st-error:          #ef4444;
+    --st-error-bg:       #fef2f2;
+    --st-error-text:     #b91c1c;
+    --st-warning:        #f59e0b;
+    --st-warning-bg:     #fffbeb;
+    --st-warning-text:   #92400e;
+    --st-info:           #3b82f6;
+    --st-info-bg:        #eff6ff;
+    --st-info-text:      #1d4ed8;
 
     /* Platforms */
-    --st-meta-color:      #1877f2;
-    --st-meta-bg:         #e7f0fd;
-    --st-google-color:    #ea4335;
-    --st-google-bg:       #fde8e7;
-    --st-tiktok-color:    #010101;
-    --st-tiktok-bg:       #e8e8e8;
-
-    /* Header gradient — deep navy */
-    --st-header-from:     #0b1220;
-    --st-header-to:       #0f2233;
+    --st-meta-color:     #1877f2;
+    --st-meta-bg:        #e7f0fd;
+    --st-google-color:   #ea4335;
+    --st-google-bg:      #fde8e7;
+    --st-tiktok-color:   #010101;
+    --st-tiktok-bg:      #e8e8e8;
 
     /* Layout */
-    --st-radius:          10px;
-    --st-radius-sm:       6px;
-    --st-radius-lg:       14px;
-    --st-shadow:          0 1px 3px rgba(0,0,0,.05), 0 4px 16px rgba(0,0,0,.04);
-    --st-shadow-md:       0 4px 12px rgba(0,0,0,.08), 0 12px 32px rgba(0,0,0,.05);
-    --st-transition:      180ms cubic-bezier(0.16,1,0.3,1);
+    --st-radius:         10px;
+    --st-radius-sm:      6px;
+    --st-radius-lg:      14px;
+    --st-shadow:         0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.04);
+    --st-shadow-md:      0 4px 12px rgba(0,0,0,.08), 0 12px 32px rgba(0,0,0,.06);
+    --st-transition:     180ms cubic-bezier(0.16,1,0.3,1);
 }
 
 /* ─────────────────────────────────────────────────────────────────
@@ -77,7 +69,7 @@
    2. PAGE HEADER
 ───────────────────────────────────────────────────────────────── */
 .st-page-header {
-    background: linear-gradient(135deg, var(--st-header-from) 0%, var(--st-header-to) 100%);
+    background: linear-gradient(135deg, #0d1f1f 0%, #0b2e2c 50%, #0d3535 100%);
     border-radius: var(--st-radius-lg);
     padding: 20px 28px;
     margin-bottom: 24px;
@@ -87,54 +79,40 @@
     flex-wrap: wrap;
     gap: 16px;
     border: 1px solid rgba(14,165,160,.18);
-    box-shadow: 0 8px 32px rgba(11,18,32,.35), inset 0 1px 0 rgba(255,255,255,.04);
-    position: relative;
-    overflow: hidden;
-}
-
-/* Subtle teal glow accent in header */
-.st-page-header::before {
-    content: '';
-    position: absolute;
-    top: -60px;
-    right: -40px;
-    width: 260px;
-    height: 260px;
-    background: radial-gradient(circle, rgba(14,165,160,.12) 0%, transparent 70%);
-    pointer-events: none;
+    box-shadow: 0 4px 24px rgba(0,0,0,.18), inset 0 1px 0 rgba(14,165,160,.12);
 }
 
 .st-page-header-left {
     display: flex;
     align-items: center;
     gap: 16px;
-    position: relative;
 }
 
-/* Logo image — transparent PNG from assets/logo/bglogo.png */
+/* Logo image — bglogo.png (transparent background) */
 .st-logo-img {
-    width: 44px;
-    height: 44px;
+    width: 48px;
+    height: 48px;
     object-fit: contain;
-    object-position: center;
     flex-shrink: 0;
-    filter: drop-shadow(0 2px 8px rgba(14,165,160,.4));
-    /* Ensure it renders crisply on retina */
-    image-rendering: -webkit-optimize-contrast;
-    image-rendering: crisp-edges;
+    filter: drop-shadow(0 2px 8px rgba(14,165,160,.45));
+    display: block;
 }
 
-/* Fallback icon (shown if img fails to load) */
+/* Fallback icon used only if image fails to load */
 .st-logo-icon-fallback {
-    display: none;
     width: 44px;
     height: 44px;
     background: linear-gradient(135deg, var(--st-brand), var(--st-brand-dark));
     border-radius: 10px;
+    display: none;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
     box-shadow: 0 4px 12px rgba(14,165,160,.35);
+}
+
+.st-logo-img.is-broken + .st-logo-icon-fallback {
+    display: flex;
 }
 
 .st-logo-icon-fallback svg {
@@ -150,7 +128,7 @@
 
 .st-page-title-group h1 {
     color: #ffffff;
-    font-size: 1.25rem;
+    font-size: 1.2rem;
     font-weight: 700;
     margin: 0;
     padding: 0;
@@ -160,39 +138,42 @@
 }
 
 .st-page-title-group p {
-    color: rgba(255,255,255,.45);
+    color: rgba(255,255,255,.5);
     font-size: .8rem;
-    margin: 4px 0 0;
+    margin: 3px 0 0;
     letter-spacing: .01em;
-}
-
-/* Teal divider line under brand name */
-.st-page-title-group h1::after {
-    content: none;
 }
 
 .st-header-badges {
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
-    position: relative;
+    align-items: center;
+}
+
+/* Version tag inside header */
+.st-header-version {
+    font-size: .7rem;
+    color: rgba(255,255,255,.3);
+    font-weight: 500;
+    letter-spacing: .04em;
+    margin-right: 4px;
 }
 
 .st-badge {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    padding: 5px 11px;
+    padding: 4px 10px;
     border-radius: var(--st-radius-sm);
-    font-size: .72rem;
+    font-size: .75rem;
     font-weight: 600;
     line-height: 1;
-    border: 1px solid transparent;
 }
 
-.st-badge-meta   { background: rgba(24,119,242,.2);  color: #93c5fd; border-color: rgba(24,119,242,.25); }
-.st-badge-google { background: rgba(234,67,53,.2);   color: #fca5a5; border-color: rgba(234,67,53,.25); }
-.st-badge-tiktok { background: rgba(255,255,255,.08); color: rgba(255,255,255,.65); border-color: rgba(255,255,255,.12); }
+.st-badge-meta    { background: rgba(24,119,242,.25);  color: #93c5fd; }
+.st-badge-google  { background: rgba(234,67,53,.25);   color: #fca5a5; }
+.st-badge-tiktok  { background: rgba(255,255,255,.12); color: rgba(255,255,255,.75); }
 .st-badge-dot {
     width: 6px;
     height: 6px;
@@ -236,6 +217,7 @@
     transition: color var(--st-transition), background var(--st-transition);
     margin: 0 !important;
     line-height: 1.4;
+    text-decoration: none;
 }
 
 .st-tab-nav .nav-tab:hover {
@@ -258,7 +240,7 @@
     opacity: .65;
 }
 .st-tab-nav .nav-tab-active .st-tab-icon,
-.st-tab-nav .nav-tab:hover .st-tab-icon {
+.st-tab-nav .nav-tab:hover    .st-tab-icon {
     opacity: 1;
 }
 
@@ -309,11 +291,9 @@
 }
 
 .st-kpi-icon-teal   { background: var(--st-brand-light);  color: var(--st-brand); }
+.st-kpi-icon-purple { background: #ede9ff;                 color: #6c63ff; }
 .st-kpi-icon-green  { background: var(--st-success-bg);   color: var(--st-success-text); }
 .st-kpi-icon-red    { background: var(--st-error-bg);     color: var(--st-error-text); }
-.st-kpi-icon-amber  { background: var(--st-accent-light); color: var(--st-accent); }
-/* Legacy purple alias — keep for any existing markup */
-.st-kpi-icon-purple { background: var(--st-brand-light);  color: var(--st-brand); }
 .st-kpi-icon-blue   { background: var(--st-info-bg);      color: var(--st-info-text); }
 
 .st-kpi-value {
@@ -344,14 +324,13 @@
 .st-kpi-trend-success { background: linear-gradient(90deg, var(--st-success), transparent); }
 .st-kpi-trend-error   { background: linear-gradient(90deg, var(--st-error),   transparent); }
 .st-kpi-trend-info    { background: linear-gradient(90deg, var(--st-brand),   transparent); }
-.st-kpi-trend-amber   { background: linear-gradient(90deg, var(--st-accent),  transparent); }
 
 /* ─────────────────────────────────────────────────────────────────
    5. PLATFORM HEALTH CARDS
 ───────────────────────────────────────────────────────────────── */
 .st-platform-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
     gap: 14px;
     margin-bottom: 20px;
 }
@@ -375,6 +354,7 @@
     align-items: center;
     justify-content: space-between;
     margin-bottom: 16px;
+    gap: 8px;
 }
 
 .st-platform-identity {
@@ -413,6 +393,7 @@
     margin-top: 1px;
 }
 
+/* Status pill */
 .st-status-pill {
     display: inline-flex;
     align-items: center;
@@ -424,6 +405,7 @@
     text-transform: uppercase;
     letter-spacing: .05em;
     white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .st-status-pill-dot {
@@ -431,6 +413,7 @@
     height: 6px;
     border-radius: 50%;
     background: currentColor;
+    flex-shrink: 0;
 }
 
 .st-status-ok       { background: var(--st-success-bg); color: var(--st-success-text); }
@@ -570,12 +553,14 @@
     border-radius: 50%;
     background: var(--st-success);
     animation: st-pulse 2s ease-in-out infinite;
+    flex-shrink: 0;
 }
 
 .st-log-actions {
     display: flex;
     align-items: center;
     gap: 6px;
+    flex-wrap: wrap;
 }
 
 .st-btn {
@@ -592,6 +577,7 @@
     color: var(--st-text-muted);
     transition: all var(--st-transition);
     line-height: 1;
+    text-decoration: none;
 }
 
 .st-btn:hover {
@@ -602,7 +588,7 @@
 
 .st-btn-danger {
     color: var(--st-error-text);
-    border-color: rgba(220,38,38,.2);
+    border-color: rgba(239,68,68,.2);
 }
 
 .st-btn-danger:hover {
@@ -657,12 +643,14 @@
 
 .st-log-table-wrap {
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 .st-log-table {
     width: 100%;
     border-collapse: collapse;
     font-size: .8125rem;
+    min-width: 540px;
 }
 
 .st-log-table thead th {
@@ -697,6 +685,7 @@
     vertical-align: middle;
 }
 
+/* Status badges in log */
 .st-log-badge {
     display: inline-flex;
     align-items: center;
@@ -715,6 +704,7 @@
 .st-log-badge-warning { background: var(--st-warning-bg); color: var(--st-warning-text); }
 .st-log-badge-info    { background: var(--st-info-bg);    color: var(--st-info-text); }
 
+/* Platform chips in log */
 .st-platform-chip {
     display: inline-flex;
     align-items: center;
@@ -732,6 +722,7 @@
 .st-platform-chip-google { background: var(--st-google-bg); color: var(--st-google-color); }
 .st-platform-chip-tiktok { background: var(--st-tiktok-bg); color: var(--st-tiktok-color); }
 
+/* Expandable response cell */
 .st-response-cell {
     max-width: 220px;
     font-family: monospace;
@@ -785,9 +776,22 @@
     border-radius: var(--st-radius-sm);
 }
 
-.st-skeleton-kpi-value { height: 30px; width: 60%; margin-bottom: 8px; }
-.st-skeleton-kpi-label { height: 10px; width: 80%; }
-.st-skeleton-row       { height: 36px; margin: 1px 0; border-radius: 0; }
+.st-skeleton-kpi-value {
+    height: 30px;
+    width: 60%;
+    margin-bottom: 8px;
+}
+
+.st-skeleton-kpi-label {
+    height: 10px;
+    width: 80%;
+}
+
+.st-skeleton-row {
+    height: 36px;
+    margin: 1px 0;
+    border-radius: 0;
+}
 
 /* ─────────────────────────────────────────────────────────────────
    8. TOAST NOTIFICATIONS
@@ -808,15 +812,14 @@
     align-items: flex-start;
     gap: 10px;
     padding: 12px 16px;
-    background: var(--st-header-from);
+    background: #1a1d23;
     color: #fff;
     border-radius: var(--st-radius);
-    box-shadow: 0 8px 24px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.06);
+    box-shadow: 0 8px 24px rgba(0,0,0,.2);
     font-size: .8125rem;
     min-width: 260px;
     max-width: 360px;
     pointer-events: all;
-    border: 1px solid rgba(14,165,160,.2);
     animation: st-toast-in .25s cubic-bezier(0.16,1,0.3,1) forwards;
 }
 
@@ -836,13 +839,13 @@
     stroke-linejoin: round;
 }
 
-.st-toast-success .st-toast-icon { color: #34d399; }
-.st-toast-error   .st-toast-icon { color: #f87171; }
-.st-toast-info    .st-toast-icon { color: var(--st-brand); }
+.st-toast-success .st-toast-icon { color: var(--st-success); }
+.st-toast-error   .st-toast-icon { color: var(--st-error); }
+.st-toast-info    .st-toast-icon { color: #93c5fd; }
 
 .st-toast-body  { flex: 1; }
 .st-toast-title { font-weight: 600; margin-bottom: 2px; }
-.st-toast-msg   { color: rgba(255,255,255,.6); font-size: .75rem; }
+.st-toast-msg   { color: rgba(255,255,255,.65); font-size: .75rem; }
 
 @keyframes st-toast-in {
     from { opacity: 0; transform: translateY(12px) scale(.96); }
@@ -855,7 +858,7 @@
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   9. SECTION CARDS
+   9. SECTION CARDS (generic)
 ───────────────────────────────────────────────────────────────── */
 .st-card {
     background: var(--st-surface);
@@ -889,7 +892,7 @@
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   10. SETTINGS FORM
+   10. SETTINGS FORM IMPROVEMENTS
 ───────────────────────────────────────────────────────────────── */
 .st-settings-notice {
     background: var(--st-info-bg);
@@ -980,12 +983,16 @@
 .st-activity-dot-error   { background: var(--st-error); }
 .st-activity-dot-warning { background: var(--st-warning); }
 
-.st-activity-body { flex: 1; min-width: 0; }
+.st-activity-body {
+    flex: 1;
+    min-width: 0;
+}
 
 .st-activity-text {
     font-size: .8125rem;
     color: var(--st-text);
     line-height: 1.4;
+    word-break: break-word;
 }
 
 .st-activity-time {
@@ -1030,12 +1037,11 @@
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   14. DASHBOARD TWO-COLUMN LAYOUT
-   (replaces the inline style on the grid wrapper in dashboard.php)
+   14. DASHBOARD TWO-COLUMN LAYOUT (responsive)
 ───────────────────────────────────────────────────────────────── */
 .st-dashboard-grid {
     display: grid;
-    grid-template-columns: 1fr 320px;
+    grid-template-columns: 1fr 300px;
     gap: 16px;
     align-items: start;
 }
@@ -1054,8 +1060,7 @@
 /* ─────────────────────────────────────────────────────────────────
    16. RESPONSIVE
 ───────────────────────────────────────────────────────────────── */
-@media screen and (max-width: 1024px) {
-    /* Stack the dashboard grid on medium screens */
+@media screen and (max-width: 1100px) {
     .st-dashboard-grid {
         grid-template-columns: 1fr;
     }
@@ -1065,14 +1070,15 @@
     .st-kpi-grid          { grid-template-columns: repeat(2, 1fr); }
     .st-platform-grid     { grid-template-columns: 1fr; }
     .st-page-header       { padding: 16px 18px; }
-    .st-logo-img          { width: 36px; height: 36px; }
     .st-log-filters       { display: none; }
     #servertrack-wrap     { margin-right: 10px; }
     .st-dashboard-grid    { grid-template-columns: 1fr; }
+    .st-logo-img          { width: 38px; height: 38px; }
+    .st-page-title-group h1 { font-size: 1.05rem; }
 }
 
 @media screen and (max-width: 480px) {
-    .st-kpi-grid          { grid-template-columns: 1fr; }
-    .st-page-title-group h1 { font-size: 1.05rem; }
-    .st-header-badges     { display: none; }
+    .st-kpi-grid { grid-template-columns: 1fr; }
+    .st-tab-nav  { gap: 1px; }
+    .st-tab-nav .nav-tab { padding: 6px 10px; font-size: .75rem; }
 }
