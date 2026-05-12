@@ -4,7 +4,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Subscriptions  v1.1
+ * ServerTrack_Subscriptions  v1.2
  *
  * Feature #4 — WooCommerce Subscriptions CAPI Events.
  *
@@ -28,12 +28,25 @@ if ( ! defined( 'ABSPATH' ) ) {
  *      Event: CustomEvent 'SubscriptionPaused' (Meta custom)
  *      Sent to: Meta only (TikTok/Google have no equivalent)
  *
- * Dedup: each event uses a stable key derived from subscription ID +
- * event type so cron retries cannot double-fire.
+ * Dedup: each event uses a stable string key derived from subscription ID +
+ * event type. All dedup reads/writes go through the options-based string API
+ * (ServerTrack_Dedup::already_sent / mark_string_sent / get / set) so that
+ * string keys are never coerced to int and routed to order #0 meta.
  *
  * Consent: inherits per-order consent captured at initial purchase.
  *
  * Changelog:
+ *   v1.2 — BUG-M1 fix: switched all three async handlers from the integer
+ *           order-meta dedup API to the options-based string dedup API.
+ *           get_event_id($key)     → ServerTrack_Dedup::get( $key )
+ *           store_event_id($key)   → ServerTrack_Dedup::set_event( $key, $id )
+ *           was_sent($key, $p)     → ServerTrack_Dedup::already_sent( $key, $p )
+ *           mark_as_sent($key, $p) → ServerTrack_Dedup::mark_string_sent( $key, $p )
+ *           Previously all three handlers coerced string keys to int 0,
+ *           meaning every subscription dedup read/write hit order #0 meta.
+ *           Fresh UUIDs were generated on every cron retry, and the sent
+ *           flag was never stored — 100% of subscription events had broken
+ *           dedup and could double-fire on retries.
  *   v1.1 — BUG-LIVE-1: Added missing TikTok block to send_cancelled_async().
  *           TikTok uses PlaceAnOrder with a negative value as the closest
  *           equivalent to a cancellation/refund event.
@@ -99,11 +112,12 @@ class ServerTrack_Subscriptions {
             return;
         }
 
+        // BUG-M1 FIX: use options-based string dedup API — never cast string key to int.
         $dedup_key = 'renewal_' . $sub_id . '_' . $order_id;
-        $event_id  = ServerTrack_Dedup::get_event_id( $dedup_key );
+        $event_id  = self::get_string_event_id( $dedup_key );
         if ( empty( $event_id ) ) {
             $event_id = ServerTrack_Dedup::generate_event_id( $dedup_key );
-            ServerTrack_Dedup::store_event_id( $dedup_key, $event_id );
+            self::set_string_event_id( $dedup_key, $event_id );
         }
 
         $user_data   = self::build_order_user_data( $order );
@@ -111,12 +125,12 @@ class ServerTrack_Subscriptions {
 
         // META
         if ( get_option( 'servertrack_meta_enabled', 0 )
-            && ! ServerTrack_Dedup::was_sent( $dedup_key, 'meta' )
+            && ! ServerTrack_Dedup::already_sent( $dedup_key, 'meta' )
             && ServerTrack_Consent::is_granted( 'meta', $order_id ) ) {
             $e      = ( new ServerTrack_Event( 'Purchase', $event_id ) )->set_user_data( $user_data )->set_custom_data( $custom_data );
             $result = ServerTrack_Meta::send( $e );
             if ( ( $result['status'] ?? '' ) === 'success' ) {
-                ServerTrack_Dedup::mark_as_sent( $dedup_key, 'meta' );
+                ServerTrack_Dedup::mark_string_sent( $dedup_key, 'meta' );
             } else {
                 ServerTrack_Retry::maybe_queue( 'meta', $result, ServerTrack_Retry::event_to_args( $e ) );
             }
@@ -125,12 +139,12 @@ class ServerTrack_Subscriptions {
 
         // TIKTOK
         if ( get_option( 'servertrack_tiktok_enabled', 0 )
-            && ! ServerTrack_Dedup::was_sent( $dedup_key, 'tiktok' )
+            && ! ServerTrack_Dedup::already_sent( $dedup_key, 'tiktok' )
             && ServerTrack_Consent::is_granted( 'tiktok', $order_id ) ) {
             $e      = ( new ServerTrack_Event( 'Purchase', $event_id ) )->set_user_data( $user_data )->set_custom_data( $custom_data );
             $result = ServerTrack_TikTok::send( $e );
             if ( ( $result['status'] ?? '' ) === 'success' ) {
-                ServerTrack_Dedup::mark_as_sent( $dedup_key, 'tiktok' );
+                ServerTrack_Dedup::mark_string_sent( $dedup_key, 'tiktok' );
             } else {
                 ServerTrack_Retry::maybe_queue( 'tiktok', $result, ServerTrack_Retry::event_to_args( $e ) );
             }
@@ -139,12 +153,12 @@ class ServerTrack_Subscriptions {
 
         // GOOGLE
         if ( get_option( 'servertrack_google_enabled', 0 )
-            && ! ServerTrack_Dedup::was_sent( $dedup_key, 'google' )
+            && ! ServerTrack_Dedup::already_sent( $dedup_key, 'google' )
             && ServerTrack_Consent::is_granted( 'google', $order_id ) ) {
             $e      = ( new ServerTrack_Event( 'Purchase', $event_id ) )->set_user_data( $user_data )->set_custom_data( $custom_data );
             $result = ServerTrack_Google::send( $e );
             if ( ( $result['status'] ?? '' ) === 'success' ) {
-                ServerTrack_Dedup::mark_as_sent( $dedup_key, 'google' );
+                ServerTrack_Dedup::mark_string_sent( $dedup_key, 'google' );
             } else {
                 ServerTrack_Retry::maybe_queue( 'google', $result, ServerTrack_Retry::event_to_args( $e ) );
             }
@@ -156,11 +170,12 @@ class ServerTrack_Subscriptions {
         $subscription = wcs_get_subscription( $sub_id );
         if ( ! $subscription ) return;
 
+        // BUG-M1 FIX: options-based string dedup.
         $dedup_key = 'sub_cancelled_' . $sub_id;
-        $event_id  = ServerTrack_Dedup::get_event_id( $dedup_key );
+        $event_id  = self::get_string_event_id( $dedup_key );
         if ( empty( $event_id ) ) {
             $event_id = ServerTrack_Dedup::generate_event_id( $dedup_key );
-            ServerTrack_Dedup::store_event_id( $dedup_key, $event_id );
+            self::set_string_event_id( $dedup_key, $event_id );
         }
 
         $order_id  = $subscription->get_last_order( 'ids' ) ?: 0;
@@ -175,32 +190,31 @@ class ServerTrack_Subscriptions {
 
         // META — custom event 'SubscriptionCancelled'
         if ( get_option( 'servertrack_meta_enabled', 0 )
-            && ! ServerTrack_Dedup::was_sent( $dedup_key, 'meta' ) ) {
+            && ! ServerTrack_Dedup::already_sent( $dedup_key, 'meta' ) ) {
             $e      = ( new ServerTrack_Event( 'SubscriptionCancelled', $event_id ) )->set_user_data( $user_data )->set_custom_data( $custom );
             $result = ServerTrack_Meta::send( $e );
-            if ( ( $result['status'] ?? '' ) === 'success' ) ServerTrack_Dedup::mark_as_sent( $dedup_key, 'meta' );
+            if ( ( $result['status'] ?? '' ) === 'success' ) ServerTrack_Dedup::mark_string_sent( $dedup_key, 'meta' );
             ServerTrack_Logger::log( $result['status'] ?? 'error', 'meta', 'Sub cancelled #' . $sub_id, '', $event_id, $order_id, 'SubscriptionCancelled' );
         }
 
         // TIKTOK — PlaceAnOrder with negative value (TikTok has no native cancellation event;
         // negative-value PlaceAnOrder is the documented TikTok fallback for refunds/cancellations).
-        // BUG-LIVE-1 fix: this block was entirely absent in v1.0.
         if ( get_option( 'servertrack_tiktok_enabled', 0 )
-            && ! ServerTrack_Dedup::was_sent( $dedup_key, 'tiktok' ) ) {
+            && ! ServerTrack_Dedup::already_sent( $dedup_key, 'tiktok' ) ) {
             $neg    = array_merge( $custom, [ 'value' => -1 * abs( $custom['value'] ) ] );
             $e      = ( new ServerTrack_Event( 'PlaceAnOrder', $event_id ) )->set_user_data( $user_data )->set_custom_data( $neg );
             $result = ServerTrack_TikTok::send( $e );
-            if ( ( $result['status'] ?? '' ) === 'success' ) ServerTrack_Dedup::mark_as_sent( $dedup_key, 'tiktok' );
+            if ( ( $result['status'] ?? '' ) === 'success' ) ServerTrack_Dedup::mark_string_sent( $dedup_key, 'tiktok' );
             ServerTrack_Logger::log( $result['status'] ?? 'error', 'tiktok', 'Sub cancelled #' . $sub_id, '', $event_id, $order_id, 'SubscriptionCancelled' );
         }
 
         // GOOGLE — refund hit with negative value
         if ( get_option( 'servertrack_google_enabled', 0 )
-            && ! ServerTrack_Dedup::was_sent( $dedup_key, 'google' ) ) {
+            && ! ServerTrack_Dedup::already_sent( $dedup_key, 'google' ) ) {
             $neg    = array_merge( $custom, [ 'value' => -1 * abs( $custom['value'] ) ] );
             $e      = ( new ServerTrack_Event( 'refund', $event_id ) )->set_user_data( $user_data )->set_custom_data( $neg );
             $result = ServerTrack_Google::send( $e );
-            if ( ( $result['status'] ?? '' ) === 'success' ) ServerTrack_Dedup::mark_as_sent( $dedup_key, 'google' );
+            if ( ( $result['status'] ?? '' ) === 'success' ) ServerTrack_Dedup::mark_string_sent( $dedup_key, 'google' );
             ServerTrack_Logger::log( $result['status'] ?? 'error', 'google', 'Sub cancelled #' . $sub_id, '', $event_id, $order_id, 'SubscriptionCancelled' );
         }
     }
@@ -210,11 +224,12 @@ class ServerTrack_Subscriptions {
         $subscription = wcs_get_subscription( $sub_id );
         if ( ! $subscription ) return;
 
+        // BUG-M1 FIX: options-based string dedup.
         $dedup_key = 'sub_paused_' . $sub_id;
-        if ( ServerTrack_Dedup::was_sent( $dedup_key, 'meta' ) ) return;
+        if ( ServerTrack_Dedup::already_sent( $dedup_key, 'meta' ) ) return;
 
         $event_id = ServerTrack_Dedup::generate_event_id( $dedup_key );
-        ServerTrack_Dedup::store_event_id( $dedup_key, $event_id );
+        self::set_string_event_id( $dedup_key, $event_id );
 
         $user_data = self::build_order_user_data( $subscription );
         $custom    = [
@@ -225,8 +240,42 @@ class ServerTrack_Subscriptions {
         ];
         $e      = ( new ServerTrack_Event( 'SubscriptionPaused', $event_id ) )->set_user_data( $user_data )->set_custom_data( $custom );
         $result = ServerTrack_Meta::send( $e );
-        if ( ( $result['status'] ?? '' ) === 'success' ) ServerTrack_Dedup::mark_as_sent( $dedup_key, 'meta' );
+        if ( ( $result['status'] ?? '' ) === 'success' ) ServerTrack_Dedup::mark_string_sent( $dedup_key, 'meta' );
         ServerTrack_Logger::log( $result['status'] ?? 'error', 'meta', 'Sub paused #' . $sub_id, '', $event_id, 0, 'SubscriptionPaused' );
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // STRING DEDUP EVENT-ID HELPERS
+    // ────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Retrieve a persisted event ID for a string dedup key.
+     *
+     * Uses wp_options so string keys are never coerced to int 0.
+     *
+     * @param string $key  e.g. 'renewal_123_456'
+     * @return string  UUID or empty string if not yet stored.
+     */
+    private static function get_string_event_id( string $key ): string {
+        $stored = get_option(
+            ServerTrack_Dedup::OPTIONS_PREFIX . sanitize_key( $key . '_event_id' ),
+            ''
+        );
+        return is_string( $stored ) ? $stored : '';
+    }
+
+    /**
+     * Persist an event ID for a string dedup key.
+     *
+     * @param string $key      e.g. 'renewal_123_456'
+     * @param string $event_id UUID to store.
+     */
+    private static function set_string_event_id( string $key, string $event_id ): void {
+        update_option(
+            ServerTrack_Dedup::OPTIONS_PREFIX . sanitize_key( $key . '_event_id' ),
+            $event_id,
+            false
+        );
     }
 
     // ────────────────────────────────────────────────────────────────────────
