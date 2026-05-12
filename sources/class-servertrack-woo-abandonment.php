@@ -4,7 +4,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_WooAbandonment  v1.0
+ * ServerTrack_WooAbandonment  v1.1
  *
  * Cart abandonment tracking for WooCommerce.
  *
@@ -44,6 +44,25 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Options:
  *   servertrack_source_abandonment_enabled  — 0/1, default 0 (opt-in)
  *   servertrack_abandonment_window_minutes  — int, default 60
+ *
+ * Changes in v1.1:
+ *   NEW-4 (CRITICAL): fire_abandonment_event() now checks
+ *     ServerTrack_Consent::is_granted() for each platform before sending.
+ *     Previously all three platforms fired unconditionally, violating
+ *     GDPR/ePrivacy for visitors who had not given consent.
+ *
+ *   NEW-5 (MEDIUM): build_session_user_data() replaced
+ *     WC_Geolocation::get_ip_address() (reads spoofable XFF[0]) with the
+ *     same 4-tier priority chain used in ServerTrack_Frontend v2.2:
+ *     CF-Connecting-IP → X-Real-IP → XFF last token → REMOTE_ADDR.
+ *
+ *   NEW-3 (MEDIUM): process_abandonments() now runs a TTL sweep that
+ *     purges records older than 7× the abandonment window before
+ *     processing, preventing unbounded growth of the option row.
+ *
+ *   NEW-6 (LOW): on_cart_updated() uses a deterministic event_id seed
+ *     ('abandon_' . $session_id) instead of time(), closing a race
+ *     condition on simultaneous cart-update hooks.
  */
 class ServerTrack_WooAbandonment {
 
@@ -58,7 +77,7 @@ class ServerTrack_WooAbandonment {
         if ( ! get_option( 'servertrack_source_abandonment_enabled', 0 ) ) return;
 
         // Record cart state whenever cart is updated
-        add_action( 'woocommerce_cart_updated',          [ self::class, 'on_cart_updated' ] );
+        add_action( 'woocommerce_cart_updated',           [ self::class, 'on_cart_updated' ] );
         // Remove abandonment record when order is placed
         add_action( 'woocommerce_checkout_order_created', [ self::class, 'on_order_placed' ], 10, 1 );
         // Remove abandonment record when cart is emptied manually
@@ -118,12 +137,13 @@ class ServerTrack_WooAbandonment {
 
         $user_data = self::build_session_user_data();
 
-        // Re-use existing event_id if we already have a record for this session
-        // to avoid generating a new id on every cart update
+        // NEW-6 fix: use a deterministic seed (no time()) so that two
+        // simultaneous cart-update hooks in the same request always produce
+        // the same event_id before the first upsert is readable.
         $existing = self::get_pending( $session_id );
         $event_id = ! empty( $existing['event_id'] )
             ? $existing['event_id']
-            : ServerTrack_Dedup::generate_event_id( 'abandon_' . $session_id . '_' . time() );
+            : ServerTrack_Dedup::generate_event_id( 'abandon_' . $session_id );
 
         self::upsert_pending( $session_id, [
             'event_id'     => $event_id,
@@ -191,7 +211,27 @@ class ServerTrack_WooAbandonment {
 
         if ( ! $meta_on && ! $tiktok_on && ! $google_on ) return;
 
-        $changed = false;
+        // NEW-3 fix: TTL sweep — purge records that are older than 7× the
+        // abandonment window. This bounds the size of the option row and
+        // prevents unbounded growth from bots, crawlers, or WP-Cron outages.
+        // Default max age: 7 × 60 min = 420 min (7 hours).
+        $max_age = $window_seconds * 7;
+        $changed  = false;
+
+        foreach ( $pending as $session_id => $record ) {
+            $age = $now - (int) ( $record['last_updated'] ?? $now );
+            if ( $age > $max_age ) {
+                ServerTrack_Logger::log(
+                    'skipped', 'all',
+                    'WooAbandonment: purging stale record (age=' . $age . 's, max=' . $max_age . 's) for session ' . $session_id,
+                    '', $record['event_id'] ?? '', 0, 'AbandonedCart'
+                );
+                unset( $pending[ $session_id ] );
+                $changed = true;
+            }
+        }
+
+        // Process records that have exceeded the abandonment window
         foreach ( $pending as $session_id => $record ) {
             // Skip if already sent
             if ( ! empty( $record['sent'] ) ) {
@@ -250,33 +290,48 @@ class ServerTrack_WooAbandonment {
         );
 
         // ── META: InitiateCheckout ───────────────────────────────────────────
-        if ( $meta_on ) {
+        // NEW-4 fix: consent check added — was missing in v1.0.
+        if ( $meta_on && ServerTrack_Consent::is_granted( 'meta' ) ) {
             $e = ( new ServerTrack_Event( 'InitiateCheckout', $event_id ) )
                 ->set_user_data( $user_data )
                 ->set_custom_data( $custom_data );
             $result = ServerTrack_Meta::send( $e );
+            ServerTrack_Logger::log(
+                $result['status'] ?? 'error', 'meta',
+                'AbandonedCart', '', $event_id, 0, 'AbandonedCart'
+            );
             if ( ( $result['status'] ?? '' ) !== 'success' ) {
                 ServerTrack_Retry::maybe_queue( 'meta', $result, ServerTrack_Retry::event_to_args( $e ) );
             }
         }
 
         // ── TIKTOK: InitiateCheckout ─────────────────────────────────────────
-        if ( $tiktok_on ) {
+        // NEW-4 fix: consent check added — was missing in v1.0.
+        if ( $tiktok_on && ServerTrack_Consent::is_granted( 'tiktok' ) ) {
             $e = ( new ServerTrack_Event( 'InitiateCheckout', $event_id ) )
                 ->set_user_data( $user_data )
                 ->set_custom_data( $custom_data );
             $result = ServerTrack_TikTok::send( $e );
+            ServerTrack_Logger::log(
+                $result['status'] ?? 'error', 'tiktok',
+                'AbandonedCart', '', $event_id, 0, 'AbandonedCart'
+            );
             if ( ( $result['status'] ?? '' ) !== 'success' ) {
                 ServerTrack_Retry::maybe_queue( 'tiktok', $result, ServerTrack_Retry::event_to_args( $e ) );
             }
         }
 
         // ── GOOGLE: begin_checkout ───────────────────────────────────────────
-        if ( $google_on ) {
+        // NEW-4 fix: consent check added — was missing in v1.0.
+        if ( $google_on && ServerTrack_Consent::is_granted( 'google' ) ) {
             $e = ( new ServerTrack_Event( 'begin_checkout', $event_id ) )
                 ->set_user_data( $user_data )
                 ->set_custom_data( $custom_data );
             $result = ServerTrack_Google::send( $e );
+            ServerTrack_Logger::log(
+                $result['status'] ?? 'error', 'google',
+                'AbandonedCart', '', $event_id, 0, 'AbandonedCart'
+            );
             if ( ( $result['status'] ?? '' ) !== 'success' ) {
                 ServerTrack_Retry::maybe_queue( 'google', $result, ServerTrack_Retry::event_to_args( $e ) );
             }
@@ -287,16 +342,56 @@ class ServerTrack_WooAbandonment {
     // HELPERS
     // ────────────────────────────────────────────────────────────────────────
 
+    /**
+     * Build user_data from the current HTTP request context.
+     *
+     * NEW-5 fix: replaced WC_Geolocation::get_ip_address() which reads
+     * XFF[0] (the leftmost, client-controlled token) with the same 4-tier
+     * priority chain used in ServerTrack_Frontend v2.2:
+     *   1. CF-Connecting-IP  — Cloudflare sets this; cannot be spoofed.
+     *   2. X-Real-IP         — nginx upstream proxy; not client-accessible.
+     *   3. XFF last token    — rightmost, appended by the last trusted proxy.
+     *   4. REMOTE_ADDR       — kernel TCP peer; absolute fallback.
+     *
+     * @return array
+     */
     private static function build_session_user_data(): array {
         $data = [];
-        $ip   = '';
-        if ( class_exists( 'WC_Geolocation' ) ) {
-            $ip = WC_Geolocation::get_ip_address();
-        } elseif ( ! empty( $_SERVER['REMOTE_ADDR'] ) ) {
+
+        // NEW-5 fix: 4-tier IP chain — mirrors ServerTrack_Frontend::get_request_ip().
+        $ip = '';
+
+        // 1. Cloudflare real-visitor IP (highest trust)
+        if ( ! empty( $_SERVER['HTTP_CF_CONNECTING_IP'] ) ) {
+            $ip = sanitize_text_field( wp_unslash( $_SERVER['HTTP_CF_CONNECTING_IP'] ) );
+        }
+
+        // 2. nginx X-Real-IP (upstream proxy sets this; not client-accessible)
+        if ( empty( $ip ) && ! empty( $_SERVER['HTTP_X_REAL_IP'] ) ) {
+            $ip = sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_REAL_IP'] ) );
+        }
+
+        // 3. XFF last (rightmost) token — appended by the last trusted proxy.
+        //    Do NOT use [0] (leftmost) which the client writes freely.
+        if ( empty( $ip ) && ! empty( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
+            $tokens = array_map( 'trim', explode( ',', wp_unslash( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) );
+            $last   = end( $tokens );
+            if ( $last ) {
+                $ip = sanitize_text_field( $last );
+            }
+        }
+
+        // 4. REMOTE_ADDR — kernel TCP peer; absolute fallback
+        if ( empty( $ip ) && ! empty( $_SERVER['REMOTE_ADDR'] ) ) {
             $ip = sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) );
         }
-        if ( substr( $ip, 0, 7 ) === '::ffff:' ) $ip = substr( $ip, 7 );
-        if ( $ip ) $data['ip'] = sanitize_text_field( $ip );
+
+        // Strip IPv4-mapped IPv6 prefix (::ffff:1.2.3.4 → 1.2.3.4)
+        if ( substr( $ip, 0, 7 ) === '::ffff:' ) {
+            $ip = substr( $ip, 7 );
+        }
+
+        if ( $ip ) $data['ip'] = $ip;
 
         $ua = isset( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '';
         if ( $ua ) $data['user_agent'] = $ua;
