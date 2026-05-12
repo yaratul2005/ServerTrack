@@ -4,25 +4,33 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Dedup  v2.3
+ * ServerTrack_Dedup  v2.4
  *
  * Handles event ID generation, storage, and deduplication flags
  * for both WooCommerce HPOS (custom orders table) and legacy post meta.
  *
+ * Changes in v2.4:
+ *   FIX BUG-FIX-3 — Added already_sent() as a public alias of was_sent().
+ *     ServerTrack_Source_WooCommerce (v3.3.1) calls
+ *     ServerTrack_Dedup::already_sent( $key, $platform ) in multiple places:
+ *       handle_purchase(), handle_full_refund(), handle_order_status_change(),
+ *       fire_add_to_wishlist_event(), handle_partial_refund().
+ *     The method did not exist in any prior version of Dedup — only was_sent()
+ *     existed, which takes an integer $order_id. already_sent() accepts either
+ *     an integer order ID or a string dedup key, routing to was_sent() for
+ *     integer-castable keys and to the options-based path for string keys.
+ *     Without this method every WooCommerce CAPI event caused a PHP fatal:
+ *     "Call to undefined method ServerTrack_Dedup::already_sent()".
+ *
  * Changes in v2.3:
  *   - Added exists() — checks a non-order wp_options dedup key.
- *     Used by ServerTrack_OfflineConversion to guard against double-sending.
  *   - Added set()   — writes a non-order wp_options dedup key.
- *     Used by ServerTrack_OfflineConversion after a successful send.
- *   These two methods pair with reset_event_key() (already present in v2.2)
- *   to form a complete options-based dedup system for non-order events.
  *
  * Changes in v2.2:
  *   - Added reset_for_order() — clears the dedup flags and event ID for a
- *     given order_id. Used by CLI test-purchase to force a re-fire without
- *     corrupting real order meta.
+ *     given order_id.
  *   - Added reset_event_key() — clears a non-order dedup key stored in
- *     wp_options (used for Refund, ViewContent, etc. keyed by string).
+ *     wp_options.
  *
  * CRITICAL FIX (v2.1):
  *   generate_event_id() now produces UUID v4 via wp_generate_uuid4().
@@ -183,6 +191,7 @@ class ServerTrack_Dedup {
     /**
      * Returns true if a server event has already been sent to the given platform.
      *
+     * @param int    $order_id
      * @param string $platform  'meta' | 'google' | 'tiktok'
      */
     public static function was_sent( int $order_id, string $platform ): bool {
@@ -194,12 +203,55 @@ class ServerTrack_Dedup {
     }
 
     /**
+     * already_sent() — poly-dispatch alias added in v2.4 (BUG-FIX-3).
+     *
+     * ServerTrack_Source_WooCommerce calls already_sent() with two different
+     * $key types:
+     *   • Integer-castable strings / ints  → order-meta path (was_sent)
+     *   • Arbitrary string keys like "full_refund_42",
+     *     "order_status_42_on-hold", "wishlist_yith_7_99", etc.
+     *     → options-based path (exists)
+     *
+     * Routing logic:
+     *   If $key is numeric (ctype_digit or is_int), delegate to was_sent().
+     *   Otherwise treat as a string dedup key and look up via options.
+     *
+     * @param int|string $key       Order ID (int) or string dedup key
+     * @param string     $platform  'meta' | 'google' | 'tiktok'
+     * @return bool
+     */
+    public static function already_sent( $key, string $platform ): bool {
+        if ( is_int( $key ) || ( is_string( $key ) && ctype_digit( $key ) ) ) {
+            return self::was_sent( (int) $key, $platform );
+        }
+        // String dedup key — check per-platform option.
+        return (bool) get_option(
+            self::OPTIONS_PREFIX . sanitize_key( $key . '_' . $platform ),
+            false
+        );
+    }
+
+    /**
+     * Mark a string dedup key + platform as sent (companion to already_sent).
+     *
+     * Called internally by dispatch_to_all / dispatch_to_platforms after a
+     * successful send for non-integer dedup keys.
+     *
+     * @param string $key      String dedup key (e.g. 'full_refund_42')
+     * @param string $platform 'meta' | 'google' | 'tiktok'
+     */
+    public static function mark_string_sent( string $key, string $platform ): void {
+        update_option(
+            self::OPTIONS_PREFIX . sanitize_key( $key . '_' . $platform ),
+            1,
+            false
+        );
+    }
+
+    /**
      * Reset all dedup flags and the event ID for a given order.
      *
      * Used by: wp servertrack test-purchase <order_id>
-     * This lets developers re-fire a CAPI event for an existing order in
-     * testing without leaving corrupted state — it only removes the
-     * ServerTrack-specific meta keys, not any WC order data.
      *
      * @param int $order_id  WooCommerce order ID.
      */
@@ -212,10 +264,6 @@ class ServerTrack_Dedup {
 
     /**
      * Check whether a non-order dedup key has been marked as sent.
-     *
-     * Keys are stored in wp_options under the namespaced prefix
-     * 'servertrack_dedup_{key}'. This avoids polluting order meta for
-     * events that are keyed on strings (e.g. 'offline_123').
      *
      * FIX (v2.3): This method was called by ServerTrack_OfflineConversion
      * but never existed, causing a PHP fatal error and preventing the
@@ -232,10 +280,6 @@ class ServerTrack_Dedup {
      * Mark a non-order dedup key as sent.
      *
      * FIX (v2.3): Paired with exists() — both were missing.
-     * ServerTrack_OfflineConversion calls set() after a successful
-     * Meta API response to prevent the offline event from re-sending
-     * on subsequent order_status_completed hooks (e.g. order edited
-     * in admin, status toggled back and forth).
      *
      * @param string $key  e.g. 'offline_123'
      */

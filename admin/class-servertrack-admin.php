@@ -4,7 +4,18 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Admin — v2.7
+ * ServerTrack_Admin — v2.8
+ *
+ * Changes in v2.8:
+ *   FIX BUG-FIX-4 — register_settings() now registers the three source
+ *   options that were previously missing:
+ *     servertrack_source_order_status_enabled  (Order Status Events)
+ *     servertrack_source_wishlist_enabled       (AddToWishlist Events)
+ *     servertrack_source_partial_refund_enabled (Partial Refund Events)
+ *   Without these registrations WordPress silently discarded any changes
+ *   to these toggles on Settings save, making Order Status Events,
+ *   AddToWishlist, and Partial Refund Events impossible to persistently
+ *   enable or disable from the UI.
  *
  * Changes in v2.7:
  *   - ajax_get_logs(): Was returning wp_send_json_success( $logs ) — a raw
@@ -222,15 +233,24 @@ class ServerTrack_Admin {
         self::register_group( 'servertrack_tiktok_settings', $tiktok_options );
 
         // ── Sources tab ─────────────────────────────────────────────
+        //
+        // BUG-FIX-4 (v2.8): Added the three options that were previously
+        // missing from this group. Without them WordPress silently dropped
+        // any form saves for Order Status Events, AddToWishlist, and
+        // Partial Refund Events — making those toggles non-functional.
         $sources_options = [
-            'servertrack_source_woo_enabled'         => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1  ],
-            'servertrack_source_cf7_enabled'         => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
-            'servertrack_source_edd_enabled'         => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
-            'servertrack_source_abandonment_enabled' => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
-            'servertrack_abandonment_window_minutes' => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 60 ],
-            'servertrack_scroll_depth'               => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1  ],
-            'servertrack_video_tracking'             => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1  ],
-            'servertrack_wishlist_tracking'          => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1  ],
+            'servertrack_source_woo_enabled'              => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1  ],
+            'servertrack_source_cf7_enabled'              => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
+            'servertrack_source_edd_enabled'              => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
+            'servertrack_source_abandonment_enabled'      => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
+            'servertrack_abandonment_window_minutes'      => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 60 ],
+            'servertrack_scroll_depth'                    => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1  ],
+            'servertrack_video_tracking'                  => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1  ],
+            'servertrack_wishlist_tracking'               => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1  ],
+            // v2.8 (BUG-FIX-4): previously unregistered — settings save silently discarded these.
+            'servertrack_source_order_status_enabled'     => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1  ],
+            'servertrack_source_wishlist_enabled'         => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
+            'servertrack_source_partial_refund_enabled'   => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1  ],
         ];
         self::register_group( 'servertrack_sources_settings', $sources_options );
 

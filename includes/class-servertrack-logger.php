@@ -4,9 +4,24 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Logger  v2.2
+ * ServerTrack_Logger  v2.3
  *
- * Feature #7 — Enhanced Debug Logger with EMQ Score Storage.
+ * v2.3 fixes:
+ *
+ *   FIX BUG-FIX-1 — Added clear_logs() as a public alias of clear().
+ *     Both ServerTrack_Admin::ajax_clear_log() and
+ *     ServerTrack_Dashboard::ajax_clear_log() called Logger::clear_logs()
+ *     which did not exist, causing a PHP fatal error every time an admin
+ *     attempted to clear the log. The canonical method remains clear();
+ *     clear_logs() simply delegates to it.
+ *
+ *   FIX BUG-FIX-2 — log() now writes 'event_name' alongside 'event_type'.
+ *     Dashboard::render_log_rows() reads $entry['event_name'] and
+ *     compute_breakdown() also keys on 'event_name'. Logger only stored
+ *     'event_type', so every Event column in the dashboard was blank and
+ *     the Top Event Types chart always had no data.
+ *     Fix: log() writes both 'event_type' (preserved for any existing
+ *     consumers) and 'event_name' (the key the Dashboard expects).
  *
  * v2.2 changes (L-1, L-2 fixes):
  *
@@ -87,6 +102,11 @@ class ServerTrack_Logger {
 	 *
 	 * Gated on debug_mode=1 (use error()/warning() for always-on logging).
 	 *
+	 * BUG-FIX-2 (v2.3): The entry now stores both 'event_type' AND 'event_name'
+	 * with the same value. Dashboard::render_log_rows() and compute_breakdown()
+	 * both read $entry['event_name']; previously only 'event_type' was stored,
+	 * so the Event column was always blank and charts showed no event data.
+	 *
 	 * @param string $status      success|error|skipped|queued|dedup_blocked|webhook
 	 * @param string $platform    meta|tiktok|google|all|identity|webhook
 	 * @param string $message     Human-readable description
@@ -117,7 +137,10 @@ class ServerTrack_Logger {
 			'message'    => $message,
 			'event_id'   => $event_id,
 			'order_id'   => $order_id,
+			// BUG-FIX-2: store as both 'event_type' (legacy) and 'event_name'
+			// (Dashboard::render_log_rows / compute_breakdown key).
 			'event_type' => $event_type,
+			'event_name' => $event_type,
 		];
 
 		if ( ! empty( $emq ) && isset( $emq['score'] ) ) {
@@ -168,6 +191,18 @@ class ServerTrack_Logger {
 	 */
 	public static function clear(): void {
 		update_option( self::OPTION_KEY, [], false );
+	}
+
+	/**
+	 * Alias of clear() — added in v2.3 (BUG-FIX-1).
+	 *
+	 * Both ServerTrack_Admin::ajax_clear_log() and
+	 * ServerTrack_Dashboard::ajax_clear_log() call Logger::clear_logs().
+	 * The method did not exist until v2.3, causing a PHP fatal every time
+	 * an admin clicked "Clear log".
+	 */
+	public static function clear_logs(): void {
+		self::clear();
 	}
 
 	// ── Internal helpers ───────────────────────────────────────
