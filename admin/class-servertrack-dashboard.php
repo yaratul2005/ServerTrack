@@ -4,61 +4,74 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Dashboard  v3.2
+ * ServerTrack_Dashboard  v4.1
  *
- * FIX in v3.2:
+ * v4.1 — Replaced every emoji with a clean inline SVG icon.
+ *         All emoji strings (📡 ✅ 🎯 🔄 📊 ❌ 🛰 ✅ 🔵 🟡 🔴 📋 🔄 ⏭ 🚫 🕐)
+ *         are now rendered as accessible <svg> elements using Lucide-style
+ *         24×24 stroke icons. A shared st_svg() helper keeps the markup DRY.
  *
- *   A5 — Chart.js no longer loaded on the Settings page.
- *     enqueue_assets() previously listed all three admin hook slugs in its
- *     $allowed_hooks array:
- *       'toplevel_page_servertrack'              (Dashboard)
- *       'servertrack_page_servertrack-settings'  (Settings)
- *       'settings_page_servertrack'              (legacy fallback)
- *     Chart.js (190 KB minified) was therefore fetched on every Settings tab
- *     even though no <canvas> element exists there. The array is now narrowed
- *     to 'toplevel_page_servertrack' only — the sole page that renders charts.
- *     ServerTrack_Admin::enqueue_assets() (priority 10) still covers the two
- *     Settings hooks for admin.css + admin.js and is unaffected.
- *
- * FIX in v3.1 — Removed duplicate CSS enqueue that caused browser-cache
- * poisoning on the Dashboard page.
- *
- *   ROOT CAUSE: This class registered the stylesheet under the handle
- *   'servertrack-dashboard' at priority 5.  ServerTrack_Admin::enqueue_assets()
- *   then registered the *same* file under the handle 'servertrack-admin' at
- *   priority 10.  WordPress emitted two <link> tags for the same URL —
- *   one with the old cached version and one with the current version —
- *   leaving the browser to use whichever it had cached.  Net result: the
- *   dashboard rendered with no styles (the cached stylesheet was stale and
- *   the newer handle was dequeued as a duplicate URL by some hosts).
- *
- *   FIX: Removed the wp_enqueue_style() call from this class entirely.
- *   ServerTrack_Admin::enqueue_assets() already covers the same
- *   'toplevel_page_servertrack' hook at priority 10 and correctly loads
- *   admin.css under the canonical 'servertrack-admin' handle.
- *   Chart.js is still enqueued here (only this class needs it).
- *
- * FIX in v3.0 — Removed premature wp_localize_script call from enqueue_assets().
- *
- * FIX in v2.9 — HTML class names realigned with admin.css selectors.
- * FIX in v2.8 — Settings/Sources submenu callbacks fixed.
- * FIX in v2.7 — KPI IDs, nonce, breakdown, auto-refresh, dead variable.
- * FIX in v2.6 — Class name mismatch after v2.3 brand overhaul.
+ * v3.2 — Chart.js no longer loaded on the Settings page.
+ * v3.1 — Removed duplicate CSS enqueue (browser-cache poisoning fix).
+ * v3.0 — Removed premature wp_localize_script call.
+ * v2.9 — HTML class names realigned with admin.css selectors.
+ * v2.8 — Settings/Sources submenu callbacks fixed.
+ * v2.7 — KPI IDs, nonce, breakdown, auto-refresh, dead variable.
+ * v2.6 — Class name mismatch after v2.3 brand overhaul.
  */
 class ServerTrack_Dashboard {
+
+    // ────────────────────────────────────────────────────────────────────────
+    // SVG ICON HELPER
+    // Returns a sanitised inline <svg> for a named icon.
+    // All icons are 16×16 viewport, stroke-based, currentColor.
+    // ────────────────────────────────────────────────────────────────────────
+
+    private static function svg( string $name, string $extra_class = '' ): string {
+        $cls = 'st-icon' . ( $extra_class ? ' ' . $extra_class : '' );
+
+        $paths = [
+            // KPI row
+            'signal'      => '<path d="M1 6s1-1 4-1 5 2 8 2 4-1 4-1"/><path d="M1 10s1-1 4-1 5 2 8 2 4-1 4-1"/><path d="M1 14s1-1 4-1 5 2 8 2 4-1 4-1"/>',
+            'check-circle'=> '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
+            'target'      => '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+            'refresh-cw'  => '<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
+            'bar-chart-2' => '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>',
+            'x-circle'    => '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>',
+            // Panel headings
+            'satellite'   => '<circle cx="12" cy="12" r="3"/><path d="M6.41 6.41a7 7 0 0 0 0 9.9 7 7 0 0 0 9.9 0"/><path d="M3.31 3.31a12 12 0 0 0 0 16.97 12 12 0 0 0 16.97 0"/>',
+            'activity'    => '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
+            'clipboard'   => '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>',
+            // EMQ grade dots
+            'check-sq'    => '<polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+            'circle-dot'  => '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/>',
+            // Status icons in log
+            'check'       => '<polyline points="20 6 9 17 4 12"/>',
+            'x'           => '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
+            'skip-forward'=> '<polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/>',
+            'slash'       => '<circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>',
+            'clock'       => '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+            'rotate-ccw'  => '<polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.82"/>',
+            // Misc
+            'alert-tri'   => '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+            'settings'    => '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+        ];
+
+        $inner = $paths[ $name ] ?? '<circle cx="12" cy="12" r="2"/>';
+
+        return sprintf(
+            '<svg class="%s" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">%s</svg>',
+            esc_attr( $cls ),
+            $inner
+        );
+    }
 
     public static function init(): void {
         add_action( 'admin_menu',            [ self::class, 'register_menu' ] );
         add_action( 'admin_enqueue_scripts', [ self::class, 'enqueue_assets' ], 5 );
 
-        // v1 AJAX
         add_action( 'wp_ajax_servertrack_log_data',        [ self::class, 'ajax_log_data' ] );
         add_action( 'wp_ajax_servertrack_platform_health', [ self::class, 'ajax_platform_health' ] );
-
-        // v2 AJAX
-        // NOTE (A3): servertrack_clear_log is the sole owner of this action.
-        // ServerTrack_Admin::init() previously also registered it; that
-        // duplicate has been removed in v2.9 of that class.
         add_action( 'wp_ajax_servertrack_stats_breakdown', [ self::class, 'ajax_stats_breakdown' ] );
         add_action( 'wp_ajax_servertrack_clear_log',       [ self::class, 'ajax_clear_log' ] );
         add_action( 'wp_ajax_servertrack_drain_retries',   [ self::class, 'ajax_drain_retries' ] );
@@ -83,53 +96,15 @@ class ServerTrack_Dashboard {
             56
         );
 
-        add_submenu_page(
-            'servertrack',
-            __( 'Dashboard', 'servertrack' ),
-            __( 'Dashboard', 'servertrack' ),
-            'manage_options',
-            'servertrack',
-            [ self::class, 'render_page' ]
-        );
-
-        // v2.8 FIX: Use ServerTrack_Admin::render_page as callback.
-        add_submenu_page(
-            'servertrack',
-            __( 'Settings', 'servertrack' ),
-            __( 'Settings', 'servertrack' ),
-            'manage_options',
-            'servertrack-settings',
-            [ 'ServerTrack_Admin', 'render_page' ]
-        );
-
-        // v2.8 FIX: render_sources() never existed. Point to Settings page.
-        add_submenu_page(
-            'servertrack',
-            __( 'Event Sources', 'servertrack' ),
-            __( 'Event Sources', 'servertrack' ),
-            'manage_options',
-            'servertrack-sources',
-            [ 'ServerTrack_Admin', 'render_page' ]
-        );
+        add_submenu_page( 'servertrack', __( 'Dashboard', 'servertrack' ), __( 'Dashboard', 'servertrack' ), 'manage_options', 'servertrack',          [ self::class, 'render_page' ] );
+        add_submenu_page( 'servertrack', __( 'Settings',  'servertrack' ), __( 'Settings',  'servertrack' ), 'manage_options', 'servertrack-settings', [ 'ServerTrack_Admin', 'render_page' ] );
+        add_submenu_page( 'servertrack', __( 'Event Sources', 'servertrack' ), __( 'Event Sources', 'servertrack' ), 'manage_options', 'servertrack-sources', [ 'ServerTrack_Admin', 'render_page' ] );
     }
 
-    /**
-     * Enqueue Chart.js on the Dashboard page only.
-     *
-     * A5 FIX (v3.2): $allowed_hooks narrowed to 'toplevel_page_servertrack'.
-     *   Previously all three admin page hooks were listed, causing Chart.js
-     *   (190 KB) to be fetched on the Settings page where no canvas exists.
-     *   CSS is still handled exclusively by ServerTrack_Admin::enqueue_assets()
-     *   (see v3.1 fix note in class docblock).
-     */
     public static function enqueue_assets( string $hook ): void {
-        // A5 FIX: Chart.js is only needed on the Dashboard page.
-        // Settings hooks ('servertrack_page_servertrack-settings',
-        // 'settings_page_servertrack') intentionally excluded.
         if ( 'toplevel_page_servertrack' !== $hook ) {
             return;
         }
-
         wp_enqueue_script(
             'chart-js',
             'https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js',
@@ -137,12 +112,6 @@ class ServerTrack_Dashboard {
             '4.4.3',
             true
         );
-
-        // NOTE: wp_enqueue_style intentionally NOT called here (v3.1 FIX).
-        // ServerTrack_Admin::enqueue_assets() runs at priority 10 on the same
-        // hook and registers admin.css under the canonical 'servertrack-admin'
-        // handle. A second handle pointing to the same URL caused browser-cache
-        // collisions — see class docblock.
     }
 
     // ────────────────────────────────────────────────────────────────────────
@@ -173,31 +142,32 @@ class ServerTrack_Dashboard {
         <?php ServerTrack_Admin::render_page_header(); ?>
 
         <?php
+        // KPI definitions — icon uses svg() helper, no emoji
         $kpis = [
-            [ 'id' => 'st-kpi-total',   'label' => 'Events Today',  'val' => $stats['today_count'],       'sub' => 'All platforms',   'icon' => '📡' ],
-            [ 'id' => 'st-kpi-rate',    'label' => 'Success Rate',  'val' => $stats['success_rate'] . '%','sub' => 'Last 7 days',     'icon' => '✅' ],
-            [ 'id' => 'st-kpi-emq',     'label' => 'Avg EMQ Score', 'val' => $stats['avg_emq'],           'sub' => '0–10 scale',      'icon' => '🎯' ],
-            [ 'id' => 'st-kpi-retry',   'label' => 'Retry Queue',   'val' => $stats['retry_queue'],       'sub' => 'Pending retries', 'icon' => '🔄' ],
-            [ 'id' => 'st-kpi-week',    'label' => 'Total (7d)',    'val' => $stats['week_total'],        'sub' => 'Events sent',     'icon' => '📊' ],
-            [ 'id' => 'st-kpi-errors',  'label' => 'Errors (7d)',   'val' => $stats['week_errors'],       'sub' => 'Failed sends',    'icon' => '❌' ],
+            [ 'id' => 'st-kpi-total',  'label' => 'Events Today',  'val' => $stats['today_count'],        'sub' => 'All platforms',   'icon' => 'signal' ],
+            [ 'id' => 'st-kpi-rate',   'label' => 'Success Rate',  'val' => $stats['success_rate'] . '%', 'sub' => 'Last 7 days',     'icon' => 'check-circle' ],
+            [ 'id' => 'st-kpi-emq',    'label' => 'Avg EMQ Score', 'val' => $stats['avg_emq'],            'sub' => '0–10 scale',      'icon' => 'target' ],
+            [ 'id' => 'st-kpi-retry',  'label' => 'Retry Queue',   'val' => $stats['retry_queue'],        'sub' => 'Pending retries', 'icon' => 'refresh-cw' ],
+            [ 'id' => 'st-kpi-week',   'label' => 'Total (7d)',    'val' => $stats['week_total'],         'sub' => 'Events sent',     'icon' => 'bar-chart-2' ],
+            [ 'id' => 'st-kpi-errors', 'label' => 'Errors (7d)',   'val' => $stats['week_errors'],        'sub' => 'Failed sends',    'icon' => 'x-circle' ],
         ];
         ?>
         <div class="st-kpi-grid" id="st-kpis">
             <?php foreach ( $kpis as $k ) : ?>
             <div class="st-kpi">
-                <div class="st-kpi-icon" aria-hidden="true"><?php echo esc_html( $k['icon'] ); ?></div>
+                <div class="st-kpi-icon" aria-hidden="true"><?php echo self::svg( $k['icon'], 'st-kpi-svg' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></div>
                 <div class="st-kpi-label"><?php echo esc_html( $k['label'] ); ?></div>
                 <div class="st-kpi-val" id="<?php echo esc_attr( $k['id'] ); ?>"><?php echo esc_html( $k['val'] ); ?></div>
-                <div class="st-kpi-label" style="opacity:0.6;font-size:10px;"><?php echo esc_html( $k['sub'] ); ?></div>
+                <div class="st-kpi-sub"><?php echo esc_html( $k['sub'] ); ?></div>
             </div>
             <?php endforeach; ?>
         </div>
 
-        <div class="st-refresh-badge" style="display:flex;align-items:center;gap:10px;margin:12px 0 4px;">
-            <span id="st-live-count" style="font-size:12px;color:var(--st-muted);">Live</span>
+        <div class="st-refresh-badge">
+            <span id="st-live-count" class="st-live-label">Live</span>
             <span class="st-pulse" title="Auto-refreshing every 30s"></span>
             <button class="st-refresh-btn" id="st-manual-refresh" title="Refresh now">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                <?php echo self::svg( 'refresh-cw' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
                 Refresh
                 <span class="st-spinner"></span>
             </button>
@@ -206,8 +176,13 @@ class ServerTrack_Dashboard {
         <div class="st-row">
             <div class="st-panel">
                 <div class="st-panel-header">
-                    <span class="st-panel-title">🛰 Platform Health</span>
-                    <a href="<?php echo esc_url( admin_url( 'admin.php?page=servertrack-settings' ) ); ?>" class="st-panel-action">Configure →</a>
+                    <span class="st-panel-title">
+                        <?php echo self::svg( 'satellite' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                        Platform Health
+                    </span>
+                    <a href="<?php echo esc_url( admin_url( 'admin.php?page=servertrack-settings' ) ); ?>" class="st-panel-action">Configure
+                        <svg class="st-icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                    </a>
                 </div>
                 <div class="st-plat-list">
                     <?php foreach ( $platforms as $p ) :
@@ -230,21 +205,26 @@ class ServerTrack_Dashboard {
 
             <div class="st-panel">
                 <div class="st-panel-header">
-                    <span class="st-panel-title">🎯 EMQ Scorecard (7 days)</span>
+                    <span class="st-panel-title">
+                        <?php echo self::svg( 'target' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                        EMQ Scorecard (7 days)
+                    </span>
                 </div>
                 <div class="st-emq-grades">
                     <?php
-                    $grade_labels = [
-                        'excellent' => '✅ Excellent (8–10)',
-                        'good'      => '🔵 Good (6–7.9)',
-                        'fair'      => '🟡 Fair (4–5.9)',
-                        'poor'      => '🔴 Poor (0–3.9)',
+                    // Grade definitions — SVG icons replace emoji bullets
+                    $grade_defs = [
+                        'excellent' => [ 'label' => 'Excellent (8–10)', 'icon' => 'check-circle',  'color' => '#22c55e' ],
+                        'good'      => [ 'label' => 'Good (6–7.9)',     'icon' => 'circle-dot',    'color' => '#3b82f6' ],
+                        'fair'      => [ 'label' => 'Fair (4–5.9)',     'icon' => 'circle-dot',    'color' => '#eab308' ],
+                        'poor'      => [ 'label' => 'Poor (0–3.9)',     'icon' => 'x-circle',      'color' => '#ef4444' ],
                     ];
-                    foreach ( $grade_labels as $grade => $label ) :
+                    foreach ( $grade_defs as $grade => $def ) :
                         $count = $breakdown['emq_grades'][ $grade ] ?? 0;
                     ?>
                     <div class="st-grade-pill <?php echo esc_attr( $grade ); ?>">
-                        <span style="font-size:12px;"><?php echo esc_html( $label ); ?></span>
+                        <svg class="st-icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="<?php echo esc_attr( $def['color'] ); ?>" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><?php echo $grade_defs[ $grade ]['icon'] === 'check-circle' ? '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>' : ( $grade_defs[ $grade ]['icon'] === 'x-circle' ? '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>' : '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/>' ); // phpcs:ignore ?></svg>
+                        <span><?php echo esc_html( $def['label'] ); ?></span>
                         <span class="st-grade-count"><?php echo esc_html( $count ); ?></span>
                     </div>
                     <?php endforeach; ?>
@@ -256,7 +236,10 @@ class ServerTrack_Dashboard {
         <div class="st-row" style="margin-top:16px;">
             <div class="st-panel">
                 <div class="st-panel-header">
-                    <span class="st-panel-title">📡 Events by Platform (7d)</span>
+                    <span class="st-panel-title">
+                        <?php echo self::svg( 'satellite' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                        Events by Platform (7d)
+                    </span>
                 </div>
                 <div style="max-width:260px;margin:0 auto;">
                     <canvas id="st-plat-chart" height="180"></canvas>
@@ -273,7 +256,10 @@ class ServerTrack_Dashboard {
 
             <div class="st-panel">
                 <div class="st-panel-header">
-                    <span class="st-panel-title">📊 Top Event Types (7d)</span>
+                    <span class="st-panel-title">
+                        <?php echo self::svg( 'bar-chart-2' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                        Top Event Types (7d)
+                    </span>
                 </div>
                 <canvas id="st-events-chart" height="180"></canvas>
             </div>
@@ -283,7 +269,11 @@ class ServerTrack_Dashboard {
         <div style="margin-top:16px;">
         <div class="st-panel">
             <div class="st-panel-header">
-                <span class="st-panel-title">🔄 Retry Queue <span style="font-weight:400;color:var(--st-faint);font-size:12px;">(<?php echo count( $retry_items ); ?> pending)</span></span>
+                <span class="st-panel-title">
+                    <?php echo self::svg( 'rotate-ccw' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                    Retry Queue
+                    <span style="font-weight:400;color:var(--st-faint);font-size:12px;">(<?php echo count( $retry_items ); ?> pending)</span>
+                </span>
                 <button class="st-panel-action" id="st-drain-btn">Drain all now</button>
             </div>
             <div class="st-retry-list" id="st-retry-list">
@@ -311,7 +301,9 @@ class ServerTrack_Dashboard {
         <div style="margin-top:16px;">
         <div class="st-panel">
             <div class="st-panel-header">
-                <span class="st-panel-title">📋 Live Event Log
+                <span class="st-panel-title">
+                    <?php echo self::svg( 'clipboard' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                    Live Event Log
                     <span style="font-weight:400;color:var(--st-faint);font-size:12px;margin-left:6px;">last 200 · auto-refreshes every 30s</span>
                     <span class="st-spinner" id="st-log-spinner"></span>
                 </span>
@@ -327,12 +319,12 @@ class ServerTrack_Dashboard {
                 </select>
                 <select id="st-fs" onchange="stFilter()">
                     <option value=""><?php esc_html_e( 'All Statuses', 'servertrack' ); ?></option>
-                    <option value="success">✅ Success</option>
-                    <option value="error">❌ Error</option>
-                    <option value="skipped">⏭ Skipped</option>
-                    <option value="dedup_blocked">🚫 Dedup Blocked</option>
-                    <option value="queued">🕐 Queued</option>
-                    <option value="retrying">🔄 Retrying</option>
+                    <option value="success">Success</option>
+                    <option value="error">Error</option>
+                    <option value="skipped">Skipped</option>
+                    <option value="dedup_blocked">Dedup Blocked</option>
+                    <option value="queued">Queued</option>
+                    <option value="retrying">Retrying</option>
                 </select>
                 <input type="text" id="st-fe" placeholder="Search event…" oninput="stFilter()" style="min-width:160px;">
                 <input type="text" id="st-fo" placeholder="Order #…" oninput="stFilter()" style="width:100px;">
@@ -458,15 +450,13 @@ class ServerTrack_Dashboard {
                 });
             };
 
-            // ── Auto-refresh: log rows + KPI stats ────────────────────────────
+            // ── Auto-refresh ──────────────────────────────────────────────────
             var refreshTimer = null;
-
             function doRefresh(){
                 var btn = document.getElementById('st-manual-refresh');
                 if(btn) btn.classList.add('st-spinning');
                 var spinner = document.getElementById('st-log-spinner');
                 if(spinner) spinner.style.display='inline-block';
-
                 fetch(ajaxUrl+'?action=servertrack_log_data&nonce='+encodeURIComponent(nonce))
                     .then(function(r){return r.json();})
                     .then(function(res){
@@ -484,34 +474,24 @@ class ServerTrack_Dashboard {
                         if(spinner) spinner.style.display='none';
                     });
             }
-
             var manualBtn = document.getElementById('st-manual-refresh');
             if(manualBtn) manualBtn.addEventListener('click', doRefresh);
-
             refreshTimer = setInterval(doRefresh, 30000);
-
-            window.addEventListener('beforeunload', function(){
-                if(refreshTimer) clearInterval(refreshTimer);
-            });
+            window.addEventListener('beforeunload', function(){ if(refreshTimer) clearInterval(refreshTimer); });
 
             // ── Clear log ─────────────────────────────────────────────────────
             var clearBtn = document.getElementById('st-clear-log-btn');
             if(clearBtn){
                 clearBtn.addEventListener('click', function(){
                     if(!confirm('Clear all log entries?')) return;
-                    fetch(ajaxUrl, {
-                        method:'POST',
-                        headers:{'Content-Type':'application/x-www-form-urlencoded'},
-                        body:'action=servertrack_clear_log&nonce='+encodeURIComponent(nonce)
-                    })
+                    fetch(ajaxUrl,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'action=servertrack_clear_log&nonce='+encodeURIComponent(nonce)})
                     .then(function(r){return r.json();})
                     .then(function(res){
                         if(res.success){
                             var tbody = document.getElementById('st-log-tbody');
                             if(tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--st-faint);">Log cleared.</td></tr>';
                         }
-                    })
-                    .catch(function(){});
+                    }).catch(function(){});
                 });
             }
 
@@ -521,26 +501,19 @@ class ServerTrack_Dashboard {
                 drainBtn.addEventListener('click', function(){
                     drainBtn.disabled = true;
                     drainBtn.textContent = 'Draining…';
-                    fetch(ajaxUrl, {
-                        method:'POST',
-                        headers:{'Content-Type':'application/x-www-form-urlencoded'},
-                        body:'action=servertrack_drain_retries&nonce='+encodeURIComponent(nonce)
-                    })
+                    fetch(ajaxUrl,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'action=servertrack_drain_retries&nonce='+encodeURIComponent(nonce)})
                     .then(function(r){return r.json();})
-                    .then(function(res){
-                        drainBtn.textContent = res.success ? 'Done ✓' : 'Error';
-                    })
+                    .then(function(res){ drainBtn.textContent = res.success ? 'Done ✓' : 'Error'; })
                     .catch(function(){ drainBtn.textContent = 'Error'; });
                 });
             }
-
         })();
         </script>
         <?php
     }
 
     // ────────────────────────────────────────────────────────────────────────
-    // LOG ROWS RENDERER
+    // LOG ROWS RENDERER  — SVG status icons, no emoji
     // ────────────────────────────────────────────────────────────────────────
 
     public static function render_log_rows( array $logs ): void {
@@ -548,6 +521,26 @@ class ServerTrack_Dashboard {
             echo '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--st-faint);">No events logged yet.</td></tr>';
             return;
         }
+
+        // Inline SVG icon strings per status
+        $status_icons = [
+            'success'       => '<svg class="st-icon st-icon-status" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>',
+            'error'         => '<svg class="st-icon st-icon-status" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+            'skipped'       => '<svg class="st-icon st-icon-status" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>',
+            'dedup_blocked' => '<svg class="st-icon st-icon-status" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>',
+            'queued'        => '<svg class="st-icon st-icon-status" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+            'retrying'      => '<svg class="st-icon st-icon-status" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.82"/></svg>',
+        ];
+
+        $status_cls = [
+            'success'       => 'success',
+            'error'         => 'error',
+            'skipped'       => 'skipped',
+            'dedup_blocked' => 'dedup',
+            'queued'        => 'queued',
+            'retrying'      => 'retrying',
+        ];
+
         foreach ( $logs as $entry ) {
             $status   = $entry['status']     ?? '';
             $platform = $entry['platform']   ?? '';
@@ -557,15 +550,8 @@ class ServerTrack_Dashboard {
             $ts       = $entry['timestamp']  ?? '';
             $emq      = isset( $entry['emq_score'] ) ? number_format( (float) $entry['emq_score'], 1 ) : '—';
 
-            $status_map = [
-                'success'      => [ '✅', 'success' ],
-                'error'        => [ '❌', 'error' ],
-                'skipped'      => [ '⏭', 'skipped' ],
-                'dedup_blocked'=> [ '🚫', 'dedup' ],
-                'queued'       => [ '🕐', 'queued' ],
-                'retrying'     => [ '🔄', 'retrying' ],
-            ];
-            [ $icon, $cls ] = $status_map[ $status ] ?? [ '•', '' ];
+            $icon = $status_icons[ $status ] ?? '<span style="width:13px;display:inline-block;">•</span>';
+            $cls  = $status_cls[ $status ]   ?? '';
 
             printf(
                 '<tr data-row="1" data-platform="%s" data-status="%s" data-event="%s" data-order="%s">' .
@@ -575,7 +561,9 @@ class ServerTrack_Dashboard {
                 '<td style="max-width:260px;word-break:break-word;">%s</td></tr>',
                 esc_attr( $platform ), esc_attr( $status ), esc_attr( $event ), esc_attr( (string) $order ),
                 esc_html( $ts ),
-                esc_attr( $cls ), esc_html( $icon ), esc_html( ucfirst( $status ) ),
+                esc_attr( $cls ),
+                $icon, // phpcs:ignore — sanitised SVG
+                esc_html( ucfirst( $status ) ),
                 esc_html( ucfirst( $platform ) ),
                 esc_html( $event ),
                 esc_html( (string) $order ),
@@ -590,35 +578,23 @@ class ServerTrack_Dashboard {
     // ────────────────────────────────────────────────────────────────────────
 
     private static function compute_stats( array $logs ): array {
-        $today     = gmdate( 'Y-m-d' );
-        $week_ago  = gmdate( 'Y-m-d', strtotime( '-7 days' ) );
+        $today    = gmdate( 'Y-m-d' );
+        $week_ago = gmdate( 'Y-m-d', strtotime( '-7 days' ) );
 
-        $today_count  = 0;
-        $week_total   = 0;
-        $week_success = 0;
-        $week_errors  = 0;
-        $emq_sum      = 0.0;
-        $emq_count    = 0;
+        $today_count = $week_total = $week_success = $week_errors = $emq_count = 0;
+        $emq_sum = 0.0;
 
         foreach ( $logs as $entry ) {
             $ts     = substr( $entry['timestamp'] ?? '', 0, 10 );
             $status = $entry['status'] ?? '';
-
-            if ( $ts === $today ) {
-                $today_count++;
-            }
-
+            if ( $ts === $today ) $today_count++;
             if ( $ts >= $week_ago ) {
                 $week_total++;
                 if ( 'success' === $status ) $week_success++;
                 if ( 'error'   === $status ) $week_errors++;
-                if ( isset( $entry['emq_score'] ) ) {
-                    $emq_sum += (float) $entry['emq_score'];
-                    $emq_count++;
-                }
+                if ( isset( $entry['emq_score'] ) ) { $emq_sum += (float) $entry['emq_score']; $emq_count++; }
             }
         }
-
         return [
             'today_count'  => $today_count,
             'week_total'   => $week_total,
@@ -630,82 +606,46 @@ class ServerTrack_Dashboard {
     }
 
     private static function compute_breakdown( array $logs ): array {
-        $week_ago     = gmdate( 'Y-m-d', strtotime( '-7 days' ) );
-        $by_platform  = [ 'meta' => 0, 'google' => 0, 'tiktok' => 0 ];
-        $by_event     = [];
-        $emq_grades   = [ 'excellent' => 0, 'good' => 0, 'fair' => 0, 'poor' => 0 ];
+        $week_ago    = gmdate( 'Y-m-d', strtotime( '-7 days' ) );
+        $by_platform = [ 'meta' => 0, 'google' => 0, 'tiktok' => 0 ];
+        $by_event    = [];
+        $emq_grades  = [ 'excellent' => 0, 'good' => 0, 'fair' => 0, 'poor' => 0 ];
 
         foreach ( $logs as $entry ) {
             $ts = substr( $entry['timestamp'] ?? '', 0, 10 );
             if ( $ts < $week_ago ) continue;
-
             $plat = strtolower( $entry['platform'] ?? '' );
-            if ( isset( $by_platform[ $plat ] ) ) {
-                $by_platform[ $plat ]++;
-            }
-
+            if ( isset( $by_platform[ $plat ] ) ) $by_platform[ $plat ]++;
             $ev = $entry['event_name'] ?? '';
-            if ( $ev ) {
-                $by_event[ $ev ] = ( $by_event[ $ev ] ?? 0 ) + 1;
-            }
-
+            if ( $ev ) $by_event[ $ev ] = ( $by_event[ $ev ] ?? 0 ) + 1;
             if ( isset( $entry['emq_score'] ) ) {
                 $s = (float) $entry['emq_score'];
-                if ( $s >= 8 )      $emq_grades['excellent']++;
-                elseif ( $s >= 6 )  $emq_grades['good']++;
-                elseif ( $s >= 4 )  $emq_grades['fair']++;
-                else                $emq_grades['poor']++;
+                if ( $s >= 8 ) $emq_grades['excellent']++;
+                elseif ( $s >= 6 ) $emq_grades['good']++;
+                elseif ( $s >= 4 ) $emq_grades['fair']++;
+                else $emq_grades['poor']++;
             }
         }
-
         arsort( $by_event );
-        $top_events = array_slice( $by_event, 0, 8, true );
-
-        return [
-            'by_platform' => $by_platform,
-            'top_events'  => $top_events,
-            'emq_grades'  => $emq_grades,
-        ];
+        return [ 'by_platform' => $by_platform, 'top_events' => array_slice( $by_event, 0, 8, true ), 'emq_grades' => $emq_grades ];
     }
 
     private static function get_platform_statuses( array $logs ): array {
-        $today    = gmdate( 'Y-m-d' );
-        $counts   = [ 'meta' => 0, 'google' => 0, 'tiktok' => 0 ];
-
+        $today  = gmdate( 'Y-m-d' );
+        $counts = [ 'meta' => 0, 'google' => 0, 'tiktok' => 0 ];
         foreach ( $logs as $entry ) {
             $plat = strtolower( $entry['platform'] ?? '' );
             $ts   = substr( $entry['timestamp'] ?? '', 0, 10 );
-            if ( $ts === $today && isset( $counts[ $plat ] ) ) {
-                $counts[ $plat ]++;
-            }
+            if ( $ts === $today && isset( $counts[ $plat ] ) ) $counts[ $plat ]++;
         }
-
         $defs = [
-            'meta'   => [
-                'name'    => 'Meta CAPI',
-                'enabled' => (bool) get_option( 'servertrack_meta_enabled', 0 ),
-                'ok'      => (bool) ( get_option( 'servertrack_meta_pixel_id', '' ) && get_option( 'servertrack_meta_access_token', '' ) ),
-            ],
-            'google' => [
-                'name'    => 'Google Ads',
-                'enabled' => (bool) get_option( 'servertrack_google_enabled', 0 ),
-                'ok'      => (bool) get_option( 'servertrack_google_refresh_token', '' ),
-            ],
-            'tiktok' => [
-                'name'    => 'TikTok Events',
-                'enabled' => (bool) get_option( 'servertrack_tiktok_enabled', 0 ),
-                'ok'      => (bool) ( get_option( 'servertrack_tiktok_pixel_id', '' ) && get_option( 'servertrack_tiktok_access_token', '' ) ),
-            ],
+            'meta'   => [ 'name' => 'Meta CAPI',     'enabled' => (bool) get_option( 'servertrack_meta_enabled', 0 ),   'ok' => (bool) ( get_option( 'servertrack_meta_pixel_id', '' ) && get_option( 'servertrack_meta_access_token', '' ) ) ],
+            'google' => [ 'name' => 'Google Ads',    'enabled' => (bool) get_option( 'servertrack_google_enabled', 0 ), 'ok' => (bool) get_option( 'servertrack_google_refresh_token', '' ) ],
+            'tiktok' => [ 'name' => 'TikTok Events', 'enabled' => (bool) get_option( 'servertrack_tiktok_enabled', 0 ), 'ok' => (bool) ( get_option( 'servertrack_tiktok_pixel_id', '' ) && get_option( 'servertrack_tiktok_access_token', '' ) ) ],
         ];
-
         $out = [];
         foreach ( $defs as $key => $d ) {
-            $out[] = [
-                'name'    => $d['name'],
-                'enabled' => $d['enabled'],
-                'status'  => $d['enabled'] ? ( $d['ok'] ? 'Active' : 'Missing credentials' ) : 'Disabled',
-                'today'   => $counts[ $key ],
-            ];
+            $out[] = [ 'name' => $d['name'], 'enabled' => $d['enabled'], 'status' => $d['enabled'] ? ( $d['ok'] ? 'Active' : 'Missing credentials' ) : 'Disabled', 'today' => $counts[ $key ] ];
         }
         return $out;
     }
@@ -717,29 +657,22 @@ class ServerTrack_Dashboard {
     public static function ajax_log_data(): void {
         check_ajax_referer( 'servertrack_dashboard', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Unauthorized' );
-
         $logs = get_option( 'servertrack_debug_log', [] );
         $recent = array_slice( array_reverse( $logs ), 0, 200 );
-
-        ob_start();
-        self::render_log_rows( $recent );
-        $html = ob_get_clean();
-
+        ob_start(); self::render_log_rows( $recent ); $html = ob_get_clean();
         wp_send_json_success( [ 'rows' => $html, 'total' => count( $logs ) ] );
     }
 
     public static function ajax_platform_health(): void {
         check_ajax_referer( 'servertrack_dashboard', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Unauthorized' );
-        $logs = get_option( 'servertrack_debug_log', [] );
-        wp_send_json_success( self::get_platform_statuses( $logs ) );
+        wp_send_json_success( self::get_platform_statuses( get_option( 'servertrack_debug_log', [] ) ) );
     }
 
     public static function ajax_stats_breakdown(): void {
         check_ajax_referer( 'servertrack_dashboard', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Unauthorized' );
-        $logs = get_option( 'servertrack_debug_log', [] );
-        wp_send_json_success( self::compute_breakdown( $logs ) );
+        wp_send_json_success( self::compute_breakdown( get_option( 'servertrack_debug_log', [] ) ) );
     }
 
     public static function ajax_clear_log(): void {
@@ -753,16 +686,10 @@ class ServerTrack_Dashboard {
         check_ajax_referer( 'servertrack_dashboard', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Unauthorized' );
         $queue = get_option( 'servertrack_retry_queue', [] );
-        if ( empty( $queue ) ) {
-            wp_send_json_success( [ 'drained' => 0 ] );
-            return;
-        }
+        if ( empty( $queue ) ) { wp_send_json_success( [ 'drained' => 0 ] ); return; }
         $drained = 0;
         foreach ( $queue as $item ) {
-            if ( class_exists( 'ServerTrack_Retry' ) ) {
-                ServerTrack_Retry::process_item( $item );
-                $drained++;
-            }
+            if ( class_exists( 'ServerTrack_Retry' ) ) { ServerTrack_Retry::process_item( $item ); $drained++; }
         }
         delete_option( 'servertrack_retry_queue' );
         wp_send_json_success( [ 'drained' => $drained ] );
