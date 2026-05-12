@@ -4,9 +4,18 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Consent  v2.1
+ * ServerTrack_Consent  v2.2
  *
- * CRITICAL FIX (v2.1) — Per-order consent storage:
+ * Changes in v2.2:
+ *   BUG-M5: The cron-bypass deny path previously called
+ *     ServerTrack_Logger::log('skipped', ...) which respects the debug_mode
+ *     gate — meaning in production (debug_mode=0) consent failures were silently
+ *     swallowed with no trace in the log table.
+ *     Fixed: replaced with ServerTrack_Logger::warning(...) which bypasses the
+ *     debug_mode check so store owners always see consent-block events regardless
+ *     of debug settings. This is critical for GDPR audit trails.
+ *
+ * Changes in v2.1 (CRITICAL FIX — Per-order consent storage):
  *
  *   Previously, cron/async context bypassed cookie checks entirely with the
  *   assumption that "the originating request already passed consent". This is
@@ -41,12 +50,6 @@ class ServerTrack_Consent {
     /**
      * Checks if consent is granted for a given platform.
      *
-     * For order-context async calls: pass $order_id to read stored per-order
-     * consent instead of falling back to cookie/bypass logic.
-     *
-     * For synchronous browser-context calls (ViewContent, AddToCart, CF7):
-     * omit $order_id — cookie-based check is used as normal.
-     *
      * @param string   $platform  'meta' | 'google' | 'tiktok'
      * @param int|null $order_id  Pass the order ID for async/cron contexts.
      * @return bool
@@ -60,8 +63,6 @@ class ServerTrack_Consent {
         }
 
         // ── Per-order consent (async/cron context) ───────────────────────
-        // If an order_id is provided, read the consent snapshot stored when
-        // the customer was present in their browser. This is authoritative.
         if ( null !== $order_id && $order_id > 0 && function_exists( 'wc_get_order' ) ) {
             $order = wc_get_order( $order_id );
             if ( $order instanceof \WC_Abstract_Order ) {
@@ -69,28 +70,24 @@ class ServerTrack_Consent {
                 if ( is_array( $stored ) && isset( $stored[ $platform ] ) ) {
                     return (bool) $stored[ $platform ];
                 }
-                // Meta not yet written (order created before v2.1 upgrade).
-                // Fall through to cookie check — but only if NOT in cron/CLI.
             }
         }
 
         // ── Cron / CLI / REST — no browser session ──────────────────────
-        // If we reach here in a cron context without stored consent,
-        // we cannot read cookies. Fail safe: deny if consent mode is active
-        // and no per-order record exists, EXCEPT for 'manual' mode which
-        // uses a filter (which the developer controls).
         if ( self::is_cron_or_cli() ) {
             if ( 'manual' === $mode ) {
                 return (bool) apply_filters( 'servertrack_consent_granted', false, $platform );
             }
-            // No per-order record + cron + active consent mode = deny.
-            // This is the GDPR-safe choice. Log it so the developer notices.
-            ServerTrack_Logger::log(
-                'skipped', $platform,
-                'Consent check in cron: no per-order consent record found for this order. ' .
-                'Capture consent at checkout by calling ServerTrack_Consent::capture_for_order(). ' .
-                'Event blocked.',
-                '', '', (int) ( $order_id ?? 0 ), 'ConsentCheck'
+            // BUG-M5 fix: use warning() instead of log() so this is ALWAYS
+            // written to the log regardless of the debug_mode setting.
+            // In production (debug_mode=0), log() is gated and swallows this
+            // entry silently — store owners would have no visibility into
+            // why events are being blocked. warning() bypasses the gate.
+            ServerTrack_Logger::warning(
+                'Consent check in cron/CLI: no per-order consent record found for order #'
+                . (int) ( $order_id ?? 0 )
+                . '. Ensure ServerTrack_Consent::capture_for_order() is called at checkout. '
+                . 'Platform=' . $platform . '. Event blocked (GDPR-safe deny).'
             );
             return false;
         }
@@ -125,13 +122,6 @@ class ServerTrack_Consent {
     /**
      * Captures the current browser consent state and stores it as order meta.
      *
-     * MUST be called in browser context (before checkout redirect / cron dispatch)
-     * so that $_COOKIE is available. Call this from:
-     *   - on_initiate_checkout()  (before dispatching async purchase)
-     *   - on_thankyou()           (captures consent at thank-you page render)
-     *
-     * Idempotent: safe to call multiple times — only writes if not already set.
-     *
      * @param int $order_id  WooCommerce order ID.
      */
     public static function capture_for_order( int $order_id ): void {
@@ -143,7 +133,6 @@ class ServerTrack_Consent {
             return;
         }
 
-        // Only write once — do not overwrite if already captured
         $existing = $order->get_meta( self::ORDER_META_KEY, true );
         if ( is_array( $existing ) && ! empty( $existing ) ) {
             return;
@@ -152,7 +141,6 @@ class ServerTrack_Consent {
         $platforms = [ 'meta', 'google', 'tiktok' ];
         $consent   = [];
         foreach ( $platforms as $platform ) {
-            // Temporarily suppress the cron check — we ARE in browser context here
             $consent[ $platform ] = self::check_browser_consent( $platform );
         }
 
@@ -162,7 +150,6 @@ class ServerTrack_Consent {
 
     /**
      * Pure browser-cookie consent check (no cron bypass, no order lookup).
-     * Used internally by capture_for_order() to snapshot live consent state.
      *
      * @param string $platform
      * @return bool
@@ -200,7 +187,6 @@ class ServerTrack_Consent {
 
     /**
      * Returns true when running inside WP-Cron, WP-CLI, or a REST request.
-     * In these contexts there is no browser session and no cookies.
      */
     private static function is_cron_or_cli(): bool {
         if ( defined( 'DOING_CRON' ) && DOING_CRON ) {

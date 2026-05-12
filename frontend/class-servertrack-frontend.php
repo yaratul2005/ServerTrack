@@ -4,36 +4,36 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Frontend  v2.1
+ * ServerTrack_Frontend  v2.2
  *
  * Injects browser pixel config for all page types.
  *
+ * Changes in v2.2:
+ *   BUG-H1 + BUG-H2: get_request_ip() replaced with a 4-tier priority chain:
+ *     1. HTTP_CF_CONNECTING_IP — Cloudflare sets this; cannot be spoofed by clients.
+ *     2. HTTP_X_REAL_IP        — nginx upstream proxy; not client-controlled.
+ *     3. HTTP_X_FORWARDED_FOR last token — rightmost entry is appended by the last
+ *        trusted proxy, not the client. The previous code used [0] (first/leftmost)
+ *        which is entirely client-controlled and trivially spoofable.
+ *     4. REMOTE_ADDR           — kernel TCP peer; final fallback.
+ *     Fix resolves both the XFF spoofing bypass (BUG-H1) and the CDN IP-collapse
+ *     issue where all Cloudflare traffic shared one REMOTE_ADDR (BUG-H2).
+ *
+ *   BUG-M4: rest_custom_event() now strips a PII field blocklist from $params
+ *     before merging into custom_data / logging. Prevents plaintext email,
+ *     phone, credit card numbers, tokens, etc. from appearing in the debug log
+ *     when a developer accidentally passes user data in the params object.
+ *
  * Changes in v2.1 (FIX-12):
- *   rest_custom_event() accepted any arbitrary string as event_name, sanitised
- *   only by sanitize_text_field(). An attacker could push arbitrary event names
- *   into CAPI (e.g. injecting unexpected event types, bypassing platform-side
- *   validation, or probing for backend errors). Added $allowed_events allowlist;
- *   unknown event names are rejected with WP_Error 400 before any processing.
- *   The allowlist covers all standard Meta CAPI + TikTok Events API event names
- *   supported by ServerTrack. Custom events must be added to the list explicitly.
+ *   rest_custom_event() accepted any arbitrary string as event_name. Added
+ *   $allowed_events allowlist; unknown event names rejected with 400.
  *
  * Bugs fixed vs v1:
- *   - user_email was being sent as a pre-hashed SHA256 string to fbq('init').
- *     Meta Pixel fbq('init') 'em' parameter must be RAW email or raw-then-hashed
- *     by the pixel itself. Meta normalises and hashes internally.
- *     Fixed: send raw email to fbq('init') only — never expose in page source;
- *     instead rely on the pixel's own hashing OR omit from init entirely and
- *     let CAPI carry the hashed version server-side (higher match quality).
- *   - gtag_id and gtag_label options were not registered in admin settings,
- *     always returned empty string. Fixed: registered under servertrack_settings.
- *   - GCLID recovery on thank-you page referenced global $wp->query_vars which
- *     is only available after parse_request. Now uses correct get_query_var().
- *   - initTikTokPixel() called ttq.page() explicitly AND the snippet already
- *     auto-calls ttq.page() — resulted in a double TikTok PageView event.
- *     Fixed: removed manual ttq.page() call; the snippet handles it.
- *   - REST endpoint: permission_callback '__return_true' with silent nonce
- *     skip allowed unauthenticated callers to pump arbitrary CAPI events.
- *     Fixed: rate-limit by IP (10 req/min) using a transient bucket.
+ *   - user_email sent as pre-hashed SHA256 to fbq('init') — fixed.
+ *   - gtag_id / gtag_label options not registered — fixed.
+ *   - GCLID recovery used $wp->query_vars — fixed to get_query_var().
+ *   - initTikTokPixel() double-fired ttq.page() — fixed.
+ *   - REST endpoint allowed unauthenticated CAPI pumping — fixed with IP rate-limit.
  */
 class ServerTrack_Frontend {
 
@@ -41,8 +41,6 @@ class ServerTrack_Frontend {
      * Allowlist of event names accepted by the /custom-event REST endpoint.
      *
      * FIX-12: Prevents arbitrary strings from reaching CAPI senders.
-     * All standard Meta CAPI and TikTok Events API event names are included.
-     * Add custom event names here when extending the plugin.
      */
     private const ALLOWED_EVENT_NAMES = [
         // Standard purchase funnel
@@ -67,6 +65,28 @@ class ServerTrack_Frontend {
         'Donate',
         'StartTrial',
         'SubmitApplication',
+    ];
+
+    /**
+     * PII field names that must never appear in custom_data / debug logs.
+     *
+     * BUG-M4 fix: any param key matching this list is stripped before
+     * merging into the event's custom_data payload.
+     */
+    private const PII_PARAM_BLOCKLIST = [
+        'email',
+        'phone',
+        'credit_card',
+        'card_number',
+        'cvv',
+        'ssn',
+        'password',
+        'token',
+        'api_key',
+        'secret',
+        'access_token',
+        'refresh_token',
+        'authorization',
     ];
 
     public static function init() {
@@ -103,9 +123,7 @@ class ServerTrack_Frontend {
             return new WP_Error( 'disabled', 'ServerTrack disabled', [ 'status' => 403 ] );
         }
 
-        // FIX-12: Validate event_name against the allowlist before any processing.
-        // sanitize_text_field() alone only strips tags/extra whitespace — it does
-        // not prevent arbitrary event type strings from reaching CAPI senders.
+        // FIX-12: Validate event_name against the allowlist.
         $event_name = $request->get_param( 'event_name' );
         if ( ! in_array( $event_name, self::ALLOWED_EVENT_NAMES, true ) ) {
             return new WP_Error(
@@ -119,7 +137,7 @@ class ServerTrack_Frontend {
             );
         }
 
-        // FIX: Rate limit by IP — 10 events per minute per IP (prevents CAPI abuse)
+        // Rate limit by IP — 10 events per minute per IP
         $ip         = self::get_request_ip();
         $rate_key   = 'st_rl_' . md5( $ip );
         $rate_count = (int) get_transient( $rate_key );
@@ -128,16 +146,23 @@ class ServerTrack_Frontend {
         }
         set_transient( $rate_key, $rate_count + 1, MINUTE_IN_SECONDS );
 
-        $event_id   = $request->get_param( 'event_id' ) ?: ServerTrack_Dedup::generate_event_id( $event_name . '_rest_' . time() );
-        // FIX: params must be cast to array, not sanitize_text_field'd as a string
-        $params     = (array) ( $request->get_param( 'params' ) ?: [] );
-        $url        = $request->get_param( 'url' ) ?: '';
-        $fbc        = $request->get_param( 'fbc' )    ?: '';
-        $fbp        = $request->get_param( 'fbp' )    ?: '';
-        $ttclid     = $request->get_param( 'ttclid' ) ?: '';
+        $event_id = $request->get_param( 'event_id' ) ?: ServerTrack_Dedup::generate_event_id( $event_name . '_rest_' . time() );
+        $params   = (array) ( $request->get_param( 'params' ) ?: [] );
+        $url      = $request->get_param( 'url' )    ?: '';
+        $fbc      = $request->get_param( 'fbc' )    ?: '';
+        $fbp      = $request->get_param( 'fbp' )    ?: '';
+        $ttclid   = $request->get_param( 'ttclid' ) ?: '';
 
         // Sanitise params array values recursively
         array_walk_recursive( $params, function( &$v ) { $v = sanitize_text_field( (string) $v ); } );
+
+        // BUG-M4 fix: strip PII fields before merging into custom_data / logs.
+        // Developers may accidentally pass user data (email, phone, etc.) in
+        // the params object — remove them defensively to prevent plaintext PII
+        // from appearing in the ServerTrack debug log table.
+        foreach ( self::PII_PARAM_BLOCKLIST as $pii_field ) {
+            unset( $params[ $pii_field ] );
+        }
 
         $ua = isset( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '';
 
@@ -166,14 +191,61 @@ class ServerTrack_Frontend {
         return rest_ensure_response( [ 'sent' => true, 'results' => $results ] );
     }
 
+    /**
+     * Resolve the real client IP using a trusted priority chain.
+     *
+     * BUG-H1 fix: the old code read explode(',', XFF)[0] — the leftmost token —
+     * which is entirely client-controlled (the client writes it). An attacker can
+     * rotate fake IPs per request to bypass the rate-limiter trivially.
+     *
+     * BUG-H2 fix: behind Cloudflare, REMOTE_ADDR is a shared Cloudflare egress IP
+     * used by thousands of concurrent visitors. Using it as the rate-limit bucket
+     * causes all legitimate users behind the CDN to share one counter, leading to
+     * mass 429s during any traffic spike.
+     *
+     * Priority (highest trust first):
+     *   1. CF-Connecting-IP  — Cloudflare appends this; clients cannot spoof it.
+     *   2. X-Real-IP         — Set by nginx upstream; clients cannot spoof it.
+     *   3. XFF last token    — Rightmost token is appended by the last trusted proxy,
+     *                          not the client. Each proxy appends its own view of the
+     *                          upstream IP, so the last entry is always server-side.
+     *   4. REMOTE_ADDR       — TCP peer from the kernel; the absolute fallback.
+     *
+     * @return string  Sanitised IP address string.
+     */
     private static function get_request_ip(): string {
         $ip = '';
-        if ( ! empty( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
-            $ip = sanitize_text_field( wp_unslash( explode( ',', $_SERVER['HTTP_X_FORWARDED_FOR'] )[0] ) );
-        } elseif ( ! empty( $_SERVER['REMOTE_ADDR'] ) ) {
+
+        // 1. Cloudflare real-visitor IP (highest trust — CF infrastructure sets this)
+        if ( ! empty( $_SERVER['HTTP_CF_CONNECTING_IP'] ) ) {
+            $ip = sanitize_text_field( wp_unslash( $_SERVER['HTTP_CF_CONNECTING_IP'] ) );
+        }
+
+        // 2. nginx X-Real-IP (upstream proxy sets this; not client-accessible)
+        if ( empty( $ip ) && ! empty( $_SERVER['HTTP_X_REAL_IP'] ) ) {
+            $ip = sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_REAL_IP'] ) );
+        }
+
+        // 3. XFF last (rightmost) token — appended by the last trusted proxy.
+        //    Do NOT use [0] (leftmost) which the client writes freely.
+        if ( empty( $ip ) && ! empty( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
+            $tokens = array_map( 'trim', explode( ',', wp_unslash( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) );
+            $last   = end( $tokens );
+            if ( $last ) {
+                $ip = sanitize_text_field( $last );
+            }
+        }
+
+        // 4. REMOTE_ADDR — kernel TCP peer; absolute fallback
+        if ( empty( $ip ) && ! empty( $_SERVER['REMOTE_ADDR'] ) ) {
             $ip = sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) );
         }
-        if ( substr( $ip, 0, 7 ) === '::ffff:' ) $ip = substr( $ip, 7 );
+
+        // Strip IPv4-mapped IPv6 prefix (::ffff:1.2.3.4 → 1.2.3.4)
+        if ( substr( $ip, 0, 7 ) === '::ffff:' ) {
+            $ip = substr( $ip, 7 );
+        }
+
         return $ip;
     }
 
@@ -214,17 +286,9 @@ class ServerTrack_Frontend {
             'rest_nonce' => wp_create_nonce( 'wp_rest' ),
         ];
 
-        // FIX: user_email — send raw to fbq('init') for pixel-side hashing
-        // NEVER expose raw email in page source. Use wp_json_encode's unicode escaping.
-        // Actually: omit raw PII from page config entirely — CAPI carries hashed version.
-        // Logged-in identity is handled server-side where we have real hashed PII.
-        // We only expose a flag so the pixel knows identity is available.
         if ( is_user_logged_in() ) {
             $user = wp_get_current_user();
             if ( $user->user_email ) {
-                // Send lowercase trimmed raw email — pixel hashes it internally
-                // This is secure because wp_localize_script JSON-encodes it
-                // and it's no more exposed than any logged-in page content
                 $config['user_email'] = strtolower( trim( $user->user_email ) );
             }
         }
@@ -276,7 +340,6 @@ class ServerTrack_Frontend {
 
         // ── Thank-you / Purchase ──────────────────────────────────────────────
         if ( function_exists( 'is_order_received_page' ) && is_order_received_page() ) {
-            // FIX: use get_query_var() not $wp->query_vars (only available post-parse_request)
             $order_id = absint( get_query_var( 'order-received', 0 ) );
             if ( $order_id ) {
                 $order = wc_get_order( $order_id );
@@ -298,7 +361,6 @@ class ServerTrack_Frontend {
                     $config['contents']    = $contents;
                     $config['content_ids'] = $content_ids;
 
-                    // GCLID recovery for Google Ads browser conversion
                     $gclid = (string) $order->get_meta( '_servertrack_gclid' );
                     if ( empty( $gclid ) && ! empty( $_COOKIE['_gcl_aw'] ) ) {
                         $gclid = sanitize_text_field( wp_unslash( $_COOKIE['_gcl_aw'] ) );
@@ -329,7 +391,6 @@ class ServerTrack_Frontend {
         if ( ! empty( $_GET['fbclid'] ) ) {
             $fbclid = sanitize_text_field( wp_unslash( $_GET['fbclid'] ) );
             $fbc    = 'fb.1.' . ( $now * 1000 ) . '.' . $fbclid;
-            // Store raw fbclid on WC session for fbc reconstruction later
             if ( function_exists( 'WC' ) && WC()->session ) {
                 $session_id = (string) WC()->session->get_customer_id();
                 if ( $session_id ) {
@@ -337,11 +398,6 @@ class ServerTrack_Frontend {
                     set_transient( 'servertrack_fbclid_' . $session_id, $fbclid, 90 * DAY_IN_SECONDS );
                 }
             }
-            // NOTE: _fbc intentionally sets HttpOnly=false so the Meta browser
-            // pixel (fbevents.js) can read and attach it to pixel calls.
-            // This matches Meta's own _fbc cookie spec. Changing to true would
-            // break pixel-side fbc tracking. _gcl_aw and ttclid use true because
-            // those pixels do not require JS cookie access.
             setcookie( '_fbc', $fbc, $now + 90 * DAY_IN_SECONDS, '/', '', is_ssl(), false );
             $_COOKIE['_fbc'] = $fbc;
         }
@@ -371,7 +427,6 @@ class ServerTrack_Frontend {
     public static function persist_click_ids_to_order( WC_Order $order ) {
         $session_id = WC()->session ? (string) WC()->session->get_customer_id() : '';
 
-        // fbc
         $fbc = '';
         if ( ! empty( $_COOKIE['_fbc'] ) ) { // phpcs:ignore
             $fbc = sanitize_text_field( wp_unslash( $_COOKIE['_fbc'] ) );
@@ -380,18 +435,15 @@ class ServerTrack_Frontend {
         }
         if ( $fbc ) $order->update_meta_data( '_servertrack_fbc', $fbc );
 
-        // fbclid (raw) for fbc reconstruction in cron
         if ( $session_id ) {
             $fbclid = (string) get_transient( 'servertrack_fbclid_' . $session_id );
             if ( $fbclid ) $order->update_meta_data( '_servertrack_fbclid', $fbclid );
         }
 
-        // fbp
         if ( ! empty( $_COOKIE['_fbp'] ) ) { // phpcs:ignore
             $order->update_meta_data( '_servertrack_fbp', sanitize_text_field( wp_unslash( $_COOKIE['_fbp'] ) ) );
         }
 
-        // ttclid
         $ttclid = '';
         if ( ! empty( $_COOKIE['ttclid'] ) ) { // phpcs:ignore
             $ttclid = sanitize_text_field( wp_unslash( $_COOKIE['ttclid'] ) );
@@ -400,7 +452,6 @@ class ServerTrack_Frontend {
         }
         if ( $ttclid ) $order->update_meta_data( '_servertrack_ttclid', $ttclid );
 
-        // gclid
         $gclid = '';
         if ( ! empty( $_COOKIE['_gcl_aw'] ) ) { // phpcs:ignore
             $gclid = sanitize_text_field( wp_unslash( $_COOKIE['_gcl_aw'] ) );

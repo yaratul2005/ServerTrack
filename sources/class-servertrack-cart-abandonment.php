@@ -4,9 +4,19 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_CartAbandonment  v1.0
+ * ServerTrack_CartAbandonment  v1.1
  *
  * Feature #5 — Server-Side Cart Abandonment Detection & CAPI Event.
+ *
+ * Changes in v1.1:
+ *   BUG-M3: Added Google Ads block in check_abandonment() — previously only
+ *           Meta and TikTok received InitiateCheckout abandonment events.
+ *           Google block now fires when servertrack_google_enabled is set and
+ *           consent is granted, matching the Meta/TikTok pattern exactly.
+ *           on_add_to_cart() early-exit guard extended to include Google.
+ *   BUG-M7: resolve_email_for_session() session customer array path now wraps
+ *           sanitize_email() result in is_email() check before returning,
+ *           preventing an empty string from being treated as a valid address.
  *
  * THE PROBLEM:
  *   Cart abandonment pixels (fbq('track','AddToCart')) fire client-side
@@ -22,8 +32,8 @@ if ( ! defined( 'ABSPATH' ) ) {
  *   3. When the cron fires after 60 minutes:
  *      - If the 'completed' flag exists → do nothing (purchased, not abandoned).
  *      - If the cart is still non-empty → fire a 'InitiateCheckout' CAPI
- *        event to Meta and TikTok as the abandonment signal. Meta recommends
- *        InitiateCheckout (not AddToCart) for retargeting abandoned carts.
+ *        event to Meta, TikTok, and Google as the abandonment signal. Meta
+ *        recommends InitiateCheckout (not AddToCart) for retargeting.
  *
  * PRIVACY:
  *   - Only fires for sessions where we already have an email (logged-in user
@@ -61,8 +71,10 @@ class ServerTrack_CartAbandonment {
         array  $variation      = [],
         array  $cart_item_data = []
     ): void {
+        // BUG-M3 fix: include google in the early-exit guard
         if ( ! get_option( 'servertrack_meta_enabled', 0 )
-            && ! get_option( 'servertrack_tiktok_enabled', 0 ) ) return;
+            && ! get_option( 'servertrack_tiktok_enabled', 0 )
+            && ! get_option( 'servertrack_google_enabled', 0 ) ) return;
 
         $session_id = self::get_session_id();
         if ( ! $session_id ) return;
@@ -138,6 +150,8 @@ class ServerTrack_CartAbandonment {
 
         $meta_on   = get_option( 'servertrack_meta_enabled', 0 );
         $tiktok_on = get_option( 'servertrack_tiktok_enabled', 0 );
+        // BUG-M3 fix: read Google toggle
+        $google_on = get_option( 'servertrack_google_enabled', 0 );
 
         if ( $meta_on && ServerTrack_Consent::is_granted( 'meta' ) ) {
             $e      = ( new ServerTrack_Event( 'InitiateCheckout', $event_id ) )->set_user_data( $user_data )->set_custom_data( $custom_data );
@@ -149,6 +163,13 @@ class ServerTrack_CartAbandonment {
             $e      = ( new ServerTrack_Event( 'InitiateCheckout', $event_id ) )->set_user_data( $user_data )->set_custom_data( $custom_data );
             $result = ServerTrack_TikTok::send( $e );
             ServerTrack_Logger::log( $result['status'] ?? 'error', 'tiktok', 'Cart abandonment email=' . $email, '', $event_id, 0, 'CartAbandonment' );
+        }
+
+        // BUG-M3 fix: Google Ads abandonment block — was entirely missing
+        if ( $google_on && ServerTrack_Consent::is_granted( 'google' ) ) {
+            $e      = ( new ServerTrack_Event( 'InitiateCheckout', $event_id ) )->set_user_data( $user_data )->set_custom_data( $custom_data );
+            $result = ServerTrack_Google::send( $e );
+            ServerTrack_Logger::log( $result['status'] ?? 'error', 'google', 'Cart abandonment email=' . $email, '', $event_id, 0, 'CartAbandonment' );
         }
 
         // Clean up snapshot
@@ -179,7 +200,13 @@ class ServerTrack_CartAbandonment {
             // Also check customer data object stored in session
             $customer = WC()->session->get( 'customer' );
             if ( is_array( $customer ) && ! empty( $customer['email'] ) ) {
-                return sanitize_email( $customer['email'] );
+                // BUG-M7 fix: validate with is_email() before returning —
+                // sanitize_email() returns '' for invalid input but the
+                // original code returned that empty string without checking.
+                $candidate = sanitize_email( $customer['email'] );
+                if ( is_email( $candidate ) ) {
+                    return $candidate;
+                }
             }
         }
         return '';
