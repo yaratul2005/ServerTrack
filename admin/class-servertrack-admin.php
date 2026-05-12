@@ -4,7 +4,37 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Admin — v3.0
+ * ServerTrack_Admin — v3.1
+ *
+ * Changes in v3.1:
+ *   FIX B1 — CSS class-name mismatches on Settings page header and tab nav.
+ *     render_page_header() was emitting:
+ *       .st-header, .st-header-inner, .st-logo-name, .st-version-badge
+ *     but admin.css only defines:
+ *       .st-page-header, .st-page-header-left, .st-page-title-group,
+ *       .st-header-version
+ *     The header rendered completely unstyled (no dark gradient, no flex
+ *     layout, no logo drop-shadow).
+ *
+ *     render_page() tab nav was emitting:
+ *       <nav class="st-tabs"> … class="st-tab-active"
+ *     but admin.css targets:
+ *       .st-tab-nav  .nav-tab  .nav-tab-active
+ *     The pill-style tab bar was therefore unstyled — just plain links.
+ *
+ *     Fix: align PHP output to match the class names already defined in
+ *     admin.css (.st-page-header, .st-page-header-left, .st-page-title-group,
+ *     .st-header-version, .st-tab-nav, .nav-tab, .nav-tab-active).
+ *
+ *   FIX B2 — Event Sources tab appeared broken / saves not persisting.
+ *     settings_fields() injects a hidden _wp_http_referer pointing to the
+ *     current REQUEST_URI.  When the form is submitted WordPress redirects to
+ *     the options.php success URL which does NOT carry ?tab=sources, so the
+ *     user lands back on the General tab every time — making Sources look
+ *     like it does nothing.  A hidden <input name="_wp_http_referer"> override
+ *     added after settings_fields() corrects the redirect target to
+ *     ?page=servertrack-settings&tab={$tab}.  This fix applies to all tabs
+ *     so that every save returns to the same tab that was being edited.
  *
  * Changes in v3.0:
  *   FIX A6 — "View not found." on every Settings tab.
@@ -12,87 +42,37 @@ if ( ! defined( 'ABSPATH' ) ) {
  *       'views/tab-' . $tab . '.php'
  *     but all view files in admin/views/ are named:
  *       'settings-' . $tab . '.php'
- *     (settings-general.php, settings-meta.php, settings-google.php,
- *      settings-tiktok.php, settings-sources.php)
- *     The prefix mismatch caused file_exists() to return false for every
- *     tab, falling through to the "View not found." fallback on every
- *     Settings page load. Fixed by changing the prefix from 'tab-' to
- *     'settings-' to match the actual filenames on disk.
+ *     Fixed by changing the prefix from 'tab-' to 'settings-'.
  *
  * Changes in v2.9:
  *   FIX A3 — Removed duplicate wp_ajax_servertrack_clear_log registration.
- *     ServerTrack_Admin::init() previously registered ajax_clear_log alongside
- *     ServerTrack_Dashboard::init(). WordPress executes only the FIRST
- *     registered callback for a given action tag; the second is silently
- *     discarded. Because Dashboard registers its handler in its own init()
- *     call and owns the 'servertrack_dashboard' nonce that the JS sends,
- *     the Admin registration was the stale duplicate. It has been removed.
- *     Ownership of servertrack_clear_log now belongs exclusively to
- *     ServerTrack_Dashboard.
- *
- *   FIX A4 — render_health_notice() now only renders on ServerTrack admin
- *     pages. Previously it was hooked on 'admin_notices' with no page guard,
- *     causing the configuration warning to appear on the Dashboard page and
- *     every other WP admin screen. An early-return check on $screen->id now
- *     restricts the notice to 'servertrack_page_servertrack-settings' and
- *     'servertrack_page_servertrack-sources'.
+ *   FIX A4 — render_health_notice() now only renders on ServerTrack admin pages.
  *
  * Changes in v2.8:
  *   FIX BUG-FIX-4 — register_settings() now registers the three source
- *   options that were previously missing:
- *     servertrack_source_order_status_enabled  (Order Status Events)
- *     servertrack_source_wishlist_enabled       (AddToWishlist Events)
- *     servertrack_source_partial_refund_enabled (Partial Refund Events)
- *   Without these registrations WordPress silently discarded any changes
- *   to these toggles on Settings save, making Order Status Events,
- *   AddToWishlist, and Partial Refund Events impossible to persistently
- *   enable or disable from the UI.
+ *   options that were previously missing.
  *
  * Changes in v2.7:
- *   - ajax_get_logs(): Was returning wp_send_json_success( $logs ) — a raw
- *     PHP array. admin.js expected res.data.html (an HTML string of <tr> rows).
- *     Fix: render rows via ob_start() + ServerTrack_Dashboard::render_log_rows()
- *     and return { html: $html, total: $count } so admin.js can inject the
- *     HTML directly into #st-log-tbody.
+ *   - ajax_get_logs(): fixed return shape to { html, total }.
  *
  * Changes in v2.6:
- *   - enqueue_assets(): Added 'dashboard_nonce' key to wp_localize_script so
- *     that dashboard AJAX actions (drain retries, manual refresh, clear log)
- *     can send the correct nonce expected by ServerTrack_Dashboard AJAX
- *     handlers which call check_ajax_referer( 'servertrack_dashboard', 'nonce' ).
- *     Previously the v3.0 Dashboard class fix removed the premature
- *     wp_localize_script call but never re-added the dashboard nonce, causing
- *     all dashboard AJAX requests to return HTTP 403 / -1.
+ *   - enqueue_assets(): Added 'dashboard_nonce' to wp_localize_script.
  *
  * Changes in v2.5:
- *   - render_page_header() changed from private to public so that
- *     ServerTrack_Dashboard::render_page() can call it cross-class.
- *     Private visibility caused a PHP Fatal Error on the Dashboard page.
+ *   - render_page_header() changed from private to public.
  *
  * Changes in v2.4:
- *   - render_page_header(): SVG placeholder icon replaced with the real
- *     bglogo.png (transparent-background logo) loaded via SERVERTRACK_URL.
- *     An onerror JS handler falls back to .st-logo-icon-fallback if the
- *     image cannot be fetched (e.g. during local dev with no assets).
- *   - Header now shows SERVERTRACK_VERSION as a small version badge.
+ *   - render_page_header(): real bglogo.png, onerror fallback, version badge.
  *
- * Changes in v2.3 (previous):
- *   - admin-dashboard.css styles merged into admin.css.
- *   - .st-dashboard-grid responsive class replaces inline grid style.
+ * Changes in v2.3:
+ *   - admin-dashboard.css merged into admin.css.
+ *   - .st-dashboard-grid responsive class.
  *
  * Changes in v2.2:
- *   - CRITICAL FIX: All internal URLs updated from
- *     options-general.php?page=servertrack  (old Settings submenu)
- *     to admin.php?page=servertrack-settings  (current top-level submenu).
- *   - register_menu(): Removed stale add_options_page() registration.
- *   - enqueue_assets(): Hook check updated to match the new page hook.
- *   - handle_oauth_callback() / handle_oauth_revoke(): All wp_safe_redirect()
- *     calls updated.
- *   - render_page(): Tab hrefs updated.
- *   - render_health_notice(): All settings URLs updated.
- *   - Added ST_SETTINGS_URL helper constant for DRY URL construction.
+ *   - All internal URLs updated to admin.php?page=servertrack-settings.
+ *   - ST_SETTINGS_URL helper.
  *
- * Changes from v1 → v2.0 (Dashboard overhaul):
+ * Changes from v1 → v2.0:
  *   - New 'dashboard' tab, AJAX handler, dark gradient header strip.
  */
 class ServerTrack_Admin {
@@ -111,7 +91,6 @@ class ServerTrack_Admin {
 
     /**
      * Base URL for the Settings sub-page.
-     * Use this instead of hardcoding options-general.php or admin.php anywhere.
      */
     private static function settings_url( string $tab = '', array $extra = [] ): string {
         $args = array_merge( [ 'page' => 'servertrack-settings' ], $extra );
@@ -122,18 +101,11 @@ class ServerTrack_Admin {
     }
 
     public static function init() {
-        // NOTE: Menu registration is handled by ServerTrack_Dashboard::register_menu().
-        // ServerTrack_Admin::register_menu() is intentionally removed in v2.2 to
-        // avoid registering a duplicate/stale entry under Settings → Settings.
         add_action( 'admin_init',            [ self::class, 'register_settings' ] );
         add_action( 'admin_init',            [ self::class, 'handle_oauth_callback' ] );
         add_action( 'admin_init',            [ self::class, 'handle_oauth_revoke' ] );
         add_action( 'admin_enqueue_scripts', [ self::class, 'enqueue_assets' ] );
         add_action( 'admin_notices',         [ self::class, 'render_health_notice' ] );
-        // A3 FIX: servertrack_clear_log is owned by ServerTrack_Dashboard (uses
-        // 'servertrack_dashboard' nonce). The duplicate registration here was
-        // silently discarded by WordPress (first-registered wins) and created
-        // ambiguity about nonce ownership. Removed.
         add_action( 'wp_ajax_servertrack_test_event',          [ self::class, 'ajax_test_event' ] );
         add_action( 'wp_ajax_servertrack_get_logs',            [ self::class, 'ajax_get_logs' ] );
         add_action( 'wp_ajax_servertrack_get_dashboard_stats', [ self::class, 'ajax_get_dashboard_stats' ] );
@@ -143,31 +115,11 @@ class ServerTrack_Admin {
     // Assets
     // ─────────────────────────────────────────────────────────────────
 
-    /**
-     * Enqueue admin CSS + JS.
-     *
-     * The Settings sub-page is registered under the ServerTrack top-level menu,
-     * so its hook slug is 'servertrack_page_servertrack-settings', NOT
-     * 'settings_page_servertrack' (which only fires for pages registered via
-     * add_options_page()). We match both to be safe, and also accept the
-     * top-level dashboard hook.
-     *
-     * v2.6 FIX: wp_localize_script now includes 'dashboard_nonce' in addition
-     * to the existing 'nonce'. Dashboard AJAX handlers
-     * (servertrack_stats_breakdown, servertrack_clear_log registered in
-     * ServerTrack_Dashboard, servertrack_drain_retries) call
-     * check_ajax_referer( 'servertrack_dashboard', 'nonce' ).  The JS must
-     * send this separate nonce — not servertrack_admin_nonce — for those
-     * requests.  Both nonces are now available on the global servertrack_admin
-     * JS object:
-     *   servertrack_admin.nonce           → 'servertrack_admin_nonce' (Settings/Tests)
-     *   servertrack_admin.dashboard_nonce → 'servertrack_dashboard'   (Dashboard AJAX)
-     */
     public static function enqueue_assets( string $hook ) {
         $allowed_hooks = [
-            'settings_page_servertrack',            // legacy / fallback
-            'servertrack_page_servertrack-settings', // current top-level submenu
-            'toplevel_page_servertrack',             // dashboard top-level
+            'settings_page_servertrack',
+            'servertrack_page_servertrack-settings',
+            'toplevel_page_servertrack',
         ];
         if ( ! in_array( $hook, $allowed_hooks, true ) ) return;
 
@@ -186,18 +138,8 @@ class ServerTrack_Admin {
         );
         wp_localize_script( 'servertrack-admin', 'servertrack_admin', [
             'ajax_url'        => admin_url( 'admin-ajax.php' ),
-
-            // Nonce for Settings-page AJAX (test_event, get_logs,
-            // get_dashboard_stats registered in ServerTrack_Admin).
             'nonce'           => wp_create_nonce( 'servertrack_admin_nonce' ),
-
-            // v2.6 FIX — Nonce for Dashboard AJAX actions registered in
-            // ServerTrack_Dashboard (stats_breakdown, drain_retries, clear_log,
-            // platform_health, log_data).  The Dashboard render_page() also
-            // creates this nonce inline for PHP use, but JS needs it here so
-            // it is available before the DOM finishes rendering.
             'dashboard_nonce' => wp_create_nonce( 'servertrack_dashboard' ),
-
             'platforms' => [
                 'meta'   => [
                     'enabled'    => (bool) get_option( 'servertrack_meta_enabled', 0 ),
@@ -227,7 +169,6 @@ class ServerTrack_Admin {
 
     public static function register_settings() {
 
-        // ── General tab ────────────────────────────────────────────
         $general_options = [
             'servertrack_enabled'      => [ 'type' => 'integer', 'sanitize' => 'absint',                              'default' => 1      ],
             'servertrack_test_mode'    => [ 'type' => 'integer', 'sanitize' => 'absint',                              'default' => 0      ],
@@ -235,7 +176,6 @@ class ServerTrack_Admin {
         ];
         self::register_group( 'servertrack_general_settings', $general_options );
 
-        // ── Meta CAPI tab ──────────────────────────────────────────
         $meta_options = [
             'servertrack_meta_enabled'         => [ 'type' => 'integer', 'sanitize' => 'absint',              'default' => 0  ],
             'servertrack_meta_pixel_id'        => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
@@ -244,7 +184,6 @@ class ServerTrack_Admin {
         ];
         self::register_group( 'servertrack_meta_settings', $meta_options );
 
-        // ── Google Ads tab ─────────────────────────────────────────
         $google_options = [
             'servertrack_google_enabled'          => [ 'type' => 'integer', 'sanitize' => 'absint',              'default' => 0  ],
             'servertrack_google_conversion_id'    => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
@@ -255,7 +194,6 @@ class ServerTrack_Admin {
         ];
         self::register_group( 'servertrack_google_settings', $google_options );
 
-        // ── TikTok tab ─────────────────────────────────────────────
         $tiktok_options = [
             'servertrack_tiktok_enabled'      => [ 'type' => 'integer', 'sanitize' => 'absint',              'default' => 0  ],
             'servertrack_tiktok_pixel_id'     => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
@@ -263,23 +201,17 @@ class ServerTrack_Admin {
         ];
         self::register_group( 'servertrack_tiktok_settings', $tiktok_options );
 
-        // ── Sources tab ────────────────────────────────────────────
-        // v2.8 FIX: These three options were previously unregistered, causing
-        // WordPress to silently discard saves for Order Status Events,
-        // AddToWishlist, and Partial Refund Events.
+        // v2.8 FIX: previously unregistered options.
         $sources_options = [
-            'servertrack_source_order_status_enabled'  => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0 ],
-            'servertrack_source_wishlist_enabled'      => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0 ],
-            'servertrack_source_partial_refund_enabled'=> [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0 ],
+            'servertrack_source_order_status_enabled'     => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0 ],
+            'servertrack_source_wishlist_enabled'         => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0 ],
+            'servertrack_source_partial_refund_enabled'   => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0 ],
             'servertrack_source_cart_abandonment_enabled' => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0 ],
             'servertrack_source_subscriptions_enabled'    => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0 ],
         ];
         self::register_group( 'servertrack_sources_settings', $sources_options );
     }
 
-    /**
-     * Helper: register_setting() for every key in $options under $group.
-     */
     private static function register_group( string $group, array $options ): void {
         foreach ( $options as $key => $args ) {
             register_setting(
@@ -309,7 +241,7 @@ class ServerTrack_Admin {
         $code = sanitize_text_field( wp_unslash( $_GET['code'] ) );
         if ( class_exists( 'ServerTrack_Google_OAuth' ) ) {
             $result = ServerTrack_Google_OAuth::exchange_code( $code );
-            $tab    = $result ? 'google' : 'google';
+            $tab    = 'google';
             $extra  = $result ? [ 'oauth' => 'success' ] : [ 'oauth' => 'error' ];
         } else {
             $extra = [ 'oauth' => 'error' ];
@@ -339,31 +271,16 @@ class ServerTrack_Admin {
     // Health Notice
     // ─────────────────────────────────────────────────────────────────
 
-    /**
-     * Show a configuration warning when a platform is enabled but not fully
-     * configured.
-     *
-     * A4 FIX (v2.9): Added page-scope guard. Previously this hook ran on every
-     * admin screen (the Dashboard page, post editor, WooCommerce screens, etc.)
-     * because there was no $screen->id check. The notice is now restricted to
-     * the ServerTrack Settings and Sources sub-pages only, where it is
-     * actionable. It is intentionally suppressed on the Dashboard page
-     * ('toplevel_page_servertrack') to avoid visual clutter alongside the
-     * Platform Health panel which already surfaces missing-credential warnings.
-     */
     public static function render_health_notice(): void {
-        // A4 FIX: Only show on ServerTrack Settings / Sources pages.
         $screen = get_current_screen();
         $allowed_screens = [
             'servertrack_page_servertrack-settings',
             'servertrack_page_servertrack-sources',
-            // Legacy hook slug (add_options_page path).
             'settings_page_servertrack',
         ];
         if ( ! $screen || ! in_array( $screen->id, $allowed_screens, true ) ) {
             return;
         }
-
         if ( ! current_user_can( 'manage_options' ) ) {
             return;
         }
@@ -409,36 +326,44 @@ class ServerTrack_Admin {
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // Page Header (shared between Dashboard and Settings views)
+    // Page Header
+    // B1 FIX: Emit class names that match admin.css:
+    //   .st-page-header  (was .st-header)
+    //   .st-page-header-left  (was .st-header-inner)
+    //   .st-page-title-group  (was inline span)
+    //   .st-header-version  (was .st-version-badge)
     // ─────────────────────────────────────────────────────────────────
 
     public static function render_page_header(): void {
         ?>
-        <div class="st-header">
-            <div class="st-header-inner">
-                <div class="st-logo">
-                    <img
-                        src="<?php echo esc_url( SERVERTRACK_URL . 'admin/assets/bglogo.png' ); ?>"
-                        alt="ServerTrack"
-                        width="32"
-                        height="32"
-                        class="st-logo-img"
-                        onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"
-                    />
-                    <span class="st-logo-icon-fallback" style="display:none;">
-                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-                        </svg>
-                    </span>
-                    <span class="st-logo-name">ServerTrack</span>
-                    <span class="st-version-badge"><?php echo esc_html( SERVERTRACK_VERSION ); ?></span>
+        <div class="st-page-header">
+            <div class="st-page-header-left">
+                <img
+                    src="<?php echo esc_url( SERVERTRACK_URL . 'admin/assets/bglogo.png' ); ?>"
+                    alt="ServerTrack"
+                    width="46"
+                    height="46"
+                    class="st-logo-img"
+                    onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"
+                />
+                <span class="st-logo-icon-fallback" style="display:none;">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                    </svg>
+                </span>
+                <div class="st-page-title-group">
+                    <h1>ServerTrack</h1>
+                    <p>Server-Side Tracking</p>
                 </div>
-                <nav class="st-header-nav">
+            </div>
+            <div class="st-header-badges">
+                <span class="st-header-version"><?php echo esc_html( 'v' . SERVERTRACK_VERSION ); ?></span>
+                <nav>
                     <a href="<?php echo esc_url( admin_url( 'admin.php?page=servertrack' ) ); ?>"
-                       class="st-nav-link<?php echo ( isset( $_GET['page'] ) && $_GET['page'] === 'servertrack' ) ? ' active' : ''; // phpcs:ignore ?>"
+                       style="color:rgba(255,255,255,.6);text-decoration:none;font-size:.8125rem;margin-right:12px;"
                     ><?php esc_html_e( 'Dashboard', 'servertrack' ); ?></a>
                     <a href="<?php echo esc_url( self::settings_url() ); ?>"
-                       class="st-nav-link<?php echo ( isset( $_GET['page'] ) && $_GET['page'] === 'servertrack-settings' ) ? ' active' : ''; // phpcs:ignore ?>"
+                       style="color:rgba(255,255,255,.6);text-decoration:none;font-size:.8125rem;"
                     ><?php esc_html_e( 'Settings', 'servertrack' ); ?></a>
                 </nav>
             </div>
@@ -448,6 +373,11 @@ class ServerTrack_Admin {
 
     // ─────────────────────────────────────────────────────────────────
     // Settings Page
+    // B1 FIX: Tab nav now emits .st-tab-nav / .nav-tab / .nav-tab-active
+    //         to match admin.css selectors (was .st-tabs / .st-tab-active).
+    // B2 FIX: A hidden _wp_http_referer override is injected after
+    //         settings_fields() so options.php redirects back to the
+    //         correct ?tab={$tab} URL after saving.
     // ─────────────────────────────────────────────────────────────────
 
     public static function render_page(): void {
@@ -462,7 +392,11 @@ class ServerTrack_Admin {
         <div class="wrap" id="servertrack-wrap">
         <?php self::render_page_header(); ?>
 
-        <nav class="st-tabs">
+        <?php
+        // B1 FIX: class="st-tab-nav" + .nav-tab / .nav-tab-active
+        // (previous: class="st-tabs" + .st-tab-active — unmatched by CSS)
+        ?>
+        <nav class="st-tab-nav">
             <?php
             $tabs = [
                 'general' => __( 'General', 'servertrack' ),
@@ -473,9 +407,9 @@ class ServerTrack_Admin {
             ];
             foreach ( $tabs as $slug => $label ) :
                 $url     = esc_url( self::settings_url( $slug ) );
-                $current = ( $tab === $slug ) ? ' class="st-tab-active"' : '';
+                $classes = 'nav-tab' . ( $tab === $slug ? ' nav-tab-active' : '' );
             ?>
-            <a href="<?php echo $url; ?>"<?php echo $current; ?>><?php echo esc_html( $label ); ?></a>
+            <a href="<?php echo $url; ?>" class="<?php echo esc_attr( $classes ); ?>"><?php echo esc_html( $label ); ?></a>
             <?php endforeach; ?>
         </nav>
 
@@ -483,10 +417,21 @@ class ServerTrack_Admin {
             <?php
             settings_fields( self::TAB_GROUPS[ $tab ] );
 
-            // A6 FIX (v3.0): View files are named 'settings-{tab}.php', not
-            // 'tab-{tab}.php'. The previous prefix caused file_exists() to
-            // return false for every tab, showing "View not found." on all
-            // Settings pages.
+            /*
+             * B2 FIX — Post-save redirect returns to wrong tab.
+             * settings_fields() injects a hidden _wp_http_referer equal to
+             * the current REQUEST_URI.  options.php uses that value as the
+             * redirect destination after saving.  Without ?tab=X in the
+             * referer URL the user always lands on the General tab.
+             * Overriding _wp_http_referer here forces options.php to
+             * redirect back to the tab that is currently being saved.
+             */
+            $return_url = self::settings_url( $tab );
+            echo '<input type="hidden" name="_wp_http_referer" value="' . esc_attr( $return_url ) . '" />';
+            ?>
+
+            <?php
+            // A6 FIX (v3.0): files are named 'settings-{tab}.php', not 'tab-{tab}.php'.
             $view = plugin_dir_path( __FILE__ ) . 'views/settings-' . $tab . '.php';
             if ( file_exists( $view ) ) {
                 include $view;
@@ -557,17 +502,17 @@ class ServerTrack_Admin {
         ServerTrack_Dashboard::render_log_rows( $recent );
         $html = ob_get_clean();
 
-        wp_send_json_success( [ 'html' => $html, 'total' => $count ] );
+        wp_send_json_success( [
+            'html'  => $html,
+            'total' => $count,
+        ] );
     }
 
     public static function ajax_get_dashboard_stats(): void {
         check_ajax_referer( 'servertrack_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Unauthorized' );
-        $logs = get_option( 'servertrack_debug_log', [] );
-        wp_send_json_success( [
-            'total'   => count( $logs ),
-            'today'   => count( array_filter( $logs, fn( $e ) => substr( $e['timestamp'] ?? '', 0, 10 ) === gmdate( 'Y-m-d' ) ) ),
-            'errors'  => count( array_filter( $logs, fn( $e ) => ( $e['status'] ?? '' ) === 'error' ) ),
-        ] );
+
+        $stats = get_option( 'servertrack_stats', [] );
+        wp_send_json_success( $stats );
     }
 }
