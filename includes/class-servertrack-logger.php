@@ -4,43 +4,34 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Logger  v2.3
+ * ServerTrack_Logger  v2.4
+ *
+ * v2.4 fixes:
+ *
+ *   FIX DASHBOARD-STATIC — log() debug_mode gate swallowed all event data.
+ *     log() opened with:
+ *       if ( ! get_option( 'servertrack_debug_mode', 0 ) ) { return; }
+ *     servertrack_debug_mode defaults to 0, so every Logger::log() call
+ *     from Meta::send(), TikTok::send(), and Google::send() silently
+ *     returned without writing anything. servertrack_debug_log stayed
+ *     empty forever, and the dashboard showed all zeros regardless of
+ *     how many real events were sent.
+ *
+ *     Fix: entries with status 'success', 'error', 'queued', or
+ *     'dedup_blocked' are ALWAYS written (force_write=true). Only
+ *     'skipped' entries remain gated on debug_mode, since those are
+ *     verbose/informational. This matches the existing behaviour of the
+ *     error() and warning() severity helpers which already used
+ *     force_write=true.
  *
  * v2.3 fixes:
  *
  *   FIX BUG-FIX-1 — Added clear_logs() as a public alias of clear().
- *     Both ServerTrack_Admin::ajax_clear_log() and
- *     ServerTrack_Dashboard::ajax_clear_log() called Logger::clear_logs()
- *     which did not exist, causing a PHP fatal error every time an admin
- *     attempted to clear the log. The canonical method remains clear();
- *     clear_logs() simply delegates to it.
- *
  *   FIX BUG-FIX-2 — log() now writes 'event_name' alongside 'event_type'.
- *     Dashboard::render_log_rows() reads $entry['event_name'] and
- *     compute_breakdown() also keys on 'event_name'. Logger only stored
- *     'event_type', so every Event column in the dashboard was blank and
- *     the Top Event Types chart always had no data.
- *     Fix: log() writes both 'event_type' (preserved for any existing
- *     consumers) and 'event_name' (the key the Dashboard expects).
  *
  * v2.2 changes (L-1, L-2 fixes):
- *
  *   L-1 — error(), info(), warning() helpers were missing.
- *     log() has always been gated on debug_mode=1, but M-3's fix in
- *     ServerTrack_OfflineConversion called Logger::error() — a method
- *     that did not exist — causing a silent PHP fatal on every offline
- *     batch failure. Added three severity-aware wrappers:
- *       error()   — always written (bypasses debug_mode gate).
- *       warning() — always written.
- *       info()    — written only when debug_mode=1 (same as log()).
- *     This ensures critical errors are never silently swallowed.
- *
- *   L-2 — get_recent() memory inefficiency.
- *     Previous: array_reverse($logs) allocates a full 1000-entry copy,
- *     then array_slice picks $limit items. For $limit=10 this wastes
- *     990 entries of RAM on every admin panel load.
- *     Fix: array_slice($logs, -$limit) first, then reverse only the
- *     small slice needed.
+ *   L-2 — get_recent() memory inefficiency fixed.
  *
  * v2.1 changes:
  *   - log() fires do_action('servertrack_event_logged') after writing.
@@ -55,18 +46,16 @@ class ServerTrack_Logger {
 	const OPTION_KEY  = 'servertrack_debug_log';
 	const MAX_ENTRIES = 1000;
 
+	/**
+	 * Statuses that are always written, regardless of debug_mode setting.
+	 * 'skipped' remains debug_mode-gated (verbose/informational only).
+	 */
+	const ALWAYS_WRITE_STATUSES = [ 'success', 'error', 'queued', 'dedup_blocked' ];
+
 	// ── Severity helpers ─────────────────────────────────────────
 
 	/**
-	 * Log an error-level entry.
-	 *
-	 * L-1 FIX (v2.2): This method was missing. ServerTrack_OfflineConversion
-	 * (M-3 fix) calls Logger::error() after every batch failure. Without this
-	 * method PHP threw a fatal error on the call site, swallowing the very
-	 * failure it was trying to record.
-	 *
-	 * Unlike log(), error() bypasses the debug_mode gate so critical failures
-	 * are always persisted regardless of the admin setting.
+	 * Log an error-level entry (always written, bypasses debug_mode gate).
 	 *
 	 * @param string $message  Human-readable error description.
 	 * @param array  $context  Optional structured context (platform, trace, etc.).
@@ -100,12 +89,12 @@ class ServerTrack_Logger {
 	/**
 	 * Append a structured CAPI event log entry.
 	 *
-	 * Gated on debug_mode=1 (use error()/warning() for always-on logging).
-	 *
-	 * BUG-FIX-2 (v2.3): The entry now stores both 'event_type' AND 'event_name'
-	 * with the same value. Dashboard::render_log_rows() and compute_breakdown()
-	 * both read $entry['event_name']; previously only 'event_type' was stored,
-	 * so the Event column was always blank and charts showed no event data.
+	 * v2.4 FIX (DASHBOARD-STATIC):
+	 *   Entries whose status is 'success', 'error', 'queued', or
+	 *   'dedup_blocked' are always written. Only 'skipped' (and any
+	 *   unrecognised status) remains gated on debug_mode=1, because
+	 *   those are verbose informational entries not needed for the
+	 *   dashboard KPIs, charts, or log table.
 	 *
 	 * @param string $status      success|error|skipped|queued|dedup_blocked|webhook
 	 * @param string $platform    meta|tiktok|google|all|identity|webhook
@@ -126,7 +115,10 @@ class ServerTrack_Logger {
 		string $event_type = '',
 		array  $emq        = []
 	): void {
-		if ( ! get_option( 'servertrack_debug_mode', 0 ) ) {
+		// v2.4 FIX: always write actionable statuses; gate only verbose ones.
+		$force_write = in_array( $status, self::ALWAYS_WRITE_STATUSES, true );
+
+		if ( ! $force_write && ! get_option( 'servertrack_debug_mode', 0 ) ) {
 			return;
 		}
 
@@ -137,7 +129,7 @@ class ServerTrack_Logger {
 			'message'    => $message,
 			'event_id'   => $event_id,
 			'order_id'   => $order_id,
-			// BUG-FIX-2: store as both 'event_type' (legacy) and 'event_name'
+			// BUG-FIX-2 (v2.3): store as both 'event_type' (legacy) and 'event_name'
 			// (Dashboard::render_log_rows / compute_breakdown key).
 			'event_type' => $event_type,
 			'event_name' => $event_type,
@@ -167,12 +159,8 @@ class ServerTrack_Logger {
 	/**
 	 * Get recent log entries (most recent first).
 	 *
-	 * L-2 FIX (v2.2): Previous implementation reversed the entire log array
-	 * (up to 1000 entries) and then sliced. For $limit=10 this allocated
-	 * a 1000-entry copy just to discard 990 items.
-	 *
-	 * Fix: slice from the tail first (-$limit), then reverse only the
-	 * small slice. Memory usage scales with $limit, not MAX_ENTRIES.
+	 * L-2 FIX (v2.2): slice from the tail first (-$limit), then reverse
+	 * only the small slice. Memory usage scales with $limit, not MAX_ENTRIES.
 	 *
 	 * @param int $limit  Max entries to return.
 	 * @return array
@@ -182,7 +170,6 @@ class ServerTrack_Logger {
 		if ( empty( $logs ) ) {
 			return [];
 		}
-		// L-2 FIX: slice tail first, reverse only the needed slice.
 		return array_reverse( array_slice( $logs, -$limit ) );
 	}
 
@@ -195,11 +182,6 @@ class ServerTrack_Logger {
 
 	/**
 	 * Alias of clear() — added in v2.3 (BUG-FIX-1).
-	 *
-	 * Both ServerTrack_Admin::ajax_clear_log() and
-	 * ServerTrack_Dashboard::ajax_clear_log() call Logger::clear_logs().
-	 * The method did not exist until v2.3, causing a PHP fatal every time
-	 * an admin clicked "Clear log".
 	 */
 	public static function clear_logs(): void {
 		self::clear();
