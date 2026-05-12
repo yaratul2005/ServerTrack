@@ -4,45 +4,45 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Admin — v3.1
+ * ServerTrack_Admin — v3.2
+ *
+ * Changes in v3.2:
+ *   C1  — Nested <form> bug. All 5 view files had their own <form> +
+ *         settings_fields() wrapped inside render_page()'s outer <form>.
+ *         Browsers close the outer form at the first inner <form> tag,
+ *         stripping the B2 _wp_http_referer override, the admin nonce,
+ *         and the outer submit_button(). Fixed: views now contain ONLY
+ *         the <table> + submit_button() — no <form> or settings_fields().
+ *
+ *   C2  — servertrack_source_woo_enabled was in the Sources view but
+ *         never registered. Added to servertrack_sources_settings.
+ *
+ *   C3  — Sources view used servertrack_source_abandonment_enabled;
+ *         register_settings() had _cart_abandonment_enabled. Aligned
+ *         both to servertrack_source_cart_abandonment_enabled.
+ *
+ *   C4  — servertrack_abandonment_window_minutes used in view but never
+ *         registered. Added (integer, absint, default 60).
+ *
+ *   C5  — servertrack_source_cf7_enabled not registered. Added.
+ *
+ *   C6  — servertrack_source_edd_enabled not registered. Added.
+ *
+ *   C7  — servertrack_source_subscriptions_enabled registered but had
+ *         no UI field. Added a Subscriptions row to the Sources view.
+ *
+ *   C8  — render_health_notice() checked for screen ID
+ *         servertrack_page_servertrack-sources (non-existent). Removed.
+ *
+ *   C9  — General, Meta, TikTok views had the same nested <form> as
+ *         Sources. Removed <form>/settings_fields() from all of them.
  *
  * Changes in v3.1:
  *   FIX B1 — CSS class-name mismatches on Settings page header and tab nav.
- *     render_page_header() was emitting:
- *       .st-header, .st-header-inner, .st-logo-name, .st-version-badge
- *     but admin.css only defines:
- *       .st-page-header, .st-page-header-left, .st-page-title-group,
- *       .st-header-version
- *     The header rendered completely unstyled (no dark gradient, no flex
- *     layout, no logo drop-shadow).
- *
- *     render_page() tab nav was emitting:
- *       <nav class="st-tabs"> … class="st-tab-active"
- *     but admin.css targets:
- *       .st-tab-nav  .nav-tab  .nav-tab-active
- *     The pill-style tab bar was therefore unstyled — just plain links.
- *
- *     Fix: align PHP output to match the class names already defined in
- *     admin.css (.st-page-header, .st-page-header-left, .st-page-title-group,
- *     .st-header-version, .st-tab-nav, .nav-tab, .nav-tab-active).
- *
- *   FIX B2 — Event Sources tab appeared broken / saves not persisting.
- *     settings_fields() injects a hidden _wp_http_referer pointing to the
- *     current REQUEST_URI.  When the form is submitted WordPress redirects to
- *     the options.php success URL which does NOT carry ?tab=sources, so the
- *     user lands back on the General tab every time — making Sources look
- *     like it does nothing.  A hidden <input name="_wp_http_referer"> override
- *     added after settings_fields() corrects the redirect target to
- *     ?page=servertrack-settings&tab={$tab}.  This fix applies to all tabs
- *     so that every save returns to the same tab that was being edited.
+ *   FIX B2 — Event Sources tab redirect returns to wrong tab after save.
  *
  * Changes in v3.0:
  *   FIX A6 — "View not found." on every Settings tab.
- *     render_page() was building the view path as:
- *       'views/tab-' . $tab . '.php'
- *     but all view files in admin/views/ are named:
- *       'settings-' . $tab . '.php'
- *     Fixed by changing the prefix from 'tab-' to 'settings-'.
  *
  * Changes in v2.9:
  *   FIX A3 — Removed duplicate wp_ajax_servertrack_clear_log registration.
@@ -51,35 +51,13 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Changes in v2.8:
  *   FIX BUG-FIX-4 — register_settings() now registers the three source
  *   options that were previously missing.
- *
- * Changes in v2.7:
- *   - ajax_get_logs(): fixed return shape to { html, total }.
- *
- * Changes in v2.6:
- *   - enqueue_assets(): Added 'dashboard_nonce' to wp_localize_script.
- *
- * Changes in v2.5:
- *   - render_page_header() changed from private to public.
- *
- * Changes in v2.4:
- *   - render_page_header(): real bglogo.png, onerror fallback, version badge.
- *
- * Changes in v2.3:
- *   - admin-dashboard.css merged into admin.css.
- *   - .st-dashboard-grid responsive class.
- *
- * Changes in v2.2:
- *   - All internal URLs updated to admin.php?page=servertrack-settings.
- *   - ST_SETTINGS_URL helper.
- *
- * Changes from v1 → v2.0:
- *   - New 'dashboard' tab, AJAX handler, dark gradient header strip.
  */
 class ServerTrack_Admin {
 
     /**
      * Map: tab slug => option group name.
-     * Single source of truth — views call settings_fields() with the matching group.
+     * Single source of truth — render_page() calls settings_fields() with
+     * the matching group. Views must NOT call settings_fields() themselves.
      */
     const TAB_GROUPS = [
         'general' => 'servertrack_general_settings',
@@ -89,9 +67,6 @@ class ServerTrack_Admin {
         'sources' => 'servertrack_sources_settings',
     ];
 
-    /**
-     * Base URL for the Settings sub-page.
-     */
     private static function settings_url( string $tab = '', array $extra = [] ): string {
         $args = array_merge( [ 'page' => 'servertrack-settings' ], $extra );
         if ( $tab !== '' ) {
@@ -170,9 +145,9 @@ class ServerTrack_Admin {
     public static function register_settings() {
 
         $general_options = [
-            'servertrack_enabled'      => [ 'type' => 'integer', 'sanitize' => 'absint',                              'default' => 1      ],
-            'servertrack_test_mode'    => [ 'type' => 'integer', 'sanitize' => 'absint',                              'default' => 0      ],
-            'servertrack_consent_mode' => [ 'type' => 'string',  'sanitize' => [ self::class, 'sanitize_consent_mode' ], 'default' => 'none' ],
+            'servertrack_enabled'      => [ 'type' => 'integer', 'sanitize' => 'absint',                                  'default' => 1      ],
+            'servertrack_test_mode'    => [ 'type' => 'integer', 'sanitize' => 'absint',                                  'default' => 0      ],
+            'servertrack_consent_mode' => [ 'type' => 'string',  'sanitize' => [ self::class, 'sanitize_consent_mode' ],  'default' => 'none' ],
         ];
         self::register_group( 'servertrack_general_settings', $general_options );
 
@@ -201,13 +176,26 @@ class ServerTrack_Admin {
         ];
         self::register_group( 'servertrack_tiktok_settings', $tiktok_options );
 
-        // v2.8 FIX: previously unregistered options.
+        /*
+         * C2  — servertrack_source_woo_enabled added (was in view, not registered).
+         * C3  — key aligned to servertrack_source_cart_abandonment_enabled
+         *       (view had _abandonment_enabled, a different name).
+         * C4  — servertrack_abandonment_window_minutes added.
+         * C5  — servertrack_source_cf7_enabled added.
+         * C6  — servertrack_source_edd_enabled added.
+         * C7  — servertrack_source_subscriptions_enabled was already here;
+         *       a UI toggle has been added to the Sources view.
+         */
         $sources_options = [
-            'servertrack_source_order_status_enabled'     => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0 ],
-            'servertrack_source_wishlist_enabled'         => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0 ],
-            'servertrack_source_partial_refund_enabled'   => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0 ],
-            'servertrack_source_cart_abandonment_enabled' => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0 ],
-            'servertrack_source_subscriptions_enabled'    => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0 ],
+            'servertrack_source_woo_enabled'              => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1  ],
+            'servertrack_source_cart_abandonment_enabled' => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
+            'servertrack_abandonment_window_minutes'      => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 60 ],
+            'servertrack_source_order_status_enabled'     => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1  ],
+            'servertrack_source_wishlist_enabled'         => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
+            'servertrack_source_partial_refund_enabled'   => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1  ],
+            'servertrack_source_cf7_enabled'              => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
+            'servertrack_source_edd_enabled'              => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
+            'servertrack_source_subscriptions_enabled'    => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
         ];
         self::register_group( 'servertrack_sources_settings', $sources_options );
     }
@@ -269,14 +257,16 @@ class ServerTrack_Admin {
 
     // ─────────────────────────────────────────────────────────────────
     // Health Notice
+    // C8 — Removed non-existent screen ID servertrack_page_servertrack-sources.
+    //      The Settings page screen ID is servertrack_page_servertrack-settings.
     // ─────────────────────────────────────────────────────────────────
 
     public static function render_health_notice(): void {
         $screen = get_current_screen();
         $allowed_screens = [
             'servertrack_page_servertrack-settings',
-            'servertrack_page_servertrack-sources',
             'settings_page_servertrack',
+            'toplevel_page_servertrack',
         ];
         if ( ! $screen || ! in_array( $screen->id, $allowed_screens, true ) ) {
             return;
@@ -327,11 +317,6 @@ class ServerTrack_Admin {
 
     // ─────────────────────────────────────────────────────────────────
     // Page Header
-    // B1 FIX: Emit class names that match admin.css:
-    //   .st-page-header  (was .st-header)
-    //   .st-page-header-left  (was .st-header-inner)
-    //   .st-page-title-group  (was inline span)
-    //   .st-header-version  (was .st-version-badge)
     // ─────────────────────────────────────────────────────────────────
 
     public static function render_page_header(): void {
@@ -373,11 +358,10 @@ class ServerTrack_Admin {
 
     // ─────────────────────────────────────────────────────────────────
     // Settings Page
-    // B1 FIX: Tab nav now emits .st-tab-nav / .nav-tab / .nav-tab-active
-    //         to match admin.css selectors (was .st-tabs / .st-tab-active).
-    // B2 FIX: A hidden _wp_http_referer override is injected after
-    //         settings_fields() so options.php redirects back to the
-    //         correct ?tab={$tab} URL after saving.
+    //
+    // The outer <form> here is THE only form on the page.
+    // Views must NOT contain their own <form> or settings_fields() call.
+    // C1 — All views have been stripped of their nested <form> wrappers.
     // ─────────────────────────────────────────────────────────────────
 
     public static function render_page(): void {
@@ -392,10 +376,6 @@ class ServerTrack_Admin {
         <div class="wrap" id="servertrack-wrap">
         <?php self::render_page_header(); ?>
 
-        <?php
-        // B1 FIX: class="st-tab-nav" + .nav-tab / .nav-tab-active
-        // (previous: class="st-tabs" + .st-tab-active — unmatched by CSS)
-        ?>
         <nav class="st-tab-nav">
             <?php
             $tabs = [
@@ -418,20 +398,14 @@ class ServerTrack_Admin {
             settings_fields( self::TAB_GROUPS[ $tab ] );
 
             /*
-             * B2 FIX — Post-save redirect returns to wrong tab.
-             * settings_fields() injects a hidden _wp_http_referer equal to
-             * the current REQUEST_URI.  options.php uses that value as the
-             * redirect destination after saving.  Without ?tab=X in the
-             * referer URL the user always lands on the General tab.
-             * Overriding _wp_http_referer here forces options.php to
-             * redirect back to the tab that is currently being saved.
+             * B2 FIX — override _wp_http_referer so options.php redirects
+             * back to the correct tab after saving.
              */
             $return_url = self::settings_url( $tab );
             echo '<input type="hidden" name="_wp_http_referer" value="' . esc_attr( $return_url ) . '" />';
             ?>
 
             <?php
-            // A6 FIX (v3.0): files are named 'settings-{tab}.php', not 'tab-{tab}.php'.
             $view = plugin_dir_path( __FILE__ ) . 'views/settings-' . $tab . '.php';
             if ( file_exists( $view ) ) {
                 include $view;
