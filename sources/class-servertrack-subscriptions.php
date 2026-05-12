@@ -4,7 +4,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Subscriptions  v1.0
+ * ServerTrack_Subscriptions  v1.1
  *
  * Feature #4 — WooCommerce Subscriptions CAPI Events.
  *
@@ -32,6 +32,11 @@ if ( ! defined( 'ABSPATH' ) ) {
  * event type so cron retries cannot double-fire.
  *
  * Consent: inherits per-order consent captured at initial purchase.
+ *
+ * Changelog:
+ *   v1.1 — BUG-LIVE-1: Added missing TikTok block to send_cancelled_async().
+ *           TikTok uses PlaceAnOrder with a negative value as the closest
+ *           equivalent to a cancellation/refund event.
  */
 class ServerTrack_Subscriptions {
 
@@ -161,22 +166,35 @@ class ServerTrack_Subscriptions {
         $order_id  = $subscription->get_last_order( 'ids' ) ?: 0;
         $user_data = self::build_order_user_data( $subscription );
         $custom    = [
-            'currency'     => $subscription->get_currency(),
-            'value'        => (float) $subscription->get_total(),
-            'content_name' => 'Subscription Cancelled',
-            'content_type' => 'product',
+            'currency'        => $subscription->get_currency(),
+            'value'           => (float) $subscription->get_total(),
+            'content_name'    => 'Subscription Cancelled',
+            'content_type'    => 'product',
             'subscription_id' => $sub_id,
         ];
 
+        // META — custom event 'SubscriptionCancelled'
         if ( get_option( 'servertrack_meta_enabled', 0 )
             && ! ServerTrack_Dedup::was_sent( $dedup_key, 'meta' ) ) {
-            // Meta: custom event 'SubscriptionCancelled'
             $e      = ( new ServerTrack_Event( 'SubscriptionCancelled', $event_id ) )->set_user_data( $user_data )->set_custom_data( $custom );
             $result = ServerTrack_Meta::send( $e );
             if ( ( $result['status'] ?? '' ) === 'success' ) ServerTrack_Dedup::mark_as_sent( $dedup_key, 'meta' );
             ServerTrack_Logger::log( $result['status'] ?? 'error', 'meta', 'Sub cancelled #' . $sub_id, '', $event_id, $order_id, 'SubscriptionCancelled' );
         }
 
+        // TIKTOK — PlaceAnOrder with negative value (TikTok has no native cancellation event;
+        // negative-value PlaceAnOrder is the documented TikTok fallback for refunds/cancellations).
+        // BUG-LIVE-1 fix: this block was entirely absent in v1.0.
+        if ( get_option( 'servertrack_tiktok_enabled', 0 )
+            && ! ServerTrack_Dedup::was_sent( $dedup_key, 'tiktok' ) ) {
+            $neg    = array_merge( $custom, [ 'value' => -1 * abs( $custom['value'] ) ] );
+            $e      = ( new ServerTrack_Event( 'PlaceAnOrder', $event_id ) )->set_user_data( $user_data )->set_custom_data( $neg );
+            $result = ServerTrack_TikTok::send( $e );
+            if ( ( $result['status'] ?? '' ) === 'success' ) ServerTrack_Dedup::mark_as_sent( $dedup_key, 'tiktok' );
+            ServerTrack_Logger::log( $result['status'] ?? 'error', 'tiktok', 'Sub cancelled #' . $sub_id, '', $event_id, $order_id, 'SubscriptionCancelled' );
+        }
+
+        // GOOGLE — refund hit with negative value
         if ( get_option( 'servertrack_google_enabled', 0 )
             && ! ServerTrack_Dedup::was_sent( $dedup_key, 'google' ) ) {
             $neg    = array_merge( $custom, [ 'value' => -1 * abs( $custom['value'] ) ] );
