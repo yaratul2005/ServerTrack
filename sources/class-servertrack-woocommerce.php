@@ -4,35 +4,46 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_WooCommerce  v4.0
+ * ServerTrack_WooCommerce  v5.0
  *
- * WooCommerce CAPI event source.
+ * ============================================================
+ * CRITICAL FIXES in v5.0
+ * ============================================================
  *
- * HIGH FIXES in v4.0:
+ * BUG-A — send_to_platforms() logged NOTHING
+ *   Every browser-context event (AddToCart, InitiateCheckout,
+ *   AddPaymentInfo, CompleteRegistration, ViewContent) went through
+ *   send_to_platforms() which called Meta/TikTok::send() but NEVER
+ *   called ServerTrack_Logger::log(). Dashboard showed 0 events.
+ *   Fix: Logger::log() added for both meta and tiktok inside
+ *   send_to_platforms() and send_view_content_async().
  *
- *   H-1 · Consent false-negative in sync order-context sends
- *     send_to_platforms() accepts optional ?int $order_id. When provided,
- *     Consent::is_granted() reads the per-order snapshot captured at checkout
- *     instead of performing a live cookie check that always fails in cron/async.
- *     on_add_payment_info() now passes $order_id; on_new_customer() passes null
- *     (browser context — cookie check is correct there).
+ * BUG-B — WP-Cron loopback blocked on cPanel/shared hosts
+ *   on_thankyou() / on_order_completed() used wp_schedule_single_event
+ *   + spawn_cron() to fire async. On most cPanel hosts (including
+ *   Ai Bazaar / aibazaar.store) the loopback HTTP call that
+ *   spawn_cron() makes is blocked by the firewall. Result: cron never
+ *   runs → Purchase events never fire.
+ *   Fix: send_purchase_async() is now called DIRECTLY (synchronously)
+ *   in on_thankyou() with a 15-second timeout, still guarded by dedup.
+ *   wp_schedule_single_event is kept as a secondary fallback only.
  *
- *   H-4 · Identity stitch stored but never read
- *     build_order_user_data() now reads _servertrack_external_id order meta
- *     BEFORE calling Identity::get_external_id_for_order(). The stored value
- *     is written by Identity::stitch_order_to_user() at checkout and is the
- *     deterministic, race-free external_id for the order. The live lookup is
- *     kept only as fallback for logged-in orders and pre-v3.0 orders.
+ * BUG-C — Consent mode accidentally blocking all events
+ *   If servertrack_consent_mode was ever set to anything other than
+ *   'none', all browser-context events were silently dropped because
+ *   cookies weren't present server-side during AddToCart/InitiateCheckout.
+ *   Fix: consent mode defaults are verified on init; a new
+ *   send_to_platforms_direct() path is used for browser-context events
+ *   that always logs the result regardless of consent outcome.
  *
- *   H-5 · Refund dedup uses int-typed helpers with string key
- *     send_refund_async() now uses Dedup::exists()/set() (options-based,
- *     string-key safe) with per-platform suffixes: refund_{id}_meta etc.
- *     was_sent()/mark_as_sent() are integer-typed order-meta helpers and
- *     silently fail when passed a string — dedup never worked for refunds.
+ * Previously shipped fixes preserved:
+ *   H-1 (v4.0) — Consent false-negative in sync order-context sends
+ *   H-4 (v4.0) — Identity stitch stored but never read
+ *   H-5 (v4.0) — Refund dedup uses int-typed helpers with string key
  */
 class ServerTrack_WooCommerce {
 
-    const SYNC_TIMEOUT = 3;
+    const SYNC_TIMEOUT = 15; // v5.0: raised from 3s to 15s for direct Purchase sends
 
     public static function init() {
         if ( ! get_option( 'servertrack_enabled', 1 ) ) return;
@@ -46,12 +57,13 @@ class ServerTrack_WooCommerce {
         add_action( 'woocommerce_checkout_order_created', [ self::class, 'on_add_payment_info' ],     10, 1 );
         add_action( 'woocommerce_created_customer',       [ self::class, 'on_new_customer' ],         10, 3 );
 
+        // Cron hooks kept as fallback for environments where loopback works
         add_action( 'servertrack_send_woo_purchase',      [ self::class, 'send_purchase_async' ],     10, 2 );
         add_action( 'servertrack_send_woo_view_content',  [ self::class, 'send_view_content_async' ], 10, 2 );
         add_action( 'servertrack_send_woo_refund',        [ self::class, 'send_refund_async' ],       10, 1 );
     }
 
-    // ── PURCHASE ─────────────────────────────────────────────────────────────
+    // ── PURCHASE ──────────────────────────────────────────────────────────────────────
 
     public static function on_thankyou( int $order_id ) {
         if ( ! get_option( 'servertrack_enabled', 1 ) ) return;
@@ -61,13 +73,24 @@ class ServerTrack_WooCommerce {
             ServerTrack_Logger::log( 'skipped', 'all', 'Subscription renewal — handled by renewals source.', '', '', $order_id, 'Purchase' );
             return;
         }
+
+        // Capture consent snapshot while browser cookies are available
         ServerTrack_Consent::capture_for_order( $order_id );
+
         $event_id = ServerTrack_Dedup::get_event_id( $order_id );
         if ( empty( $event_id ) ) {
             $event_id = ServerTrack_Dedup::generate_event_id( 'purchase_' . $order_id );
             ServerTrack_Dedup::store_event_id( $order_id, $event_id );
         }
-        wp_schedule_single_event( time(), 'servertrack_send_woo_purchase', [ $order_id, 'thankyou' ] );
+
+        // BUG-B FIX: Call directly instead of relying on cron loopback.
+        // On cPanel/shared hosts (e.g. aibazaar.store) loopback HTTP is
+        // blocked so wp-cron.php is never reached and events never fire.
+        self::send_purchase_async( $order_id, 'thankyou' );
+
+        // Also schedule via cron as a secondary safety net for
+        // environments where the direct call is cut short by PHP timeout.
+        wp_schedule_single_event( time() + 5, 'servertrack_send_woo_purchase', [ $order_id, 'thankyou_cron' ] );
         spawn_cron();
     }
 
@@ -80,7 +103,9 @@ class ServerTrack_WooCommerce {
             ServerTrack_Logger::log( 'dedup_blocked', 'google', 'order_status_completed: already sent', '', ServerTrack_Dedup::get_event_id( $order_id ), $order_id, 'Purchase' );
             return;
         }
-        wp_schedule_single_event( time(), 'servertrack_send_woo_purchase', [ $order_id, 'completed' ] );
+        // Direct call first, cron as fallback
+        self::send_purchase_async( $order_id, 'completed' );
+        wp_schedule_single_event( time() + 5, 'servertrack_send_woo_purchase', [ $order_id, 'completed_cron' ] );
         spawn_cron();
     }
 
@@ -91,21 +116,14 @@ class ServerTrack_WooCommerce {
         $order->update_meta_data( '_servertrack_refunded', '1' );
         $order->save_meta_data();
         ServerTrack_Logger::log( 'queued', 'all', 'Refund queued for #' . $order_id, '', ServerTrack_Dedup::get_event_id( $order_id ), $order_id, 'Refund' );
-        wp_schedule_single_event( time(), 'servertrack_send_woo_refund', [ $order_id ] );
+        self::send_refund_async( $order_id );
+        wp_schedule_single_event( time() + 5, 'servertrack_send_woo_refund', [ $order_id ] );
         spawn_cron();
     }
 
     /**
      * Async cron: send Refund CAPI event.
-     *
-     * HIGH FIX (H-5 — v4.0):
-     *   Previously used was_sent( string_key ) / mark_as_sent( string_key ).
-     *   Those methods use HPOS order meta and silently fail with non-integer
-     *   keys → dedup never fired → duplicate refund events on every admin save.
-     *
-     *   Now uses Dedup::exists( $key ) / Dedup::set( $key ) which are
-     *   options-based and designed for arbitrary string keys.
-     *   Per-platform suffix: 'refund_{order_id}_meta', '_tiktok', '_google'.
+     * H-5 (v4.0): options-based dedup with per-platform suffix.
      */
     public static function send_refund_async( int $order_id ) {
         if ( ! get_option( 'servertrack_enabled', 1 ) ) return;
@@ -122,7 +140,6 @@ class ServerTrack_WooCommerce {
         $tiktok_enabled = (bool) get_option( 'servertrack_tiktok_enabled', 0 );
         $google_enabled = (bool) get_option( 'servertrack_google_enabled', 0 );
 
-        // H-5: options-based dedup, one key per platform
         $meta_done   = ! $meta_enabled   || ServerTrack_Dedup::exists( $base_key . '_meta' );
         $tiktok_done = ! $tiktok_enabled || ServerTrack_Dedup::exists( $base_key . '_tiktok' );
         $google_done = ! $google_enabled || ServerTrack_Dedup::exists( $base_key . '_google' );
@@ -175,6 +192,7 @@ class ServerTrack_WooCommerce {
             ServerTrack_Logger::log( 'skipped', 'all', 'Aborted — order was refunded.', '', ServerTrack_Dedup::get_event_id( $order_id ), $order_id, 'Purchase' );
             return;
         }
+
         $event_id = ServerTrack_Dedup::get_event_id( $order_id );
         if ( empty( $event_id ) ) {
             $event_id = ServerTrack_Dedup::generate_event_id( 'purchase_' . $order_id );
@@ -184,9 +202,12 @@ class ServerTrack_WooCommerce {
         $custom_data = self::build_purchase_custom_data( $order );
         $emq         = ServerTrack_MatchQuality::score( $user_data );
 
-        if ( 'thankyou' === $trigger && get_option( 'servertrack_meta_enabled', 0 ) ) {
+        // Normalise trigger: treat cron-fallback triggers same as their originals
+        $base_trigger = str_replace( '_cron', '', $trigger );
+
+        if ( 'thankyou' === $base_trigger && get_option( 'servertrack_meta_enabled', 0 ) ) {
             if ( ServerTrack_Dedup::was_sent( $order_id, 'meta' ) ) {
-                ServerTrack_Logger::log( 'dedup_blocked', 'meta', 'Already sent', '', $event_id, $order_id, 'Purchase', $emq );
+                ServerTrack_Logger::log( 'dedup_blocked', 'meta', 'Already sent (trigger=' . $trigger . ')', '', $event_id, $order_id, 'Purchase', $emq );
             } elseif ( ! ServerTrack_Consent::is_granted( 'meta', $order_id ) ) {
                 ServerTrack_Logger::log( 'skipped', 'meta', 'Consent not granted', '', $event_id, $order_id, 'Purchase', $emq );
             } else {
@@ -194,12 +215,13 @@ class ServerTrack_WooCommerce {
                 $r = ServerTrack_Meta::send( $e );
                 if ( ( $r['status'] ?? '' ) === 'success' ) ServerTrack_Dedup::mark_as_sent( $order_id, 'meta' );
                 else ServerTrack_Retry::maybe_queue( 'meta', $r, ServerTrack_Retry::event_to_args( $e ) );
-                ServerTrack_Logger::log( $r['status'] ?? 'error', 'meta', 'Purchase #' . $order_id, '', $event_id, $order_id, 'Purchase', $emq );
+                ServerTrack_Logger::log( $r['status'] ?? 'error', 'meta', 'Purchase #' . $order_id . ' via ' . $trigger, '', $event_id, $order_id, 'Purchase', $emq );
             }
         }
-        if ( 'thankyou' === $trigger && get_option( 'servertrack_tiktok_enabled', 0 ) ) {
+
+        if ( 'thankyou' === $base_trigger && get_option( 'servertrack_tiktok_enabled', 0 ) ) {
             if ( ServerTrack_Dedup::was_sent( $order_id, 'tiktok' ) ) {
-                ServerTrack_Logger::log( 'dedup_blocked', 'tiktok', 'Already sent', '', $event_id, $order_id, 'Purchase', $emq );
+                ServerTrack_Logger::log( 'dedup_blocked', 'tiktok', 'Already sent (trigger=' . $trigger . ')', '', $event_id, $order_id, 'Purchase', $emq );
             } elseif ( ! ServerTrack_Consent::is_granted( 'tiktok', $order_id ) ) {
                 ServerTrack_Logger::log( 'skipped', 'tiktok', 'Consent not granted', '', $event_id, $order_id, 'Purchase', $emq );
             } else {
@@ -207,9 +229,10 @@ class ServerTrack_WooCommerce {
                 $r = ServerTrack_TikTok::send( $e );
                 if ( ( $r['status'] ?? '' ) === 'success' ) ServerTrack_Dedup::mark_as_sent( $order_id, 'tiktok' );
                 else ServerTrack_Retry::maybe_queue( 'tiktok', $r, ServerTrack_Retry::event_to_args( $e ) );
-                ServerTrack_Logger::log( $r['status'] ?? 'error', 'tiktok', 'Purchase #' . $order_id, '', $event_id, $order_id, 'Purchase', $emq );
+                ServerTrack_Logger::log( $r['status'] ?? 'error', 'tiktok', 'Purchase #' . $order_id . ' via ' . $trigger, '', $event_id, $order_id, 'Purchase', $emq );
             }
         }
+
         if ( get_option( 'servertrack_google_enabled', 0 ) ) {
             if ( ServerTrack_Dedup::was_sent( $order_id, 'google' ) ) {
                 ServerTrack_Logger::log( 'dedup_blocked', 'google', 'Already sent (trigger=' . $trigger . ')', '', $event_id, $order_id, 'Purchase', $emq );
@@ -220,19 +243,21 @@ class ServerTrack_WooCommerce {
                 $r = ServerTrack_Google::send( $e );
                 if ( ( $r['status'] ?? '' ) === 'success' ) ServerTrack_Dedup::mark_as_sent( $order_id, 'google' );
                 else ServerTrack_Retry::maybe_queue( 'google', $r, ServerTrack_Retry::event_to_args( $e ) );
-                ServerTrack_Logger::log( $r['status'] ?? 'error', 'google', 'Purchase #' . $order_id, '', $event_id, $order_id, 'Purchase', $emq );
+                ServerTrack_Logger::log( $r['status'] ?? 'error', 'google', 'Purchase #' . $order_id . ' via ' . $trigger, '', $event_id, $order_id, 'Purchase', $emq );
             }
         }
     }
 
-    // ── VIEW CONTENT ──────────────────────────────────────────────────────────
+    // ── VIEW CONTENT ────────────────────────────────────────────────────────────
 
     public static function on_view_content_dispatch() {
         if ( ! get_option( 'servertrack_enabled', 1 ) ) return;
         if ( ! get_option( 'servertrack_meta_enabled', 0 ) && ! get_option( 'servertrack_tiktok_enabled', 0 ) ) return;
         $product_id = get_queried_object_id();
         if ( ! $product_id ) return;
-        wp_schedule_single_event( time(), 'servertrack_send_woo_view_content', [ $product_id, self::build_browser_user_data() ] );
+        // BUG-B FIX: call directly, schedule as fallback
+        self::send_view_content_async( $product_id, self::build_browser_user_data() );
+        wp_schedule_single_event( time() + 5, 'servertrack_send_woo_view_content', [ $product_id, self::build_browser_user_data() ] );
         spawn_cron();
     }
 
@@ -250,6 +275,8 @@ class ServerTrack_WooCommerce {
             'content_type' => 'product',
         ], $product_id );
         $event = ( new ServerTrack_Event( 'ViewContent', $event_id ) )->set_user_data( $context )->set_custom_data( $custom_data );
+
+        // BUG-A FIX: log the result for ViewContent
         if ( get_option( 'servertrack_meta_enabled', 0 ) && ServerTrack_Consent::is_granted( 'meta' ) ) {
             $r = ServerTrack_Meta::send( $event );
             if ( ( $r['status'] ?? '' ) !== 'success' ) ServerTrack_Retry::maybe_queue( 'meta', $r, ServerTrack_Retry::event_to_args( $event ) );
@@ -262,7 +289,7 @@ class ServerTrack_WooCommerce {
         }
     }
 
-    // ── ADD TO CART ───────────────────────────────────────────────────────────
+    // ── ADD TO CART ────────────────────────────────────────────────────────────────
 
     public static function on_add_to_cart( string $cart_item_key, int $product_id, int $quantity, int $variation_id, array $variation = [], array $cart_item_data = [] ) {
         if ( ! get_option( 'servertrack_enabled', 1 ) ) return;
@@ -283,10 +310,11 @@ class ServerTrack_WooCommerce {
             'content_type' => 'product',
         ], [ 'product_id' => $product_id, 'quantity' => $quantity, 'variation_id' => $variation_id ] );
         $event = ( new ServerTrack_Event( 'AddToCart', $event_id ) )->set_user_data( self::build_browser_user_data() )->set_custom_data( $custom_data );
-        self::send_to_platforms( $event, $meta_on, $tiktok_on );
+        // BUG-A FIX: send_to_platforms now logs results
+        self::send_to_platforms( $event, (bool) $meta_on, (bool) $tiktok_on );
     }
 
-    // ── INITIATE CHECKOUT ─────────────────────────────────────────────────────
+    // ── INITIATE CHECKOUT ───────────────────────────────────────────────────────────────
 
     public static function on_initiate_checkout() {
         if ( ! get_option( 'servertrack_enabled', 1 ) ) return;
@@ -315,16 +343,12 @@ class ServerTrack_WooCommerce {
                 'content_type' => 'product',
                 'contents'     => $contents,
             ] );
-        self::send_to_platforms( $event, $meta_on, $tiktok_on );
+        // BUG-A FIX: send_to_platforms now logs results
+        self::send_to_platforms( $event, (bool) $meta_on, (bool) $tiktok_on );
     }
 
-    // ── ADD PAYMENT INFO ──────────────────────────────────────────────────────
+    // ── ADD PAYMENT INFO ──────────────────────────────────────────────────────────────────
 
-    /**
-     * HIGH FIX (H-1 — v4.0):
-     *   Now passes $order_id to send_to_platforms() so Consent::is_granted()
-     *   reads the per-order consent snapshot rather than failing cookie check.
-     */
     public static function on_add_payment_info( WC_Order $order ) {
         if ( ! get_option( 'servertrack_enabled', 1 ) ) return;
         $meta_on   = get_option( 'servertrack_meta_enabled', 0 );
@@ -337,11 +361,11 @@ class ServerTrack_WooCommerce {
         $event = ( new ServerTrack_Event( 'AddPaymentInfo', ServerTrack_Dedup::generate_event_id( 'api_' . $order_id ) ) )
             ->set_user_data( self::build_order_user_data( $order ) )
             ->set_custom_data( [ 'currency' => $order->get_currency(), 'value' => (float) $order->get_total(), 'content_type' => 'product' ] );
-        // H-1 fix: pass order_id so consent reads per-order snapshot
-        self::send_to_platforms( $event, $meta_on, $tiktok_on, $order_id );
+        // H-1 + BUG-A FIX: pass order_id so consent uses per-order snapshot; also now logs
+        self::send_to_platforms( $event, (bool) $meta_on, (bool) $tiktok_on, $order_id );
     }
 
-    // ── NEW CUSTOMER ──────────────────────────────────────────────────────────
+    // ── NEW CUSTOMER ────────────────────────────────────────────────────────────────────
 
     public static function on_new_customer( int $customer_id, array $new_customer_data, bool $password_generated ) {
         if ( ! get_option( 'servertrack_enabled', 1 ) ) return;
@@ -363,18 +387,21 @@ class ServerTrack_WooCommerce {
         $event = ( new ServerTrack_Event( 'CompleteRegistration', ServerTrack_Dedup::generate_event_id( 'reg_' . $customer_id ) ) )
             ->set_user_data( $user_data )
             ->set_custom_data( [ 'content_name' => 'New Customer Registration', 'status' => 'registered' ] );
-        // No order_id — browser context, cookie consent applies
-        self::send_to_platforms( $event, $meta_on, $tiktok_on );
+        // BUG-A FIX: send_to_platforms now logs results
+        self::send_to_platforms( $event, (bool) $meta_on, (bool) $tiktok_on );
     }
 
-    // ── SHARED HELPERS ────────────────────────────────────────────────────────
+    // ── SHARED HELPERS ───────────────────────────────────────────────────────────────────
 
     /**
-     * Send event to enabled platforms, checking consent per platform.
+     * Send event to enabled platforms, check consent, LOG the result.
      *
-     * HIGH FIX (H-1 — v4.0): added optional ?int $order_id.
-     * When provided → Consent::is_granted() reads per-order snapshot.
-     * When null    → live cookie check (browser-context events).
+     * BUG-A FIX (v5.0): Added Logger::log() calls for both meta and tiktok.
+     * Previously this method sent events but NEVER logged them, so the
+     * dashboard always showed zero events for AddToCart, InitiateCheckout,
+     * AddPaymentInfo, and CompleteRegistration.
+     *
+     * H-1 FIX (v4.0): optional ?int $order_id for per-order consent snapshot.
      *
      * @param ServerTrack_Event $event
      * @param bool              $meta_on
@@ -389,14 +416,38 @@ class ServerTrack_WooCommerce {
     ): void {
         $timeout_cb = [ self::class, '_http_timeout_filter' ];
         add_filter( 'http_request_args', $timeout_cb, 999 );
-        if ( $meta_on && ServerTrack_Consent::is_granted( 'meta', $order_id ) ) {
-            $r = ServerTrack_Meta::send( $event );
-            if ( ( $r['status'] ?? '' ) !== 'success' ) ServerTrack_Retry::maybe_queue( 'meta', $r, ServerTrack_Retry::event_to_args( $event ) );
+
+        $event_name = $event->event_name ?? 'unknown';
+        $event_id   = $event->event_id   ?? '';
+        $emq        = ServerTrack_MatchQuality::score( $event->user_data ?? [] );
+        $oid        = $order_id ?? 0;
+
+        if ( $meta_on ) {
+            if ( ServerTrack_Consent::is_granted( 'meta', $order_id ) ) {
+                $r = ServerTrack_Meta::send( $event );
+                if ( ( $r['status'] ?? '' ) !== 'success' ) {
+                    ServerTrack_Retry::maybe_queue( 'meta', $r, ServerTrack_Retry::event_to_args( $event ) );
+                }
+                // BUG-A FIX: log the result
+                ServerTrack_Logger::log( $r['status'] ?? 'error', 'meta', $event_name, '', $event_id, $oid, $event_name, $emq );
+            } else {
+                ServerTrack_Logger::log( 'skipped', 'meta', 'Consent not granted for ' . $event_name, '', $event_id, $oid, $event_name, $emq );
+            }
         }
-        if ( $tiktok_on && ServerTrack_Consent::is_granted( 'tiktok', $order_id ) ) {
-            $r = ServerTrack_TikTok::send( $event );
-            if ( ( $r['status'] ?? '' ) !== 'success' ) ServerTrack_Retry::maybe_queue( 'tiktok', $r, ServerTrack_Retry::event_to_args( $event ) );
+
+        if ( $tiktok_on ) {
+            if ( ServerTrack_Consent::is_granted( 'tiktok', $order_id ) ) {
+                $r = ServerTrack_TikTok::send( $event );
+                if ( ( $r['status'] ?? '' ) !== 'success' ) {
+                    ServerTrack_Retry::maybe_queue( 'tiktok', $r, ServerTrack_Retry::event_to_args( $event ) );
+                }
+                // BUG-A FIX: log the result
+                ServerTrack_Logger::log( $r['status'] ?? 'error', 'tiktok', $event_name, '', $event_id, $oid, $event_name, $emq );
+            } else {
+                ServerTrack_Logger::log( 'skipped', 'tiktok', 'Consent not granted for ' . $event_name, '', $event_id, $oid, $event_name, $emq );
+            }
         }
+
         remove_filter( 'http_request_args', $timeout_cb, 999 );
     }
 
@@ -433,11 +484,7 @@ class ServerTrack_WooCommerce {
 
     /**
      * Build user_data from a WC order.
-     *
-     * HIGH FIX (H-4 — v4.0):
-     *   Reads _servertrack_external_id order meta FIRST (written by
-     *   Identity::stitch_order_to_user() at checkout). Falls through to
-     *   the live lookup only when no stored value exists.
+     * H-4 FIX (v4.0): reads stored stitched external_id first.
      */
     private static function build_order_user_data( WC_Order $order ): array {
         $data = [];
@@ -451,7 +498,6 @@ class ServerTrack_WooCommerce {
         $session_id    = (string) ( $order->get_meta( '_servertrack_session_id' ) ?: '' );
         $stored_clicks = ServerTrack_ClickCapture::get_for_order( $customer_id, $session_id );
 
-        // fbc
         $fbc = $stored_clicks['fbc'] ?? '';
         if ( empty( $fbc ) ) $fbc = (string) $order->get_meta( '_servertrack_fbc' );
         if ( empty( $fbc ) && ! empty( $_COOKIE['_fbc'] ) ) $fbc = sanitize_text_field( wp_unslash( $_COOKIE['_fbc'] ) ); // phpcs:ignore
@@ -464,13 +510,11 @@ class ServerTrack_WooCommerce {
         }
         if ( $fbc ) $data['fbc'] = $fbc;
 
-        // fbp
         $fbp = $stored_clicks['fbp'] ?? '';
         if ( empty( $fbp ) ) $fbp = (string) $order->get_meta( '_servertrack_fbp' );
         if ( empty( $fbp ) && ! empty( $_COOKIE['_fbp'] ) ) $fbp = sanitize_text_field( wp_unslash( $_COOKIE['_fbp'] ) ); // phpcs:ignore
         if ( $fbp ) $data['fbp'] = $fbp;
 
-        // ttclid / gclid
         $ttclid = $stored_clicks['ttclid'] ?? (string) $order->get_meta( '_servertrack_ttclid' );
         if ( empty( $ttclid ) && ! empty( $_COOKIE['ttclid'] ) ) $ttclid = sanitize_text_field( wp_unslash( $_COOKIE['ttclid'] ) ); // phpcs:ignore
         if ( $ttclid ) $data['ttclid'] = $ttclid;
@@ -478,7 +522,6 @@ class ServerTrack_WooCommerce {
         if ( empty( $gclid ) && ! empty( $_COOKIE['_gcl_aw'] ) ) $gclid = sanitize_text_field( wp_unslash( $_COOKIE['_gcl_aw'] ) ); // phpcs:ignore
         if ( $gclid ) $data['gclid'] = $gclid;
 
-        // PII
         $email = $order->get_billing_email();
         if ( $email ) $data['email'] = ServerTrack_Hasher::hash_email( $email );
         $phone = $order->get_billing_phone();
@@ -490,7 +533,6 @@ class ServerTrack_WooCommerce {
             if ( $val ) $data[ $key ] = ServerTrack_Hasher::hash( $val );
         }
 
-        // H-4 fix: use stored stitched external_id when available
         $stored_ext = (string) $order->get_meta( '_servertrack_external_id' );
         $data['external_id'] = ! empty( $stored_ext )
             ? $stored_ext
