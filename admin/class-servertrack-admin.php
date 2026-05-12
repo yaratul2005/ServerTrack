@@ -4,7 +4,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Admin — v2.5
+ * ServerTrack_Admin — v2.6
+ *
+ * Changes in v2.6:
+ *   - enqueue_assets(): Added 'dashboard_nonce' key to wp_localize_script so
+ *     that dashboard AJAX actions (drain retries, manual refresh, clear log)
+ *     can send the correct nonce expected by ServerTrack_Dashboard AJAX
+ *     handlers which call check_ajax_referer( 'servertrack_dashboard', 'nonce' ).
+ *     Previously the v3.0 Dashboard class fix removed the premature
+ *     wp_localize_script call but never re-added the dashboard nonce, causing
+ *     all dashboard AJAX requests to return HTTP 403 / -1.
  *
  * Changes in v2.5:
  *   - render_page_header() changed from private to public so that
@@ -90,6 +99,17 @@ class ServerTrack_Admin {
      * 'settings_page_servertrack' (which only fires for pages registered via
      * add_options_page()). We match both to be safe, and also accept the
      * top-level dashboard hook.
+     *
+     * v2.6 FIX: wp_localize_script now includes 'dashboard_nonce' in addition
+     * to the existing 'nonce'. Dashboard AJAX handlers
+     * (servertrack_stats_breakdown, servertrack_clear_log registered in
+     * ServerTrack_Dashboard, servertrack_drain_retries) call
+     * check_ajax_referer( 'servertrack_dashboard', 'nonce' ).  The JS must
+     * send this separate nonce — not servertrack_admin_nonce — for those
+     * requests.  Both nonces are now available on the global servertrack_admin
+     * JS object:
+     *   servertrack_admin.nonce           → 'servertrack_admin_nonce' (Settings/Tests)
+     *   servertrack_admin.dashboard_nonce → 'servertrack_dashboard'   (Dashboard AJAX)
      */
     public static function enqueue_assets( string $hook ) {
         $allowed_hooks = [
@@ -113,8 +133,19 @@ class ServerTrack_Admin {
             true
         );
         wp_localize_script( 'servertrack-admin', 'servertrack_admin', [
-            'ajax_url' => admin_url( 'admin-ajax.php' ),
-            'nonce'    => wp_create_nonce( 'servertrack_admin_nonce' ),
+            'ajax_url'        => admin_url( 'admin-ajax.php' ),
+
+            // Nonce for Settings-page AJAX (test_event, get_logs,
+            // get_dashboard_stats, clear_log registered in ServerTrack_Admin).
+            'nonce'           => wp_create_nonce( 'servertrack_admin_nonce' ),
+
+            // v2.6 FIX — Nonce for Dashboard AJAX actions registered in
+            // ServerTrack_Dashboard (stats_breakdown, drain_retries, clear_log,
+            // platform_health, log_data).  The Dashboard render_page() also
+            // creates this nonce inline for PHP use, but JS needs it here so
+            // it is available before the DOM finishes rendering.
+            'dashboard_nonce' => wp_create_nonce( 'servertrack_dashboard' ),
+
             'platforms' => [
                 'meta'   => [
                     'enabled'    => (bool) get_option( 'servertrack_meta_enabled', 0 ),
