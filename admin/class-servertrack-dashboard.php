@@ -4,7 +4,21 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Dashboard  v3.1
+ * ServerTrack_Dashboard  v3.2
+ *
+ * FIX in v3.2:
+ *
+ *   A5 — Chart.js no longer loaded on the Settings page.
+ *     enqueue_assets() previously listed all three admin hook slugs in its
+ *     $allowed_hooks array:
+ *       'toplevel_page_servertrack'              (Dashboard)
+ *       'servertrack_page_servertrack-settings'  (Settings)
+ *       'settings_page_servertrack'              (legacy fallback)
+ *     Chart.js (190 KB minified) was therefore fetched on every Settings tab
+ *     even though no <canvas> element exists there. The array is now narrowed
+ *     to 'toplevel_page_servertrack' only — the sole page that renders charts.
+ *     ServerTrack_Admin::enqueue_assets() (priority 10) still covers the two
+ *     Settings hooks for admin.css + admin.js and is unaffected.
  *
  * FIX in v3.1 — Removed duplicate CSS enqueue that caused browser-cache
  * poisoning on the Dashboard page.
@@ -42,6 +56,9 @@ class ServerTrack_Dashboard {
         add_action( 'wp_ajax_servertrack_platform_health', [ self::class, 'ajax_platform_health' ] );
 
         // v2 AJAX
+        // NOTE (A3): servertrack_clear_log is the sole owner of this action.
+        // ServerTrack_Admin::init() previously also registered it; that
+        // duplicate has been removed in v2.9 of that class.
         add_action( 'wp_ajax_servertrack_stats_breakdown', [ self::class, 'ajax_stats_breakdown' ] );
         add_action( 'wp_ajax_servertrack_clear_log',       [ self::class, 'ajax_clear_log' ] );
         add_action( 'wp_ajax_servertrack_drain_retries',   [ self::class, 'ajax_drain_retries' ] );
@@ -97,22 +114,21 @@ class ServerTrack_Dashboard {
     }
 
     /**
-     * Enqueue Chart.js only (CSS is handled by ServerTrack_Admin::enqueue_assets).
+     * Enqueue Chart.js on the Dashboard page only.
      *
-     * v3.1 FIX: Removed wp_enqueue_style( 'servertrack-dashboard', … ).
-     *   The duplicate handle caused browser-cache poisoning — see class docblock.
-     *   ServerTrack_Admin::enqueue_assets() (priority 10) owns the stylesheet.
-     *
-     * v3.0 FIX: Removed the wp_localize_script( 'servertrack-admin', … ) call
-     *   that ran before the handle was registered.
+     * A5 FIX (v3.2): $allowed_hooks narrowed to 'toplevel_page_servertrack'.
+     *   Previously all three admin page hooks were listed, causing Chart.js
+     *   (190 KB) to be fetched on the Settings page where no canvas exists.
+     *   CSS is still handled exclusively by ServerTrack_Admin::enqueue_assets()
+     *   (see v3.1 fix note in class docblock).
      */
     public static function enqueue_assets( string $hook ): void {
-        $allowed_hooks = [
-            'settings_page_servertrack',             // legacy / fallback
-            'servertrack_page_servertrack-settings', // Settings submenu
-            'toplevel_page_servertrack',             // Dashboard top-level
-        ];
-        if ( ! in_array( $hook, $allowed_hooks, true ) ) return;
+        // A5 FIX: Chart.js is only needed on the Dashboard page.
+        // Settings hooks ('servertrack_page_servertrack-settings',
+        // 'settings_page_servertrack') intentionally excluded.
+        if ( 'toplevel_page_servertrack' !== $hook ) {
+            return;
+        }
 
         wp_enqueue_script(
             'chart-js',
@@ -124,9 +140,9 @@ class ServerTrack_Dashboard {
 
         // NOTE: wp_enqueue_style intentionally NOT called here (v3.1 FIX).
         // ServerTrack_Admin::enqueue_assets() runs at priority 10 on the same
-        // hooks and registers admin.css under the canonical handle
-        // 'servertrack-admin'.  A second handle pointing to the same URL
-        // was causing browser-cache collisions — see class docblock.
+        // hook and registers admin.css under the canonical 'servertrack-admin'
+        // handle. A second handle pointing to the same URL caused browser-cache
+        // collisions — see class docblock.
     }
 
     // ────────────────────────────────────────────────────────────────────────
