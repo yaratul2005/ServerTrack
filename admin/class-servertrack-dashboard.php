@@ -4,7 +4,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Dashboard  v4.1
+ * ServerTrack_Dashboard  v4.2
+ *
+ * v4.2 — Removed last remaining emoji ('Done ✓' in drain-retries JS callback).
+ *         Added 'color' key to every KPI definition and applied
+ *         st-kpi-icon-{color} CSS variant class to each KPI icon wrapper so
+ *         the SVG badge background renders correctly (was falling back to the
+ *         browser's Unicode glyph because the colour class was absent).
  *
  * v4.1 — Replaced every emoji with a clean inline SVG icon.
  *         All emoji strings (📡 ✅ 🎯 🔄 📊 ❌ 🛰 ✅ 🔵 🟡 🔴 📋 🔄 ⏭ 🚫 🕐)
@@ -142,20 +148,26 @@ class ServerTrack_Dashboard {
         <?php ServerTrack_Admin::render_page_header(); ?>
 
         <?php
-        // KPI definitions — icon uses svg() helper, no emoji
+        /*
+         * KPI definitions.
+         * 'color' drives the st-kpi-icon-{color} CSS class on the icon wrapper,
+         * which sets the background tint for the SVG badge.
+         * Without this class the SVG had no container style and the browser
+         * showed the bare Unicode fallback glyph (v4.1 regression, fixed v4.2).
+         */
         $kpis = [
-            [ 'id' => 'st-kpi-total',  'label' => 'Events Today',  'val' => $stats['today_count'],        'sub' => 'All platforms',   'icon' => 'signal' ],
-            [ 'id' => 'st-kpi-rate',   'label' => 'Success Rate',  'val' => $stats['success_rate'] . '%', 'sub' => 'Last 7 days',     'icon' => 'check-circle' ],
-            [ 'id' => 'st-kpi-emq',    'label' => 'Avg EMQ Score', 'val' => $stats['avg_emq'],            'sub' => '0–10 scale',      'icon' => 'target' ],
-            [ 'id' => 'st-kpi-retry',  'label' => 'Retry Queue',   'val' => $stats['retry_queue'],        'sub' => 'Pending retries', 'icon' => 'refresh-cw' ],
-            [ 'id' => 'st-kpi-week',   'label' => 'Total (7d)',    'val' => $stats['week_total'],         'sub' => 'Events sent',     'icon' => 'bar-chart-2' ],
-            [ 'id' => 'st-kpi-errors', 'label' => 'Errors (7d)',   'val' => $stats['week_errors'],        'sub' => 'Failed sends',    'icon' => 'x-circle' ],
+            [ 'id' => 'st-kpi-total',  'label' => 'Events Today',  'val' => $stats['today_count'],        'sub' => 'All platforms',   'icon' => 'signal',       'color' => 'teal'   ],
+            [ 'id' => 'st-kpi-rate',   'label' => 'Success Rate',  'val' => $stats['success_rate'] . '%', 'sub' => 'Last 7 days',     'icon' => 'check-circle', 'color' => 'green'  ],
+            [ 'id' => 'st-kpi-emq',    'label' => 'Avg EMQ Score', 'val' => $stats['avg_emq'],            'sub' => '0–10 scale',      'icon' => 'target',       'color' => 'purple' ],
+            [ 'id' => 'st-kpi-retry',  'label' => 'Retry Queue',   'val' => $stats['retry_queue'],        'sub' => 'Pending retries', 'icon' => 'refresh-cw',   'color' => 'orange' ],
+            [ 'id' => 'st-kpi-week',   'label' => 'Total (7d)',    'val' => $stats['week_total'],         'sub' => 'Events sent',     'icon' => 'bar-chart-2',  'color' => 'blue'   ],
+            [ 'id' => 'st-kpi-errors', 'label' => 'Errors (7d)',   'val' => $stats['week_errors'],        'sub' => 'Failed sends',    'icon' => 'x-circle',     'color' => 'red'    ],
         ];
         ?>
         <div class="st-kpi-grid" id="st-kpis">
             <?php foreach ( $kpis as $k ) : ?>
             <div class="st-kpi">
-                <div class="st-kpi-icon" aria-hidden="true"><?php echo self::svg( $k['icon'], 'st-kpi-svg' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></div>
+                <div class="st-kpi-icon st-kpi-icon-<?php echo esc_attr( $k['color'] ); ?>" aria-hidden="true"><?php echo self::svg( $k['icon'], 'st-kpi-svg' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></div>
                 <div class="st-kpi-label"><?php echo esc_html( $k['label'] ); ?></div>
                 <div class="st-kpi-val" id="<?php echo esc_attr( $k['id'] ); ?>"><?php echo esc_html( $k['val'] ); ?></div>
                 <div class="st-kpi-sub"><?php echo esc_html( $k['sub'] ); ?></div>
@@ -212,18 +224,25 @@ class ServerTrack_Dashboard {
                 </div>
                 <div class="st-emq-grades">
                     <?php
-                    // Grade definitions — SVG icons replace emoji bullets
                     $grade_defs = [
-                        'excellent' => [ 'label' => 'Excellent (8–10)', 'icon' => 'check-circle',  'color' => '#22c55e' ],
-                        'good'      => [ 'label' => 'Good (6–7.9)',     'icon' => 'circle-dot',    'color' => '#3b82f6' ],
-                        'fair'      => [ 'label' => 'Fair (4–5.9)',     'icon' => 'circle-dot',    'color' => '#eab308' ],
-                        'poor'      => [ 'label' => 'Poor (0–3.9)',     'icon' => 'x-circle',      'color' => '#ef4444' ],
+                        'excellent' => [ 'label' => 'Excellent (8–10)', 'icon' => 'check-circle', 'color' => '#22c55e' ],
+                        'good'      => [ 'label' => 'Good (6–7.9)',     'icon' => 'circle-dot',   'color' => '#3b82f6' ],
+                        'fair'      => [ 'label' => 'Fair (4–5.9)',     'icon' => 'circle-dot',   'color' => '#eab308' ],
+                        'poor'      => [ 'label' => 'Poor (0–3.9)',     'icon' => 'x-circle',     'color' => '#ef4444' ],
                     ];
                     foreach ( $grade_defs as $grade => $def ) :
                         $count = $breakdown['emq_grades'][ $grade ] ?? 0;
                     ?>
                     <div class="st-grade-pill <?php echo esc_attr( $grade ); ?>">
-                        <svg class="st-icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="<?php echo esc_attr( $def['color'] ); ?>" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><?php echo $grade_defs[ $grade ]['icon'] === 'check-circle' ? '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>' : ( $grade_defs[ $grade ]['icon'] === 'x-circle' ? '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>' : '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/>' ); // phpcs:ignore ?></svg>
+                        <svg class="st-icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="<?php echo esc_attr( $def['color'] ); ?>" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><?php
+                            if ( $def['icon'] === 'check-circle' ) {
+                                echo '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>';
+                            } elseif ( $def['icon'] === 'x-circle' ) {
+                                echo '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>';
+                            } else {
+                                echo '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/>';
+                            }
+                        // phpcs:ignore ?></svg>
                         <span><?php echo esc_html( $def['label'] ); ?></span>
                         <span class="st-grade-count"><?php echo esc_html( $count ); ?></span>
                     </div>
@@ -503,7 +522,7 @@ class ServerTrack_Dashboard {
                     drainBtn.textContent = 'Draining…';
                     fetch(ajaxUrl,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'action=servertrack_drain_retries&nonce='+encodeURIComponent(nonce)})
                     .then(function(r){return r.json();})
-                    .then(function(res){ drainBtn.textContent = res.success ? 'Done ✓' : 'Error'; })
+                    .then(function(res){ drainBtn.textContent = res.success ? 'Done' : 'Error'; })
                     .catch(function(){ drainBtn.textContent = 'Error'; });
                 });
             }
@@ -522,7 +541,6 @@ class ServerTrack_Dashboard {
             return;
         }
 
-        // Inline SVG icon strings per status
         $status_icons = [
             'success'       => '<svg class="st-icon st-icon-status" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>',
             'error'         => '<svg class="st-icon st-icon-status" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
