@@ -4,172 +4,34 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Core  v3.3
+ * ServerTrack_Core — backward-compatibility shim (v6.0.3+)
  *
- * Changes in v3.3 (feature/new-woo-events):
- *   Bootstraps three new WooCommerce event source classes:
- *     - ServerTrack_WooOrderStatus   (order lifecycle: on-hold, failed, cancelled)
- *     - ServerTrack_WooWishlist      (AddToWishlist CAPI — YITH & TI plugins)
- *     - ServerTrack_WooPartialRefund (partial refund amount, separate from full refund)
- *   Registers new options:
- *     servertrack_source_order_status_enabled  (default 1  — on by default)
- *     servertrack_source_wishlist_enabled      (default 0  — opt-in)
- *     servertrack_source_partial_refund_enabled (default 1 — on by default)
+ * This class is intentionally a no-op. In v6.0.2 and earlier, ServerTrack_Core
+ * was a competing bootstrap system inside includes/ that was never actually
+ * loaded or called from the main plugin file (servertrack.php). As a result
+ * every subsystem it bootstrapped — ServerTrack_Frontend, ServerTrack_CustomEvents,
+ * ServerTrack_Retry, and all v3.x WooCommerce sources — was silently dead.
  *
- * Changes in v3.2:
- *   - Bootstraps ServerTrack_WooAbandonment when WooCommerce is active and
- *     servertrack_source_abandonment_enabled is on.
- *   - Registers servertrack_source_abandonment_enabled and
- *     servertrack_abandonment_window_minutes default options.
+ * As of v6.0.3 the single authoritative bootstrap is servertrack_init() in
+ * servertrack.php. ServerTrack_Core::init() is kept here as a safe no-op so
+ * that any stale third-party code that somehow calls it does not produce a
+ * fatal error. It will emit a _doing_it_wrong() notice in WP_DEBUG mode.
  *
- * Changes in v3.1:
- *   - CRITICAL FIX: replaced mismatched add_action( 'servertrack_retry_failed_events', ... )
- *     with ServerTrack_Retry::init(). The old hook name never matched the actual
- *     hook 'servertrack_process_retry' — retries were never executed.
- *
- * Changes in v3.0:
- *   - Added ServerTrack_CustomEvents initialisation.
- *   - Added scroll_depth, video_tracking, wishlist_tracking options.
- *   - Added google_gtag_id and google_gtag_label options.
+ * Do NOT add logic back to this class. Add it to servertrack_init() instead.
  */
 class ServerTrack_Core {
 
-    public static function init() {
-        // ── Platform drivers ─────────────────────────────────────────────────
-        require_once SERVERTRACK_DIR . 'platforms/class-servertrack-meta.php';
-        require_once SERVERTRACK_DIR . 'platforms/class-servertrack-google.php';
-        require_once SERVERTRACK_DIR . 'platforms/class-servertrack-tiktok.php';
-
-        // ── WooCommerce sources ──────────────────────────────────────────────
-        if ( class_exists( 'WooCommerce' ) && get_option( 'servertrack_source_woo_enabled', 1 ) ) {
-            require_once SERVERTRACK_DIR . 'sources/class-servertrack-woocommerce.php';
-            require_once SERVERTRACK_DIR . 'sources/class-servertrack-woo-renewals.php';
-            ServerTrack_WooCommerce::init();
-            ServerTrack_WooRenewals::init();
-
-            // Cart abandonment — opt-in, separate toggle
-            if ( get_option( 'servertrack_source_abandonment_enabled', 0 ) ) {
-                require_once SERVERTRACK_DIR . 'sources/class-servertrack-woo-abandonment.php';
-                ServerTrack_WooAbandonment::init();
-            }
-
-            // v3.3: Order lifecycle status events (on-hold, failed, cancelled) — on by default
-            if ( get_option( 'servertrack_source_order_status_enabled', 1 ) ) {
-                require_once SERVERTRACK_DIR . 'sources/class-servertrack-woo-order-status.php';
-                ServerTrack_WooOrderStatus::init();
-            }
-
-            // v3.3: AddToWishlist events — opt-in (requires YITH or TI Wishlist plugin)
-            if ( get_option( 'servertrack_source_wishlist_enabled', 0 ) ) {
-                require_once SERVERTRACK_DIR . 'sources/class-servertrack-woo-wishlist.php';
-                ServerTrack_WooWishlist::init();
-            }
-
-            // v3.3: Partial refund events — on by default
-            if ( get_option( 'servertrack_source_partial_refund_enabled', 1 ) ) {
-                require_once SERVERTRACK_DIR . 'sources/class-servertrack-woo-partial-refund.php';
-                ServerTrack_WooPartialRefund::init();
-            }
-        }
-
-        if ( class_exists( 'WPCF7' ) && get_option( 'servertrack_source_cf7_enabled', 0 ) ) {
-            require_once SERVERTRACK_DIR . 'sources/class-servertrack-cf7.php';
-            ServerTrack_CF7::init();
-        }
-
-        if ( class_exists( 'Easy_Digital_Downloads' ) && get_option( 'servertrack_source_edd_enabled', 0 ) ) {
-            require_once SERVERTRACK_DIR . 'sources/class-servertrack-edd.php';
-            ServerTrack_EDD::init();
-        }
-
-        // ── Custom Events ────────────────────────────────────────────────────
-        require_once SERVERTRACK_DIR . 'includes/class-servertrack-custom-events.php';
-        ServerTrack_CustomEvents::init();
-
-        // ── Retry processor ──────────────────────────────────────────────────
-        ServerTrack_Retry::init();
-
-        // ── Admin ────────────────────────────────────────────────────────────
-        if ( is_admin() ) {
-            require_once SERVERTRACK_DIR . 'admin/class-servertrack-admin.php';
-            ServerTrack_Admin::init();
-        }
-
-        // ── Frontend pixel ───────────────────────────────────────────────────
-        if ( ! is_admin() ) {
-            require_once SERVERTRACK_DIR . 'frontend/class-servertrack-frontend.php';
-            ServerTrack_Frontend::init();
-        }
-
-        // ── Register options ─────────────────────────────────────────────────
-        self::register_v3_options();
-        self::register_v32_options();
-        self::register_v33_options();
-    }
-
-    private static function register_v3_options() {
-        $new_options = [
-            'servertrack_scroll_depth'      => 1,
-            'servertrack_video_tracking'    => 1,
-            'servertrack_wishlist_tracking' => 1,
-            'servertrack_google_gtag_id'    => '',
-            'servertrack_google_gtag_label' => '',
-        ];
-        foreach ( $new_options as $key => $default ) {
-            if ( false === get_option( $key ) ) add_option( $key, $default );
-        }
-        add_filter( 'allowed_options', function( array $allowed ): array {
-            $v3 = [
-                'servertrack_scroll_depth', 'servertrack_video_tracking',
-                'servertrack_wishlist_tracking', 'servertrack_google_gtag_id',
-                'servertrack_google_gtag_label',
-            ];
-            foreach ( $v3 as $opt ) $allowed['servertrack_settings'][] = $opt;
-            return $allowed;
-        } );
-    }
-
     /**
-     * Register v3.2 options for cart abandonment.
+     * No-op. The real bootstrap runs via servertrack_init() at plugins_loaded.
+     *
+     * @since 6.0.3
      */
-    private static function register_v32_options() {
-        $new_options = [
-            'servertrack_source_abandonment_enabled'  => 0,
-            'servertrack_abandonment_window_minutes'  => 60,
-        ];
-        foreach ( $new_options as $key => $default ) {
-            if ( false === get_option( $key ) ) add_option( $key, $default );
-        }
-        add_filter( 'allowed_options', function( array $allowed ): array {
-            $v32 = [
-                'servertrack_source_abandonment_enabled',
-                'servertrack_abandonment_window_minutes',
-            ];
-            foreach ( $v32 as $opt ) $allowed['servertrack_sources_settings'][] = $opt;
-            return $allowed;
-        } );
-    }
-
-    /**
-     * Register v3.3 options for new WooCommerce event sources.
-     */
-    private static function register_v33_options() {
-        $new_options = [
-            'servertrack_source_order_status_enabled'   => 1,  // on by default
-            'servertrack_source_wishlist_enabled'       => 0,  // opt-in
-            'servertrack_source_partial_refund_enabled' => 1,  // on by default
-        ];
-        foreach ( $new_options as $key => $default ) {
-            if ( false === get_option( $key ) ) add_option( $key, $default );
-        }
-        add_filter( 'allowed_options', function( array $allowed ): array {
-            $v33 = [
-                'servertrack_source_order_status_enabled',
-                'servertrack_source_wishlist_enabled',
-                'servertrack_source_partial_refund_enabled',
-            ];
-            foreach ( $v33 as $opt ) $allowed['servertrack_sources_settings'][] = $opt;
-            return $allowed;
-        } );
+    public static function init(): void {
+        _doing_it_wrong(
+            __METHOD__,
+            'ServerTrack_Core::init() is a no-op shim since v6.0.3. ' .
+            'The authoritative bootstrap is servertrack_init() in servertrack.php.',
+            '6.0.3'
+        );
     }
 }
