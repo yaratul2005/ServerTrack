@@ -4,7 +4,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Admin — v2.6
+ * ServerTrack_Admin — v2.7
+ *
+ * Changes in v2.7:
+ *   - ajax_get_logs(): Was returning wp_send_json_success( $logs ) — a raw
+ *     PHP array. admin.js expected res.data.html (an HTML string of <tr> rows).
+ *     Fix: render rows via ob_start() + ServerTrack_Dashboard::render_log_rows()
+ *     and return { html: $html, total: $count } so admin.js can inject the
+ *     HTML directly into #st-log-tbody.
  *
  * Changes in v2.6:
  *   - enqueue_assets(): Added 'dashboard_nonce' key to wp_localize_script so
@@ -573,11 +580,26 @@ class ServerTrack_Admin {
         wp_send_json_success( $result );
     }
 
+    /**
+     * AJAX: get_logs — Returns rendered HTML rows for the Settings debug tab.
+     *
+     * v2.7 FIX: Previously returned wp_send_json_success( $logs ) — a raw
+     * PHP array.  admin.js expected res.data.html so the log tbody could be
+     * injected directly.  Fix: render via ob_start() +
+     * ServerTrack_Dashboard::render_log_rows() and return { html, total }.
+     */
     public static function ajax_get_logs() {
         check_ajax_referer( 'servertrack_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Unauthorized' );
-        $logs = get_option( 'servertrack_debug_log', [] );
-        wp_send_json_success( $logs );
+
+        $logs   = get_option( 'servertrack_debug_log', [] );
+        $recent = array_slice( array_reverse( $logs ), 0, 200 );
+
+        ob_start();
+        ServerTrack_Dashboard::render_log_rows( $recent );
+        $html = ob_get_clean();
+
+        wp_send_json_success( [ 'html' => $html, 'total' => count( $logs ) ] );
     }
 
     public static function ajax_get_dashboard_stats() {

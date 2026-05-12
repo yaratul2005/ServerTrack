@@ -1,15 +1,25 @@
 /**
- * ServerTrack Admin JS — v3.0 REDESIGN
+ * ServerTrack Admin JS — v3.1
  *
- * Handles:
+ * Handles (Settings page only):
  *  - Platform test-event buttons
  *  - Debug log: filter, clear, refresh, response toggle
  *  - Toast notification system
  *  - Confirm dialogs for destructive actions
  *
+ * Dashboard AJAX (drain retries, manual refresh, KPI auto-refresh,
+ * dashboard clear-log) is handled by the inline <script> block rendered
+ * by ServerTrack_Dashboard::render_page() — it uses the dashboard nonce
+ * directly from PHP via wp_json_encode().
+ *
  * Depends on: servertrack_admin (wp_localize_script)
  * {
- *   ajax_url, nonce,
+ *   ajax_url,
+ *   nonce,           — wp_create_nonce('servertrack_admin_nonce')
+ *                       Used by: test_event, get_logs, get_dashboard_stats,
+ *                                clear_log (Settings debug tab)
+ *   dashboard_nonce, — wp_create_nonce('servertrack_dashboard')
+ *                       Used by: Dashboard inline JS (not this file)
  *   platforms: { meta, google, tiktok } (enabled, configured)
  * }
  */
@@ -98,7 +108,12 @@
   });
 
   /* ─────────────────────────────────────────────────
-     CLEAR DEBUG LOG
+     CLEAR DEBUG LOG  (Settings → Debug tab only)
+     Button ID: #st-clear-log
+     Nonce action: servertrack_admin_nonce  → cfg.nonce
+     Handler: ServerTrack_Admin::ajax_clear_log()
+     NOTE: Dashboard clear-log (#st-clear-log-btn) is handled by
+           the dashboard inline <script> using the dashboard nonce.
   ───────────────────────────────────────────────── */
   $(document).on('click', '#st-clear-log', function () {
     if (!window.confirm('Clear all log entries? This cannot be undone.')) return;
@@ -147,12 +162,16 @@
   });
 
   /* ─────────────────────────────────────────────────
-     LOG REFRESH BUTTON
+     LOG REFRESH BUTTON  (Settings → Debug tab)
+     Fix v3.1: Changed $.get() → $.post() — WordPress AJAX
+     requires POST. $.get() was returning '0' or '-1'.
+     Fix v3.1: ajax_get_logs() now returns { html: '<tr>…</tr>' }
+     instead of a raw array, so res.data.html correctly injects rows.
   ───────────────────────────────────────────────── */
   $(document).on('click', '#st-refresh-log', function () {
     var $btn = $(this).addClass('st-spinning').prop('disabled', true);
 
-    $.get(
+    $.post(
       cfg.ajax_url,
       { action: 'servertrack_get_logs', nonce: cfg.nonce },
       function (res) {
