@@ -4,7 +4,20 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Admin — v2.9
+ * ServerTrack_Admin — v3.0
+ *
+ * Changes in v3.0:
+ *   FIX A6 — "View not found." on every Settings tab.
+ *     render_page() was building the view path as:
+ *       'views/tab-' . $tab . '.php'
+ *     but all view files in admin/views/ are named:
+ *       'settings-' . $tab . '.php'
+ *     (settings-general.php, settings-meta.php, settings-google.php,
+ *      settings-tiktok.php, settings-sources.php)
+ *     The prefix mismatch caused file_exists() to return false for every
+ *     tab, falling through to the "View not found." fallback on every
+ *     Settings page load. Fixed by changing the prefix from 'tab-' to
+ *     'settings-' to match the actual filenames on disk.
  *
  * Changes in v2.9:
  *   FIX A3 — Removed duplicate wp_ajax_servertrack_clear_log registration.
@@ -469,7 +482,12 @@ class ServerTrack_Admin {
         <form method="post" action="options.php" class="st-settings-form">
             <?php
             settings_fields( self::TAB_GROUPS[ $tab ] );
-            $view = plugin_dir_path( __FILE__ ) . 'views/tab-' . $tab . '.php';
+
+            // A6 FIX (v3.0): View files are named 'settings-{tab}.php', not
+            // 'tab-{tab}.php'. The previous prefix caused file_exists() to
+            // return false for every tab, showing "View not found." on all
+            // Settings pages.
+            $view = plugin_dir_path( __FILE__ ) . 'views/settings-' . $tab . '.php';
             if ( file_exists( $view ) ) {
                 include $view;
             } else {
