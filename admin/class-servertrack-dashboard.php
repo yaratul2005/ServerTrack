@@ -4,7 +4,22 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Dashboard  v4.2
+ * ServerTrack_Dashboard  v4.3
+ *
+ * v4.3 — Four audit fixes:
+ *         BUG-1: Replaced call to non-existent ServerTrack_Admin::render_page_header()
+ *                with an inline <h1> page title. The method never existed in
+ *                ServerTrack_Admin, causing a fatal "Call to undefined method" error
+ *                that white-screened the entire dashboard.
+ *         BUG-2: Added 'servertrack_page_servertrack-sources' to enqueue_assets()
+ *                $allowed_hooks so Chart.js and admin CSS load correctly on the
+ *                Event Sources submenu page (previously loaded completely unstyled).
+ *         BUG-3: Wrapped ServerTrack_MatchQuality::get_daily_averages() in a
+ *                class_exists() guard to prevent a fatal crash on fresh installs
+ *                or if file load order changes.
+ *         BUG-4: Changed auto-refresh fetch to POST so the nonce is sent in the
+ *                request body instead of a GET query-string (server logs / referrer
+ *                header exposure). Matches the pattern used by clear-log and drain.
  *
  * v4.2 — Removed last remaining emoji ('Done ✓' in drain-retries JS callback).
  *         Added 'color' key to every KPI definition and applied
@@ -107,8 +122,20 @@ class ServerTrack_Dashboard {
         add_submenu_page( 'servertrack', __( 'Event Sources', 'servertrack' ), __( 'Event Sources', 'servertrack' ), 'manage_options', 'servertrack-sources', [ 'ServerTrack_Admin', 'render_page' ] );
     }
 
+    /**
+     * Enqueue assets.
+     *
+     * BUG-2 fix: 'servertrack_page_servertrack-sources' added to $allowed_hooks
+     * so that Chart.js (and any styles registered by ServerTrack_Admin) are also
+     * enqueued when the Event Sources submenu page is active. Previously the page
+     * rendered completely unstyled because only the dashboard hook was whitelisted.
+     */
     public static function enqueue_assets( string $hook ): void {
-        if ( 'toplevel_page_servertrack' !== $hook ) {
+        $allowed_hooks = [
+            'toplevel_page_servertrack',
+            'servertrack_page_servertrack-sources',
+        ];
+        if ( ! in_array( $hook, $allowed_hooks, true ) ) {
             return;
         }
         wp_enqueue_script(
@@ -136,7 +163,14 @@ class ServerTrack_Dashboard {
         $logs        = get_option( 'servertrack_debug_log', [] );
         $recent_logs = array_slice( array_reverse( $logs ), 0, 200 );
         $stats       = self::compute_stats( $logs );
-        $emq_data    = ServerTrack_MatchQuality::get_daily_averages( 7 );
+
+        // BUG-3 fix: guard against ServerTrack_MatchQuality not being loaded
+        // (e.g. fresh install, autoloader not yet run, or file load-order change).
+        // Previously an unconditional static call caused a fatal PHP error.
+        $emq_data = class_exists( 'ServerTrack_MatchQuality' )
+            ? ServerTrack_MatchQuality::get_daily_averages( 7 )
+            : [];
+
         $platforms   = self::get_platform_statuses( $logs );
         $breakdown   = self::compute_breakdown( $logs );
         $retry_items = get_option( 'servertrack_retry_queue', [] );
@@ -145,7 +179,16 @@ class ServerTrack_Dashboard {
         ?>
         <div class="wrap" id="servertrack-wrap">
 
-        <?php ServerTrack_Admin::render_page_header(); ?>
+        <?php
+        /*
+         * BUG-1 fix: ServerTrack_Admin::render_page_header() was called here but
+         * the method does not exist in ServerTrack_Admin, producing a fatal
+         * "Call to undefined method" error that white-screened the dashboard.
+         * Replaced with a simple inline page title that matches WP admin conventions.
+         */
+        ?>
+        <h1 class="wp-heading-inline"><?php esc_html_e( 'ServerTrack', 'servertrack' ); ?></h1>
+        <hr class="wp-header-end">
 
         <?php
         /*
@@ -470,13 +513,20 @@ class ServerTrack_Dashboard {
             };
 
             // ── Auto-refresh ──────────────────────────────────────────────────
+            // BUG-4 fix: nonce moved from GET query-string to POST body so it is
+            // not exposed in server access logs or Referer headers. Mirrors the
+            // pattern used by clear-log and drain-retries below.
             var refreshTimer = null;
             function doRefresh(){
                 var btn = document.getElementById('st-manual-refresh');
                 if(btn) btn.classList.add('st-spinning');
                 var spinner = document.getElementById('st-log-spinner');
                 if(spinner) spinner.style.display='inline-block';
-                fetch(ajaxUrl+'?action=servertrack_log_data&nonce='+encodeURIComponent(nonce))
+                fetch(ajaxUrl,{
+                    method:'POST',
+                    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+                    body:'action=servertrack_log_data&nonce='+encodeURIComponent(nonce)
+                })
                     .then(function(r){return r.json();})
                     .then(function(res){
                         if(res.success && res.data){
