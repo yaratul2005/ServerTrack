@@ -1,5 +1,15 @@
 /**
- * ServerTrack Admin JS — v3.1
+ * ServerTrack Admin JS — v3.2
+ *
+ * Changes in v3.2 (GAP fixes):
+ *
+ *   GAP-7 — showToast() built msg via raw string concatenation.
+ *            msg is now escaped through a temporary DOM text node so
+ *            HTML characters in API error strings cannot inject markup.
+ *
+ * Changes in v3.1:
+ *   Fix: $.get() → $.post() for log refresh (WP AJAX requires POST).
+ *   Fix: ajax_get_logs now returns { html } instead of raw array.
  *
  * Handles (Settings page only):
  *  - Platform test-event buttons
@@ -16,8 +26,7 @@
  * {
  *   ajax_url,
  *   nonce,           — wp_create_nonce('servertrack_admin_nonce')
- *                       Used by: test_event, get_logs, get_dashboard_stats,
- *                                clear_log (Settings debug tab)
+ *                       Used by: test_event, get_logs, clear_log (Settings)
  *   dashboard_nonce, — wp_create_nonce('servertrack_dashboard')
  *                       Used by: Dashboard inline JS (not this file)
  *   platforms: { meta, google, tiktok } (enabled, configured)
@@ -48,15 +57,31 @@
     info:    '<svg class="st-toast-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'
   };
 
+  /**
+   * GAP-7: Escape a string for safe insertion as text into the DOM.
+   * Uses a temporary text node so HTML entities in msg (e.g. from API
+   * error bodies) cannot inject markup into the toast.
+   */
+  function escapeHtml(str) {
+    if (!str) return '';
+    var node = document.createTextNode(String(str));
+    var div  = document.createElement('div');
+    div.appendChild(node);
+    return div.innerHTML;
+  }
+
   function showToast(type, title, msg, duration) {
     var container = ensureToastContainer();
-    var icon = TOAST_ICONS[type] || TOAST_ICONS.info;
-    var msgHtml = msg ? '<div class="st-toast-msg">' + msg + '</div>' : '';
+    var icon      = TOAST_ICONS[type] || TOAST_ICONS.info;
+    // GAP-7: escape both title and msg before inserting into HTML.
+    var safeTitle = escapeHtml(title);
+    var safeMsg   = escapeHtml(msg);
+    var msgHtml   = safeMsg ? '<div class="st-toast-msg">' + safeMsg + '</div>' : '';
     var $toast = $(
       '<div class="st-toast st-toast-' + type + '">' +
         icon +
         '<div class="st-toast-body">' +
-          '<div class="st-toast-title">' + title + '</div>' +
+          '<div class="st-toast-title">' + safeTitle + '</div>' +
           msgHtml +
         '</div>' +
       '</div>'
@@ -92,17 +117,17 @@
         $btn.prop('disabled', false).removeClass('is-sending');
 
         if (res.success) {
-          $result.addClass('is-visible is-success').text('✓ ' + (res.data.message || 'Test event sent'));
+          $result.addClass('is-visible is-success').text('\u2713 ' + (res.data.message || 'Test event sent'));
           showToast('success', 'Test sent', platform + ' test event delivered.');
         } else {
           var errMsg = (res.data && res.data.message) ? res.data.message : 'Request failed';
-          $result.addClass('is-visible is-error').text('✗ ' + errMsg);
+          $result.addClass('is-visible is-error').text('\u2717 ' + errMsg);
           showToast('error', 'Test failed', errMsg);
         }
       }
     ).fail(function () {
       $btn.prop('disabled', false).removeClass('is-sending');
-      $result.addClass('is-visible is-error').text('✗ Network error');
+      $result.addClass('is-visible is-error').text('\u2717 Network error');
       showToast('error', 'Network error', 'Could not reach the server.');
     });
   });
@@ -111,7 +136,7 @@
      CLEAR DEBUG LOG  (Settings → Debug tab only)
      Button ID: #st-clear-log
      Nonce action: servertrack_admin_nonce  → cfg.nonce
-     Handler: ServerTrack_Admin::ajax_clear_log()
+     Handler: ServerTrack_Admin::ajax_clear_log()  (GAP-1 fix)
      NOTE: Dashboard clear-log (#st-clear-log-btn) is handled by
            the dashboard inline <script> using the dashboard nonce.
   ───────────────────────────────────────────────── */
@@ -163,10 +188,7 @@
 
   /* ─────────────────────────────────────────────────
      LOG REFRESH BUTTON  (Settings → Debug tab)
-     Fix v3.1: Changed $.get() → $.post() — WordPress AJAX
-     requires POST. $.get() was returning '0' or '-1'.
-     Fix v3.1: ajax_get_logs() now returns { html: '<tr>…</tr>' }
-     instead of a raw array, so res.data.html correctly injects rows.
+     Returns { html: '<tr>…</tr>' } from ajax_get_logs (GAP-2 fix).
   ───────────────────────────────────────────────── */
   $(document).on('click', '#st-refresh-log', function () {
     var $btn = $(this).addClass('st-spinning').prop('disabled', true);
