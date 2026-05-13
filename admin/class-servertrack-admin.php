@@ -26,6 +26,13 @@ if ( ! defined( 'ABSPATH' ) ) {
  *               storage; decrypted transparently on read. Legacy plaintext
  *               tokens are handled gracefully.
  *
+ *   CRASH-FIX — render_page() referenced undefined constant SERVERTRACK_PATH.
+ *               Only SERVERTRACK_DIR is defined in servertrack.php.
+ *               Using SERVERTRACK_PATH caused a PHP fatal on every admin
+ *               page (Settings, Dashboard, Event Sources), producing the
+ *               "critical error on this website" overlay.
+ *               Fix: replaced SERVERTRACK_PATH with SERVERTRACK_DIR.
+ *
  * Changes in v6.0.5:
  *   BUG-11 — Abandonment option key mismatch fixed.
  *   BUG-12 — 'servertrack_source_woo_extended' was never registered.
@@ -261,7 +268,8 @@ class ServerTrack_Admin {
             <form method="post" action="<?php echo esc_url( $action_url ); ?>">
                 <?php settings_fields( $option_group ); ?>
                 <?php
-                $view_file = SERVERTRACK_PATH . 'admin/views/settings-' . $current_tab . '.php';
+                // CRASH-FIX: Use SERVERTRACK_DIR — SERVERTRACK_PATH was never defined.
+                $view_file = SERVERTRACK_DIR . 'admin/views/settings-' . $current_tab . '.php';
                 if ( file_exists( $view_file ) ) {
                     include $view_file;
                 } else {
