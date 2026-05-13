@@ -1,18 +1,20 @@
 <?php
 /**
- * ServerTrack — Dashboard Overview Tab  v2.4
+ * ServerTrack — Dashboard view fragment  v2.5
  *
- * v2.4 — BUG-A + BUG-B fixes:
- *         BUG-A: KPI grid wrapper was id="st-kpi-grid" but the JS auto-refresh
- *                (in class-servertrack-dashboard.php) targets id="st-kpis".
- *                Renamed to id="st-kpis" so both contexts share the same target.
- *         BUG-B: KPI value/label divs contained <div class="st-skeleton"> placeholders
- *                that were never hydrated — no AJAX runs in this view context to
- *                replace them, so skeletons spun forever. Replaced with direct PHP
- *                values (matching what render_page() outputs) so the dashboard tab
- *                always shows real data on first paint.
+ * v2.5 — DASH-1: Removed the duplicate KPI grid that was being rendered
+ *         alongside the one already built by render_page(). render_page()
+ *         owns the KPI cards (st-kpi-total, st-kpi-rate, st-kpi-emq,
+ *         st-kpi-retry, st-kpi-week, st-kpi-errors). This view now only
+ *         renders the platform status cards + activity feed that are NOT
+ *         duplicated by render_page().
  *
- * v2.3 — Removed old inline grid style (no responsive breakpoint).
+ *         DASH-2: Removed independent stats recomputation ($_st_* variables).
+ *         render_page() already passes $stats via include scope; if callers
+ *         need it they read $stats directly.
+ *
+ * v2.4 — BUG-A: id="st-kpi-grid" → id="st-kpis" (JS target fix).
+ *         BUG-B: Skeleton placeholders replaced with real PHP values.
  */
 if ( ! defined( 'ABSPATH' ) ) exit;
 
@@ -24,70 +26,7 @@ $st_google_configured = get_option( 'servertrack_google_enabled', 0 )
 $st_tiktok_configured = get_option( 'servertrack_tiktok_enabled', 0 )
                         && get_option( 'servertrack_tiktok_pixel_id', '' )
                         && get_option( 'servertrack_tiktok_access_token', '' );
-
-// Compute the same stats that render_page() uses so values are consistent.
-$_st_logs        = get_option( 'servertrack_debug_log', [] );
-$_st_today       = gmdate( 'Y-m-d' );
-$_st_week_ago    = gmdate( 'Y-m-d', strtotime( '-7 days' ) );
-$_st_today_count = 0;
-$_st_week_total  = 0;
-$_st_week_success = 0;
-foreach ( $_st_logs as $_e ) {
-    $_ts = substr( $_e['timestamp'] ?? '', 0, 10 );
-    if ( $_ts === $_st_today ) $_st_today_count++;
-    if ( $_ts >= $_st_week_ago ) {
-        $_st_week_total++;
-        if ( ( $_e['status'] ?? '' ) === 'success' ) $_st_week_success++;
-    }
-}
-$_st_success_rate = $_st_week_total > 0 ? (int) round( $_st_week_success / $_st_week_total * 100 ) : 0;
 ?>
-
-<!-- KPI Cards -->
-<!-- BUG-A fix: id changed from "st-kpi-grid" to "st-kpis" to match JS target -->
-<div class="st-kpi-grid" id="st-kpis">
-
-    <div class="st-kpi-card">
-        <div class="st-kpi-icon st-kpi-icon-teal">
-            <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-        </div>
-        <!-- BUG-B fix: replaced skeleton placeholder with real PHP value -->
-        <div class="st-kpi-value" id="st-kpi-total"><?php echo esc_html( $_st_today_count ); ?></div>
-        <div class="st-kpi-label" id="st-kpi-label-total"><?php esc_html_e( 'Events Today', 'servertrack' ); ?></div>
-        <div class="st-kpi-trend st-kpi-trend-info"></div>
-    </div>
-
-    <div class="st-kpi-card">
-        <div class="st-kpi-icon st-kpi-icon-green">
-            <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-        </div>
-        <!-- BUG-B fix: replaced skeleton placeholder with real PHP value -->
-        <div class="st-kpi-value" id="st-kpi-success"><?php echo esc_html( $_st_week_success ); ?></div>
-        <div class="st-kpi-label" id="st-kpi-label-success"><?php esc_html_e( 'Successful (7d)', 'servertrack' ); ?></div>
-        <div class="st-kpi-trend st-kpi-trend-success"></div>
-    </div>
-
-    <div class="st-kpi-card">
-        <div class="st-kpi-icon st-kpi-icon-red">
-            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-        </div>
-        <!-- BUG-B fix: replaced skeleton placeholder with real PHP value -->
-        <div class="st-kpi-value" id="st-kpi-failed"><?php echo esc_html( $_st_week_total - $_st_week_success ); ?></div>
-        <div class="st-kpi-label" id="st-kpi-label-failed"><?php esc_html_e( 'Failed (7d)', 'servertrack' ); ?></div>
-        <div class="st-kpi-trend st-kpi-trend-error"></div>
-    </div>
-
-    <div class="st-kpi-card">
-        <div class="st-kpi-icon st-kpi-icon-blue">
-            <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-        </div>
-        <!-- BUG-B fix: replaced skeleton placeholder with real PHP value -->
-        <div class="st-kpi-value" id="st-kpi-rate"><?php echo esc_html( $_st_success_rate ); ?>%</div>
-        <div class="st-kpi-label" id="st-kpi-label-rate"><?php esc_html_e( 'Success Rate', 'servertrack' ); ?></div>
-        <div class="st-kpi-trend st-kpi-trend-info"></div>
-    </div>
-
-</div><!-- /.st-kpis -->
 
 <!-- Responsive two-column layout: Platform Health + Activity Feed -->
 <div class="st-dashboard-grid">
