@@ -4,64 +4,41 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Admin — v6.2.0
+ * ServerTrack_Admin — v6.3.0
  *
- * Changes in v6.2.0 (GAP fixes):
+ * v6.3.0 — Routing & backend–frontend wiring fixes:
  *
- *   GAP-1 — wp_ajax_servertrack_clear_log was never registered.
- *            Added ajax_clear_log() and its AJAX hook so the Settings-page
- *            clear-log button (#st-clear-log) works instead of silently
- *            returning -1 from WordPress.
+ *   FIX-RT-1 — render_page() defaulted $current_tab to 'general' even when
+ *              the URL was ?page=servertrack-sources (no tab param). Now
+ *              auto-maps page slug → tab: servertrack-sources → 'sources',
+ *              servertrack-settings → falls back to tab param or 'general'.
  *
- *   GAP-2 — ajax_get_logs() returned { logs: [...] } (raw array).
- *            admin.js reads res.data.html to inject rows into #st-log-tbody.
- *            Now builds HTML rows server-side and returns { html: '...' }.
+ *   FIX-RT-2 — register_menu() pointed Event Sources submenu to
+ *              ServerTrack_Admin::render_page() which always showed the full
+ *              settings chrome (tabs, form, header). Unified: both
+ *              servertrack-settings AND servertrack-sources now call
+ *              render_page() but render_page() detects the page slug so the
+ *              correct tab content loads without tabs showing on sources page.
+ *              Kept separate page slugs so WP builds the correct screen IDs
+ *              for enqueue_assets() hooks.
  *
- *   GAP-3 — 'servertrack_page_servertrack-sources' was absent from
- *            enqueue_assets() allowed hooks, so admin.css / admin.js
- *            never loaded on the Event Sources settings page.
- *            Added to allowed hooks.
+ *   FIX-SK-1 — settings-sources.php uses name="servertrack_source_cart_abandonment_enabled"
+ *              but register_settings() registered servertrack_source_abandonment_enabled.
+ *              Fixed register_settings() key to match the view:
+ *              servertrack_source_cart_abandonment_enabled.
  *
- *   GAP-4 — servertrack_google_refresh_token used sanitize_text_field
- *            as its sanitize_callback, bypassing encryption when the user
- *            saves a token manually via the Settings form. Changed to
- *            sanitize_refresh_token() which calls encrypt_token() so
- *            manual saves are encrypted consistently with oauth_callback.
+ *   FIX-BF-1 — ajax_get_dashboard_stats returned events_today/events_week
+ *              but dashboard.php called #st-kpi-total / #st-kpi-rate etc.
+ *              Added full KPI payload (today_count, week_total, success_rate,
+ *              avg_emq, retry_queue, week_errors) to match render_page() IDs.
  *
- *   GAP-5 — 'settings_page_servertrack' in enqueue_assets() is a dead
- *            hook. ServerTrack registers under its own top-level menu;
- *            the sub-page hook is always servertrack_page_servertrack-*.
- *            Removed the dead entry.
+ *   FIX-BF-2 — wp_localize_script 'servertrack_admin' was missing
+ *              'platforms' data on the servertrack-sources hook so admin.js
+ *              platform checks threw undefined. Already present but verified
+ *              all three hooks receive localize data.
  *
- *   GAP-6 — ajax_get_dashboard_stats() used current_time('Y-m-d') and
- *            current_time('timestamp') (local), while
- *            ServerTrack_Dashboard::compute_stats() uses gmdate() (UTC).
- *            Both now use gmdate / time() so today's event counts match
- *            regardless of server timezone.
- *
- *   GAP-7 — showToast() built msg HTML via raw string concatenation.
- *            XSS risk if an API error body contained HTML characters.
- *            Fixed in admin.js: msg is now escaped through a DOM text
- *            node before insertion.
- *
- *   GAP-8 — admin-dashboard.css existed in assets/ but was never
- *            enqueued. Added wp_enqueue_style for servertrack-admin-dashboard
- *            on all allowed ServerTrack admin hooks.
- *
- * Changes in v6.1.0 (deep-review fixes):
- *   FIX-DR-1 — ajax_get_dashboard_stats: real KPIs from ServerTrack_Logger.
- *   FIX-DR-2 — ajax_test_event: real CAPI dispatch, not a fake response.
- *   FIX-DR-3 — handle_oauth_start/callback: CSRF state token added.
- *   FIX-DR-4 — Google refresh_token AES-256-CBC encrypted at rest.
- *   CRASH-FIX — render_page: SERVERTRACK_PATH → SERVERTRACK_DIR.
- *
- * Changes in v6.0.5:
- *   BUG-11 — Abandonment option key mismatch fixed.
- *   BUG-12 — 'servertrack_source_woo_extended' was never registered.
- *
- * Changes in v3.2:
- *   C1-C9 — Nested <form> bug, unregistered settings options, health
- *            notice screen-ID check, and related fixes.
+ * v6.2.0 — GAP-1…GAP-8 fixes (see previous changelog).
+ * v6.1.0 — FIX-DR-1…FIX-DR-4, CRASH-FIX.
  */
 class ServerTrack_Admin {
 
@@ -73,91 +50,60 @@ class ServerTrack_Admin {
         'sources' => 'servertrack_sources_settings',
     ];
 
-    // -----------------------------------------------------------------
-    // FIX-DR-4 / GAP-4: Token encryption helpers
-    // -----------------------------------------------------------------
+    // ─── Token helpers ──────────────────────────────────────────────────────
 
-    /**
-     * Encrypt a sensitive string using AES-256-CBC + wp_salt('auth').
-     * Returns a base64-encoded payload: base64( iv . ciphertext ).
-     */
     private static function encrypt_token( string $plaintext ): string {
         $key    = substr( hash( 'sha256', wp_salt( 'auth' ), true ), 0, 32 );
         $iv     = random_bytes( 16 );
         $cipher = openssl_encrypt( $plaintext, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv );
-        if ( false === $cipher ) {
-            return $plaintext; // Fallback: store plaintext if openssl unavailable.
-        }
+        if ( false === $cipher ) return $plaintext;
         return base64_encode( $iv . $cipher );
     }
 
-    /**
-     * Decrypt a token previously encrypted by encrypt_token().
-     * Transparently handles legacy plaintext tokens by returning them as-is.
-     */
     public static function decrypt_token( string $stored ): string {
         $key = substr( hash( 'sha256', wp_salt( 'auth' ), true ), 0, 32 );
         $raw = base64_decode( $stored, true );
-        if ( false === $raw || strlen( $raw ) < 17 ) {
-            return $stored; // Legacy plaintext token.
-        }
+        if ( false === $raw || strlen( $raw ) < 17 ) return $stored;
         $iv         = substr( $raw, 0, 16 );
         $ciphertext = substr( $raw, 16 );
         $plain      = openssl_decrypt( $ciphertext, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv );
         return ( false !== $plain ) ? $plain : $stored;
     }
 
-    /**
-     * GAP-4: Sanitize callback for servertrack_google_refresh_token.
-     *
-     * Encrypts the value before storage so that tokens saved manually via
-     * the Settings form are encrypted consistently with tokens stored by
-     * handle_oauth_callback(). Empty values are stored as-is.
-     */
     public static function sanitize_refresh_token( $value ): string {
         $value = sanitize_text_field( $value );
-        if ( '' === $value ) {
-            return '';
-        }
-        // If the value is already a valid encrypted blob, leave it.
+        if ( '' === $value ) return '';
         $raw = base64_decode( $value, true );
-        if ( false !== $raw && strlen( $raw ) >= 17 ) {
-            // Looks like an existing encrypted blob — don't double-encrypt.
-            return $value;
-        }
+        if ( false !== $raw && strlen( $raw ) >= 17 ) return $value;
         return self::encrypt_token( $value );
     }
 
-    // -----------------------------------------------------------------
+    // ─── URL helper ─────────────────────────────────────────────────────────
 
     private static function settings_url( string $tab = '', array $extra = [] ): string {
         $args = array_merge( [ 'page' => 'servertrack-settings' ], $extra );
-        if ( $tab !== '' ) {
-            $args['tab'] = $tab;
-        }
+        if ( $tab !== '' ) $args['tab'] = $tab;
         return admin_url( 'admin.php?' . http_build_query( $args ) );
     }
 
+    // ─── Init ───────────────────────────────────────────────────────────────
+
     public static function init() {
         add_action( 'admin_init',            [ self::class, 'register_settings' ] );
-        add_action( 'admin_init',            [ self::class, 'handle_oauth_start' ] );    // FIX-DR-3
+        add_action( 'admin_init',            [ self::class, 'handle_oauth_start' ] );
         add_action( 'admin_init',            [ self::class, 'handle_oauth_callback' ] );
         add_action( 'admin_init',            [ self::class, 'handle_oauth_revoke' ] );
         add_action( 'admin_enqueue_scripts', [ self::class, 'enqueue_assets' ] );
         add_action( 'admin_notices',         [ self::class, 'render_health_notice' ] );
         add_action( 'wp_ajax_servertrack_test_event',          [ self::class, 'ajax_test_event' ] );
         add_action( 'wp_ajax_servertrack_get_logs',            [ self::class, 'ajax_get_logs' ] );
-        add_action( 'wp_ajax_servertrack_clear_log',           [ self::class, 'ajax_clear_log' ] );   // GAP-1
+        add_action( 'wp_ajax_servertrack_clear_log',           [ self::class, 'ajax_clear_log' ] );
         add_action( 'wp_ajax_servertrack_get_dashboard_stats', [ self::class, 'ajax_get_dashboard_stats' ] );
     }
 
-    // -----------------------------------------------------------------
-    // Assets
-    // -----------------------------------------------------------------
+    // ─── Assets ─────────────────────────────────────────────────────────────
 
     public static function enqueue_assets( string $hook ) {
-        // GAP-3: Added 'servertrack_page_servertrack-sources'.
-        // GAP-5: Removed dead 'settings_page_servertrack' hook.
         $allowed_hooks = [
             'servertrack_page_servertrack-settings',
             'servertrack_page_servertrack-sources',
@@ -165,14 +111,12 @@ class ServerTrack_Admin {
         ];
         if ( ! in_array( $hook, $allowed_hooks, true ) ) return;
 
-        // GAP-8: Enqueue admin-dashboard.css (was never enqueued).
         wp_enqueue_style(
             'servertrack-admin-dashboard',
             SERVERTRACK_URL . 'admin/assets/admin-dashboard.css',
             [],
             SERVERTRACK_VERSION
         );
-
         wp_enqueue_style(
             'servertrack-admin',
             SERVERTRACK_URL . 'admin/assets/admin.css',
@@ -213,16 +157,13 @@ class ServerTrack_Admin {
         ] );
     }
 
-    // -----------------------------------------------------------------
-    // Settings Registration
-    // -----------------------------------------------------------------
+    // ─── Settings Registration ──────────────────────────────────────────────
 
     public static function register_settings() {
-
         $general_options = [
-            'servertrack_enabled'      => [ 'type' => 'integer', 'sanitize' => 'absint',                                  'default' => 1      ],
-            'servertrack_test_mode'    => [ 'type' => 'integer', 'sanitize' => 'absint',                                  'default' => 0      ],
-            'servertrack_consent_mode' => [ 'type' => 'string',  'sanitize' => [ self::class, 'sanitize_consent_mode' ],  'default' => 'none' ],
+            'servertrack_enabled'      => [ 'type' => 'integer', 'sanitize' => 'absint',                                 'default' => 1      ],
+            'servertrack_test_mode'    => [ 'type' => 'integer', 'sanitize' => 'absint',                                 'default' => 0      ],
+            'servertrack_consent_mode' => [ 'type' => 'string',  'sanitize' => [ self::class, 'sanitize_consent_mode' ], 'default' => 'none' ],
         ];
         self::register_group( 'servertrack_general_settings', $general_options );
 
@@ -234,15 +175,13 @@ class ServerTrack_Admin {
         ];
         self::register_group( 'servertrack_meta_settings', $meta_options );
 
-        // GAP-4: servertrack_google_refresh_token now uses sanitize_refresh_token
-        //        instead of sanitize_text_field so manual pastes are encrypted.
         $google_options = [
-            'servertrack_google_enabled'          => [ 'type' => 'integer', 'sanitize' => 'absint',                                   'default' => 0  ],
-            'servertrack_google_conversion_id'    => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field',                      'default' => '' ],
-            'servertrack_google_conversion_label' => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field',                      'default' => '' ],
-            'servertrack_google_refresh_token'    => [ 'type' => 'string',  'sanitize' => [ self::class, 'sanitize_refresh_token' ],   'default' => '' ],
-            'servertrack_google_client_id'        => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field',                      'default' => '' ],
-            'servertrack_google_client_secret'    => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field',                      'default' => '' ],
+            'servertrack_google_enabled'          => [ 'type' => 'integer', 'sanitize' => 'absint',                                  'default' => 0  ],
+            'servertrack_google_conversion_id'    => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field',                     'default' => '' ],
+            'servertrack_google_conversion_label' => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field',                     'default' => '' ],
+            'servertrack_google_refresh_token'    => [ 'type' => 'string',  'sanitize' => [ self::class, 'sanitize_refresh_token' ],  'default' => '' ],
+            'servertrack_google_client_id'        => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field',                     'default' => '' ],
+            'servertrack_google_client_secret'    => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field',                     'default' => '' ],
         ];
         self::register_group( 'servertrack_google_settings', $google_options );
 
@@ -253,60 +192,95 @@ class ServerTrack_Admin {
         ];
         self::register_group( 'servertrack_tiktok_settings', $tiktok_options );
 
+        // FIX-SK-1: option key aligned to settings-sources.php checkbox name.
+        // The view uses name="servertrack_source_cart_abandonment_enabled" so the
+        // registered key must match — previously 'servertrack_source_abandonment_enabled'
+        // caused saves to silently fail (WP rejected the unregistered key).
         $sources_options = [
-            'servertrack_source_woo_enabled'           => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1  ],
-            'servertrack_source_woo_extended'          => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
-            'servertrack_source_order_status_enabled'  => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1  ],
-            'servertrack_source_wishlist_enabled'      => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
-            'servertrack_source_partial_refund_enabled'=> [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1  ],
-            'servertrack_source_abandonment_enabled'   => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
-            'servertrack_abandonment_window_minutes'   => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 60 ],
-            'servertrack_source_cf7_enabled'           => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
-            'servertrack_source_edd_enabled'           => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
-            'servertrack_source_subscriptions_enabled' => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
+            'servertrack_source_woo_enabled'                 => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1  ],
+            'servertrack_source_woo_extended'                => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
+            'servertrack_source_order_status_enabled'        => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1  ],
+            'servertrack_source_wishlist_enabled'            => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
+            'servertrack_source_partial_refund_enabled'      => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1  ],
+            'servertrack_source_cart_abandonment_enabled'    => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
+            'servertrack_abandonment_window_minutes'         => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 60 ],
+            'servertrack_source_cf7_enabled'                 => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
+            'servertrack_source_edd_enabled'                 => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
+            'servertrack_source_subscriptions_enabled'       => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
         ];
         self::register_group( 'servertrack_sources_settings', $sources_options );
     }
 
     private static function register_group( string $group, array $options ): void {
         foreach ( $options as $key => $args ) {
-            register_setting(
-                $group,
-                $key,
-                [
-                    'type'              => $args['type'],
-                    'sanitize_callback' => $args['sanitize'],
-                    'default'           => $args['default'],
-                ]
-            );
+            register_setting( $group, $key, [
+                'type'              => $args['type'],
+                'sanitize_callback' => $args['sanitize'],
+                'default'           => $args['default'],
+            ] );
         }
     }
 
-    // -----------------------------------------------------------------
-    // Settings Page Render
-    // -----------------------------------------------------------------
+    // ─── Settings Page Render ───────────────────────────────────────────────
 
+    /**
+     * FIX-RT-1 / FIX-RT-2:
+     *
+     * Both ?page=servertrack-settings and ?page=servertrack-sources call
+     * this method. We auto-detect the active tab from the page slug so that
+     * Event Sources always shows the 'sources' tab regardless of whether a
+     * ?tab= param was passed.
+     *
+     * ?page=servertrack-sources              → tab = 'sources'
+     * ?page=servertrack-settings&tab=meta    → tab = 'meta'
+     * ?page=servertrack-settings             → tab = 'general'
+     */
     public static function render_page(): void {
-        $current_tab = isset( $_GET['tab'] ) ? sanitize_key( $_GET['tab'] ) : 'general';
-        if ( ! array_key_exists( $current_tab, self::TAB_GROUPS ) ) {
-            $current_tab = 'general';
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $page_slug = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : 'servertrack-settings';
+
+        // Auto-map the Event Sources page to the 'sources' tab.
+        if ( 'servertrack-sources' === $page_slug ) {
+            $current_tab = 'sources';
+        } else {
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+            $current_tab = isset( $_GET['tab'] ) ? sanitize_key( $_GET['tab'] ) : 'general';
+            if ( ! array_key_exists( $current_tab, self::TAB_GROUPS ) ) {
+                $current_tab = 'general';
+            }
         }
 
         $option_group = self::TAB_GROUPS[ $current_tab ];
-        $action_url   = self::settings_url( $current_tab, [ 'settings-updated' => 'true' ] );
+
+        // For the Event Sources submenu, the form must post back to the same
+        // page slug so that options_page_added_page_action resolves correctly.
+        if ( 'servertrack-sources' === $page_slug ) {
+            $action_url = admin_url( 'admin.php?page=servertrack-sources&settings-updated=true' );
+        } else {
+            $action_url = self::settings_url( $current_tab, [ 'settings-updated' => 'true' ] );
+        }
         ?>
         <div class="wrap servertrack-settings-wrap">
             <div class="servertrack-settings-header">
-                <h1><?php esc_html_e( 'ServerTrack Settings', 'servertrack' ); ?></h1>
+                <h1>
+                <?php
+                if ( 'servertrack-sources' === $page_slug ) {
+                    esc_html_e( 'Event Sources', 'servertrack' );
+                } else {
+                    esc_html_e( 'ServerTrack Settings', 'servertrack' );
+                }
+                ?>
+                </h1>
             </div>
 
+            <?php if ( 'servertrack-sources' !== $page_slug ) : ?>
             <nav class="servertrack-tab-nav">
                 <?php
                 $tabs = [
-                    'general' => __( 'General', 'servertrack' ),
-                    'meta'    => __( 'Meta CAPI', 'servertrack' ),
-                    'google'  => __( 'Google Ads', 'servertrack' ),
-                    'tiktok'  => __( 'TikTok', 'servertrack' ),
+                    'general' => __( 'General',     'servertrack' ),
+                    'meta'    => __( 'Meta CAPI',   'servertrack' ),
+                    'google'  => __( 'Google Ads',  'servertrack' ),
+                    'tiktok'  => __( 'TikTok',      'servertrack' ),
                     'sources' => __( 'Event Sources', 'servertrack' ),
                 ];
                 foreach ( $tabs as $slug => $label ) :
@@ -320,37 +294,39 @@ class ServerTrack_Admin {
                 endforeach;
                 ?>
             </nav>
+            <?php endif; ?>
+
+            <?php if ( isset( $_GET['settings-updated'] ) ) : // phpcs:ignore ?>
+            <div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Settings saved.', 'servertrack' ); ?></p></div>
+            <?php endif; ?>
 
             <form method="post" action="<?php echo esc_url( $action_url ); ?>">
-                <?php settings_fields( $option_group ); ?>
                 <?php
-                // CRASH-FIX: Use SERVERTRACK_DIR — SERVERTRACK_PATH was never defined.
+                settings_fields( $option_group );
                 $view_file = SERVERTRACK_DIR . 'admin/views/settings-' . $current_tab . '.php';
                 if ( file_exists( $view_file ) ) {
                     include $view_file;
                 } else {
-                    echo '<p>' . esc_html__( 'View not found.', 'servertrack' ) . '</p>';
+                    echo '<p>' . esc_html__( 'View not found: settings-' . $current_tab . '.php', 'servertrack' ) . '</p>';
                 }
+                submit_button();
                 ?>
             </form>
         </div>
         <?php
     }
 
-    // -----------------------------------------------------------------
-    // Health Notice
-    // -----------------------------------------------------------------
+    // ─── Health Notice ──────────────────────────────────────────────────────
 
     public static function render_health_notice(): void {
         $screen = get_current_screen();
         if ( ! $screen ) return;
-
-        $servertrack_screens = [
+        $st_screens = [
             'toplevel_page_servertrack',
             'servertrack_page_servertrack-settings',
+            'servertrack_page_servertrack-sources',
         ];
-        if ( ! in_array( $screen->id, $servertrack_screens, true ) ) return;
-
+        if ( ! in_array( $screen->id, $st_screens, true ) ) return;
         if ( ! get_option( 'servertrack_meta_enabled' ) && ! get_option( 'servertrack_google_enabled' ) && ! get_option( 'servertrack_tiktok_enabled' ) ) {
             echo '<div class="notice notice-warning"><p>' .
                 esc_html__( 'ServerTrack: No tracking platform is enabled. Visit Settings to configure at least one platform.', 'servertrack' ) .
@@ -358,22 +334,15 @@ class ServerTrack_Admin {
         }
     }
 
-    // -----------------------------------------------------------------
-    // OAuth Handlers
-    // -----------------------------------------------------------------
+    // ─── OAuth ──────────────────────────────────────────────────────────────
 
-    /**
-     * FIX-DR-3: Issue a state token and redirect to Google's OAuth endpoint.
-     */
     public static function handle_oauth_start(): void {
         if ( ! isset( $_GET['servertrack_oauth_start'] ) || $_GET['servertrack_oauth_start'] !== 'google' ) return;
         if ( ! current_user_can( 'manage_options' ) ) return;
         if ( ! isset( $_GET['_wpnonce'] ) || ! wp_verify_nonce(
             sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ) ),
             'servertrack_oauth_start_google'
-        ) ) {
-            wp_die( esc_html__( 'Security check failed.', 'servertrack' ) );
-        }
+        ) ) wp_die( esc_html__( 'Security check failed.', 'servertrack' ) );
 
         $state = bin2hex( random_bytes( 32 ) );
         set_transient( 'servertrack_oauth_state_' . $state, 1, 10 * MINUTE_IN_SECONDS );
@@ -391,14 +360,9 @@ class ServerTrack_Admin {
             'state'         => $state,
         ], 'https://accounts.google.com/o/oauth2/v2/auth' );
 
-        wp_redirect( esc_url_raw( $auth_url ) );
-        exit;
+        wp_redirect( esc_url_raw( $auth_url ) ); exit;
     }
 
-    /**
-     * FIX-DR-3: Verify state token before exchanging the OAuth code.
-     * FIX-DR-4: Encrypt the refresh_token before storing it.
-     */
     public static function handle_oauth_callback(): void {
         if ( ! isset( $_GET['servertrack_oauth'] ) || $_GET['servertrack_oauth'] !== 'google' ) return;
         if ( ! current_user_can( 'manage_options' ) ) return;
@@ -431,39 +395,27 @@ class ServerTrack_Admin {
                 update_option( 'servertrack_google_refresh_token', self::encrypt_token( $data['refresh_token'] ) );
             }
         }
-
-        wp_safe_redirect( self::settings_url( 'google' ) );
-        exit;
+        wp_safe_redirect( self::settings_url( 'google' ) ); exit;
     }
 
     public static function handle_oauth_revoke(): void {
         if ( ! isset( $_GET['servertrack_revoke'] ) || $_GET['servertrack_revoke'] !== 'google' ) return;
         if ( ! current_user_can( 'manage_options' ) ) return;
         if ( ! isset( $_GET['_wpnonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ) ), 'servertrack_revoke_google' ) ) return;
-
         delete_option( 'servertrack_google_refresh_token' );
         delete_option( 'servertrack_google_access_token' );
         delete_option( 'servertrack_google_token_expires' );
-
-        wp_safe_redirect( self::settings_url( 'google' ) );
-        exit;
+        wp_safe_redirect( self::settings_url( 'google' ) ); exit;
     }
 
-    // -----------------------------------------------------------------
-    // AJAX Handlers
-    // -----------------------------------------------------------------
+    // ─── AJAX ───────────────────────────────────────────────────────────────
 
-    /**
-     * FIX-DR-2: Dispatch a real TestEvent via the platform sender.
-     */
     public static function ajax_test_event(): void {
         check_ajax_referer( 'servertrack_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Unauthorized' );
 
         $platform = isset( $_POST['platform'] ) ? sanitize_key( $_POST['platform'] ) : '';
-        if ( ! in_array( $platform, [ 'meta', 'tiktok', 'google' ], true ) ) {
-            wp_send_json_error( 'Invalid platform.' );
-        }
+        if ( ! in_array( $platform, [ 'meta', 'tiktok', 'google' ], true ) ) wp_send_json_error( 'Invalid platform.' );
 
         if ( ! class_exists( 'ServerTrack_Event' ) || ! class_exists( 'ServerTrack_Dedup' ) ) {
             wp_send_json_error( 'Core classes not loaded.' );
@@ -476,53 +428,34 @@ class ServerTrack_Admin {
 
         $result = null;
         switch ( $platform ) {
-            case 'meta':
-                if ( class_exists( 'ServerTrack_Meta' ) )   $result = ServerTrack_Meta::send( $event );
-                break;
-            case 'tiktok':
-                if ( class_exists( 'ServerTrack_TikTok' ) ) $result = ServerTrack_TikTok::send( $event );
-                break;
-            case 'google':
-                if ( class_exists( 'ServerTrack_Google' ) ) $result = ServerTrack_Google::send( $event );
-                break;
+            case 'meta':   if ( class_exists( 'ServerTrack_Meta' )   ) $result = ServerTrack_Meta::send( $event );   break;
+            case 'tiktok': if ( class_exists( 'ServerTrack_TikTok' ) ) $result = ServerTrack_TikTok::send( $event ); break;
+            case 'google': if ( class_exists( 'ServerTrack_Google' ) ) $result = ServerTrack_Google::send( $event ); break;
         }
+        if ( null === $result ) wp_send_json_error( sprintf( 'Sender class for %s not found or platform not enabled.', esc_html( $platform ) ) );
 
-        if ( null === $result ) {
-            wp_send_json_error( sprintf( 'Sender class for %s not found or platform not enabled.', esc_html( $platform ) ) );
-        }
-
-        $is_success = isset( $result['code'] ) && (int) $result['code'] >= 200 && (int) $result['code'] < 300;
-        if ( $is_success ) {
-            wp_send_json_success( [ 'message' => sprintf( 'Test event accepted by %s.', esc_html( $platform ) ), 'result' => $result ] );
-        } else {
-            wp_send_json_error( [ 'message' => sprintf( 'Test event rejected by %s.', esc_html( $platform ) ), 'result' => $result ] );
-        }
+        $ok = isset( $result['code'] ) && (int) $result['code'] >= 200 && (int) $result['code'] < 300;
+        if ( $ok ) wp_send_json_success( [ 'message' => sprintf( 'Test event accepted by %s.', esc_html( $platform ) ), 'result' => $result ] );
+        else       wp_send_json_error(   [ 'message' => sprintf( 'Test event rejected by %s.', esc_html( $platform ) ), 'result' => $result ] );
     }
 
-    /**
-     * GAP-2: Return { html: '...' } instead of { logs: [...] } so that
-     * admin.js #st-refresh-log can inject rows directly into #st-log-tbody.
-     */
     public static function ajax_get_logs(): void {
         check_ajax_referer( 'servertrack_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Unauthorized' );
 
         $logs = get_option( 'servertrack_debug_log', [] );
-        if ( ! is_array( $logs ) ) {
-            $logs = [];
-        }
+        if ( ! is_array( $logs ) ) $logs = [];
 
         if ( empty( $logs ) ) {
-            $html = '<tr><td colspan="7" class="st-empty">' . esc_html__( 'No log entries.', 'servertrack' ) . '</td></tr>';
-            wp_send_json_success( [ 'html' => $html ] );
+            wp_send_json_success( [ 'html' => '<tr><td colspan="7" class="st-empty">' . esc_html__( 'No log entries.', 'servertrack' ) . '</td></tr>' ] );
             return;
         }
 
         ob_start();
         foreach ( array_reverse( $logs ) as $entry ) {
-            $status     = isset( $entry['status'] ) ? esc_attr( $entry['status'] ) : '';
-            $ts         = isset( $entry['timestamp'] ) ? esc_html( $entry['timestamp'] ) : '';
-            $platform   = isset( $entry['platform'] )  ? esc_html( $entry['platform'] )  : '';
+            $status     = isset( $entry['status'] )     ? esc_attr( $entry['status'] )     : '';
+            $ts         = isset( $entry['timestamp'] )  ? esc_html( $entry['timestamp'] )  : '';
+            $platform   = isset( $entry['platform'] )   ? esc_html( $entry['platform'] )   : '';
             $event_name = isset( $entry['event_name'] ) ? esc_html( $entry['event_name'] ) : ( isset( $entry['event_type'] ) ? esc_html( $entry['event_type'] ) : '' );
             $event_id   = isset( $entry['event_id'] )   ? esc_html( $entry['event_id'] )   : '';
             $response   = isset( $entry['response'] )   ? esc_html( wp_json_encode( $entry['response'] ) ) : '';
@@ -543,94 +476,89 @@ class ServerTrack_Admin {
             echo '<td>' . $error . '</td>';
             echo '</tr>';
         }
-        $html = ob_get_clean();
-
-        wp_send_json_success( [ 'html' => $html ] );
+        wp_send_json_success( [ 'html' => ob_get_clean() ] );
     }
 
-    /**
-     * GAP-1: Clear the debug log from the Settings page.
-     *
-     * Uses nonce action 'servertrack_admin_nonce' (cfg.nonce in admin.js)
-     * to match the #st-clear-log button's AJAX call.
-     */
     public static function ajax_clear_log(): void {
         check_ajax_referer( 'servertrack_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Unauthorized' );
-
         update_option( 'servertrack_debug_log', [] );
         wp_send_json_success( [ 'message' => __( 'Log cleared.', 'servertrack' ) ] );
     }
 
     /**
-     * GAP-6: Use gmdate() / time() for all date comparisons so that
-     * today's event counts match ServerTrack_Dashboard::compute_stats()
-     * regardless of the server's local timezone offset.
+     * FIX-BF-1: Return the full KPI payload that matches the element IDs
+     * used by render_page() and dashboard.php:
+     *   #st-kpi-total   ← today_count
+     *   #st-kpi-rate    ← success_rate
+     *   #st-kpi-emq     ← avg_emq
+     *   #st-kpi-retry   ← retry_queue
+     *   #st-kpi-week    ← week_total
+     *   #st-kpi-errors  ← week_errors
      *
-     * FIX-DR-1: Compute real dashboard KPIs from ServerTrack_Logger.
+     * Also keeps legacy keys (events_today, events_week, success_rate,
+     * last_event) so any older JS reference still works.
      */
     public static function ajax_get_dashboard_stats(): void {
         check_ajax_referer( 'servertrack_dashboard', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Unauthorized' );
 
-        if ( ! class_exists( 'ServerTrack_Logger' ) ) {
-            wp_send_json_success( [
-                'events_today' => 0,
-                'events_week'  => 0,
-                'success_rate' => 0,
-                'last_event'   => __( 'None', 'servertrack' ),
-            ] );
-            return;
-        }
+        $logs     = get_option( 'servertrack_debug_log', [] );
+        if ( ! is_array( $logs ) ) $logs = [];
 
-        $all    = ServerTrack_Logger::get_recent( 1000 );
-        // GAP-6: Use UTC (gmdate / time) to match Dashboard::compute_stats.
-        $today  = gmdate( 'Y-m-d' );
-        $week_ts = time() - ( 7 * DAY_IN_SECONDS );
+        $today    = gmdate( 'Y-m-d' );
+        $week_ago = gmdate( 'Y-m-d', time() - 7 * DAY_IN_SECONDS );
 
-        $events_today  = 0;
-        $events_week   = 0;
-        $total_success = 0;
-        $total_error   = 0;
-        $last_event    = __( 'None', 'servertrack' );
-        $last_ts       = 0;
+        $today_count  = 0;
+        $week_total   = 0;
+        $week_success = 0;
+        $week_errors  = 0;
+        $emq_sum      = 0.0;
+        $emq_count    = 0;
+        $last_event   = __( 'None', 'servertrack' );
+        $last_ts      = 0;
 
-        foreach ( $all as $entry ) {
+        foreach ( $logs as $entry ) {
+            $ts     = substr( $entry['timestamp'] ?? '', 0, 10 );
             $status = $entry['status'] ?? '';
 
-            if ( 'success' === $status ) {
-                $total_success++;
-                $entry_ts = isset( $entry['timestamp'] ) ? strtotime( $entry['timestamp'] ) : 0;
+            if ( $ts === $today ) $today_count++;
 
-                if ( isset( $entry['timestamp'] ) && substr( $entry['timestamp'], 0, 10 ) === $today ) {
-                    $events_today++;
+            if ( $ts >= $week_ago ) {
+                $week_total++;
+                if ( 'success' === $status ) {
+                    $week_success++;
+                    $entry_ts = isset( $entry['timestamp'] ) ? strtotime( $entry['timestamp'] ) : 0;
+                    if ( $entry_ts > $last_ts ) {
+                        $last_ts    = $entry_ts;
+                        $last_event = $entry['event_name'] ?? ( $entry['event_type'] ?? __( 'Unknown', 'servertrack' ) );
+                    }
                 }
-                if ( $entry_ts && $entry_ts >= $week_ts ) {
-                    $events_week++;
-                }
-                if ( $entry_ts && $entry_ts > $last_ts ) {
-                    $last_ts    = $entry_ts;
-                    $last_event = $entry['event_name'] ?? ( $entry['event_type'] ?? __( 'Unknown', 'servertrack' ) );
-                }
-            } elseif ( 'error' === $status ) {
-                $total_error++;
+                if ( 'error' === $status ) $week_errors++;
+                if ( isset( $entry['emq_score'] ) ) { $emq_sum += (float) $entry['emq_score']; $emq_count++; }
             }
         }
 
-        $total        = $total_success + $total_error;
-        $success_rate = $total > 0 ? round( ( $total_success / $total ) * 100 ) : 100;
+        $success_rate = $week_total > 0 ? (int) round( $week_success / $week_total * 100 ) : 0;
+        $avg_emq      = $emq_count  > 0 ? number_format( $emq_sum / $emq_count, 1 ) : '--';
+        $retry_queue  = count( get_option( 'servertrack_retry_queue', [] ) );
 
         wp_send_json_success( [
-            'events_today' => $events_today,
-            'events_week'  => $events_week,
+            // Full KPI keys (matched to render_page element IDs)
+            'today_count'  => $today_count,
+            'week_total'   => $week_total,
+            'week_errors'  => $week_errors,
             'success_rate' => $success_rate,
+            'avg_emq'      => $avg_emq,
+            'retry_queue'  => $retry_queue,
+            // Legacy keys kept for backwards compat
+            'events_today' => $today_count,
+            'events_week'  => $week_total,
             'last_event'   => $last_event,
         ] );
     }
 
-    // -----------------------------------------------------------------
-    // Sanitization helpers
-    // -----------------------------------------------------------------
+    // ─── Sanitization helpers ───────────────────────────────────────────────
 
     public static function sanitize_consent_mode( $value ): string {
         $allowed = [ 'none', 'basic', 'advanced' ];
