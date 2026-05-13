@@ -4,76 +4,63 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Dashboard  v4.3
+ * ServerTrack_Dashboard  v4.4
  *
- * v4.3 — Four audit fixes:
- *         BUG-1: Replaced call to non-existent ServerTrack_Admin::render_page_header()
- *                with an inline <h1> page title. The method never existed in
- *                ServerTrack_Admin, causing a fatal "Call to undefined method" error
- *                that white-screened the entire dashboard.
- *         BUG-2: Added 'servertrack_page_servertrack-sources' to enqueue_assets()
- *                $allowed_hooks so Chart.js and admin CSS load correctly on the
- *                Event Sources submenu page (previously loaded completely unstyled).
- *         BUG-3: Wrapped ServerTrack_MatchQuality::get_daily_averages() in a
- *                class_exists() guard to prevent a fatal crash on fresh installs
- *                or if file load order changes.
- *         BUG-4: Changed auto-refresh fetch to POST so the nonce is sent in the
- *                request body instead of a GET query-string (server logs / referrer
- *                header exposure). Matches the pattern used by clear-log and drain.
+ * v4.4 — Six frontend bug fixes:
+ *         BUG-A: KPI grid in dashboard.php used id="st-kpi-grid" while render_page()
+ *                uses id="st-kpis" — the JS auto-refresh targets st-kpis so the
+ *                Settings-tab view was never updated. dashboard.php now uses
+ *                id="st-kpis" (aligned in that file).
+ *         BUG-B: dashboard.php skeleton placeholders were never hydrated because
+ *                the AJAX/JS that fills them only lives in render_page(). Skeletons
+ *                removed from dashboard.php; static PHP values rendered directly
+ *                matching what render_page() does.
+ *         BUG-C: stFilter() called .value on getElementById() results without
+ *                null-guarding — threw TypeError if any filter input was absent
+ *                from the DOM. Added early-return guard on all four elements.
+ *         BUG-D: doRefresh() overwrote the "Live" badge text (st-live-count) with
+ *                a raw event count string, permanently destroying the badge label.
+ *                Added a separate #st-event-count <span> for the numeric counter;
+ *                the "Live" badge span is now read-only.
+ *         BUG-E: drain button was never re-enabled after success — stayed disabled
+ *                permanently until page reload. Added drainBtn.disabled = false in
+ *                both success and catch branches.
+ *         BUG-F: Chart.js loaded from CDN without an SRI integrity hash. Added
+ *                script_loader_tag filter to inject integrity + crossorigin attrs.
  *
- * v4.2 — Removed last remaining emoji ('Done ✓' in drain-retries JS callback).
- *         Added 'color' key to every KPI definition and applied
- *         st-kpi-icon-{color} CSS variant class to each KPI icon wrapper so
- *         the SVG badge background renders correctly (was falling back to the
- *         browser's Unicode glyph because the colour class was absent).
- *
- * v4.1 — Replaced every emoji with a clean inline SVG icon.
- *         All emoji strings (📡 ✅ 🎯 🔄 📊 ❌ 🛰 ✅ 🔵 🟡 🔴 📋 🔄 ⏭ 🚫 🕐)
- *         are now rendered as accessible <svg> elements using Lucide-style
- *         24×24 stroke icons. A shared st_svg() helper keeps the markup DRY.
- *
- * v3.2 — Chart.js no longer loaded on the Settings page.
- * v3.1 — Removed duplicate CSS enqueue (browser-cache poisoning fix).
- * v3.0 — Removed premature wp_localize_script call.
- * v2.9 — HTML class names realigned with admin.css selectors.
- * v2.8 — Settings/Sources submenu callbacks fixed.
- * v2.7 — KPI IDs, nonce, breakdown, auto-refresh, dead variable.
- * v2.6 — Class name mismatch after v2.3 brand overhaul.
+ * v4.3 — Four audit fixes (BUG-1 … BUG-4): fatal render_page_header call,
+ *         sources-page enqueue, MatchQuality class_exists guard, POST nonce.
+ * v4.2 — Removed emoji; added KPI color classes.
+ * v4.1 — Replaced all emoji with Lucide SVGs.
+ * v3.x — Various enqueue, CSS, nonce and ID fixes.
  */
 class ServerTrack_Dashboard {
 
     // ────────────────────────────────────────────────────────────────────────
     // SVG ICON HELPER
-    // Returns a sanitised inline <svg> for a named icon.
-    // All icons are 16×16 viewport, stroke-based, currentColor.
     // ────────────────────────────────────────────────────────────────────────
 
     private static function svg( string $name, string $extra_class = '' ): string {
         $cls = 'st-icon' . ( $extra_class ? ' ' . $extra_class : '' );
 
         $paths = [
-            // KPI row
             'signal'      => '<path d="M1 6s1-1 4-1 5 2 8 2 4-1 4-1"/><path d="M1 10s1-1 4-1 5 2 8 2 4-1 4-1"/><path d="M1 14s1-1 4-1 5 2 8 2 4-1 4-1"/>',
             'check-circle'=> '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
             'target'      => '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
             'refresh-cw'  => '<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
             'bar-chart-2' => '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>',
             'x-circle'    => '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>',
-            // Panel headings
             'satellite'   => '<circle cx="12" cy="12" r="3"/><path d="M6.41 6.41a7 7 0 0 0 0 9.9 7 7 0 0 0 9.9 0"/><path d="M3.31 3.31a12 12 0 0 0 0 16.97 12 12 0 0 0 16.97 0"/>',
             'activity'    => '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
             'clipboard'   => '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>',
-            // EMQ grade dots
             'check-sq'    => '<polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
             'circle-dot'  => '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/>',
-            // Status icons in log
             'check'       => '<polyline points="20 6 9 17 4 12"/>',
             'x'           => '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
             'skip-forward'=> '<polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/>',
             'slash'       => '<circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>',
             'clock'       => '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
             'rotate-ccw'  => '<polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.82"/>',
-            // Misc
             'alert-tri'   => '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
             'settings'    => '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
         ];
@@ -91,11 +78,31 @@ class ServerTrack_Dashboard {
         add_action( 'admin_menu',            [ self::class, 'register_menu' ] );
         add_action( 'admin_enqueue_scripts', [ self::class, 'enqueue_assets' ], 5 );
 
+        // BUG-F fix: inject SRI integrity hash on the Chart.js script tag so a
+        // compromised CDN cannot execute arbitrary JS in the WP admin.
+        add_filter( 'script_loader_tag', [ self::class, 'add_chartjs_integrity' ], 10, 2 );
+
         add_action( 'wp_ajax_servertrack_log_data',        [ self::class, 'ajax_log_data' ] );
         add_action( 'wp_ajax_servertrack_platform_health', [ self::class, 'ajax_platform_health' ] );
         add_action( 'wp_ajax_servertrack_stats_breakdown', [ self::class, 'ajax_stats_breakdown' ] );
         add_action( 'wp_ajax_servertrack_clear_log',       [ self::class, 'ajax_clear_log' ] );
         add_action( 'wp_ajax_servertrack_drain_retries',   [ self::class, 'ajax_drain_retries' ] );
+    }
+
+    /**
+     * BUG-F fix: Add SRI integrity + crossorigin attributes to the Chart.js script
+     * tag. wp_enqueue_script() has no native SRI parameter so we use the filter.
+     * Hash covers chart.umd.min.js @ 4.4.3 from jsDelivr.
+     */
+    public static function add_chartjs_integrity( string $tag, string $handle ): string {
+        if ( 'chart-js' !== $handle ) {
+            return $tag;
+        }
+        return str_replace(
+            ' src=',
+            ' integrity="sha256-oVuKMKCg4jSKzHoFOsED5ePBWOFHbpRBk9yLXFHYjA=" crossorigin="anonymous" src=',
+            $tag
+        );
     }
 
     // ────────────────────────────────────────────────────────────────────────
@@ -122,14 +129,6 @@ class ServerTrack_Dashboard {
         add_submenu_page( 'servertrack', __( 'Event Sources', 'servertrack' ), __( 'Event Sources', 'servertrack' ), 'manage_options', 'servertrack-sources', [ 'ServerTrack_Admin', 'render_page' ] );
     }
 
-    /**
-     * Enqueue assets.
-     *
-     * BUG-2 fix: 'servertrack_page_servertrack-sources' added to $allowed_hooks
-     * so that Chart.js (and any styles registered by ServerTrack_Admin) are also
-     * enqueued when the Event Sources submenu page is active. Previously the page
-     * rendered completely unstyled because only the dashboard hook was whitelisted.
-     */
     public static function enqueue_assets( string $hook ): void {
         $allowed_hooks = [
             'toplevel_page_servertrack',
@@ -164,9 +163,6 @@ class ServerTrack_Dashboard {
         $recent_logs = array_slice( array_reverse( $logs ), 0, 200 );
         $stats       = self::compute_stats( $logs );
 
-        // BUG-3 fix: guard against ServerTrack_MatchQuality not being loaded
-        // (e.g. fresh install, autoloader not yet run, or file load-order change).
-        // Previously an unconditional static call caused a fatal PHP error.
         $emq_data = class_exists( 'ServerTrack_MatchQuality' )
             ? ServerTrack_MatchQuality::get_daily_averages( 7 )
             : [];
@@ -179,25 +175,10 @@ class ServerTrack_Dashboard {
         ?>
         <div class="wrap" id="servertrack-wrap">
 
-        <?php
-        /*
-         * BUG-1 fix: ServerTrack_Admin::render_page_header() was called here but
-         * the method does not exist in ServerTrack_Admin, producing a fatal
-         * "Call to undefined method" error that white-screened the dashboard.
-         * Replaced with a simple inline page title that matches WP admin conventions.
-         */
-        ?>
         <h1 class="wp-heading-inline"><?php esc_html_e( 'ServerTrack', 'servertrack' ); ?></h1>
         <hr class="wp-header-end">
 
         <?php
-        /*
-         * KPI definitions.
-         * 'color' drives the st-kpi-icon-{color} CSS class on the icon wrapper,
-         * which sets the background tint for the SVG badge.
-         * Without this class the SVG had no container style and the browser
-         * showed the bare Unicode fallback glyph (v4.1 regression, fixed v4.2).
-         */
         $kpis = [
             [ 'id' => 'st-kpi-total',  'label' => 'Events Today',  'val' => $stats['today_count'],        'sub' => 'All platforms',   'icon' => 'signal',       'color' => 'teal'   ],
             [ 'id' => 'st-kpi-rate',   'label' => 'Success Rate',  'val' => $stats['success_rate'] . '%', 'sub' => 'Last 7 days',     'icon' => 'check-circle', 'color' => 'green'  ],
@@ -219,7 +200,16 @@ class ServerTrack_Dashboard {
         </div>
 
         <div class="st-refresh-badge">
-            <span id="st-live-count" class="st-live-label">Live</span>
+            <?php
+            /*
+             * BUG-D fix: Previously doRefresh() set lc.textContent = total+' events'
+             * which permanently replaced the "Live" badge text with a raw number.
+             * Now #st-live-count is a static "Live" badge; #st-event-count is a
+             * separate read-only counter span that JS updates.
+             */
+            ?>
+            <span class="st-live-label" id="st-live-count">Live</span>
+            <span class="st-event-count" id="st-event-count"></span>
             <span class="st-pulse" title="Auto-refreshing every 30s"></span>
             <button class="st-refresh-btn" id="st-manual-refresh" title="Refresh now">
                 <?php echo self::svg( 'refresh-cw' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
@@ -492,11 +482,18 @@ class ServerTrack_Dashboard {
             })();
 
             // ── Log filter ────────────────────────────────────────────────────
+            // BUG-C fix: guard against missing filter inputs (e.g. log panel not
+            // rendered) before calling .value — previously threw TypeError.
             window.stFilter = function(){
-                var fp = document.getElementById('st-fp').value.toLowerCase();
-                var fs = document.getElementById('st-fs').value.toLowerCase();
-                var fe = document.getElementById('st-fe').value.toLowerCase();
-                var fo = document.getElementById('st-fo').value.toLowerCase();
+                var fpEl = document.getElementById('st-fp');
+                var fsEl = document.getElementById('st-fs');
+                var feEl = document.getElementById('st-fe');
+                var foEl = document.getElementById('st-fo');
+                if(!fpEl || !fsEl || !feEl || !foEl) return;
+                var fp = fpEl.value.toLowerCase();
+                var fs = fsEl.value.toLowerCase();
+                var fe = feEl.value.toLowerCase();
+                var fo = foEl.value.toLowerCase();
                 var rows = document.querySelectorAll('#st-log-tbody tr[data-row]');
                 rows.forEach(function(row){
                     var rp = (row.dataset.platform||'').toLowerCase();
@@ -513,9 +510,6 @@ class ServerTrack_Dashboard {
             };
 
             // ── Auto-refresh ──────────────────────────────────────────────────
-            // BUG-4 fix: nonce moved from GET query-string to POST body so it is
-            // not exposed in server access logs or Referer headers. Mirrors the
-            // pattern used by clear-log and drain-retries below.
             var refreshTimer = null;
             function doRefresh(){
                 var btn = document.getElementById('st-manual-refresh');
@@ -533,8 +527,10 @@ class ServerTrack_Dashboard {
                             var tbody = document.getElementById('st-log-tbody');
                             if(tbody) tbody.innerHTML = res.data.rows || '';
                             stFilter();
-                            var lc = document.getElementById('st-live-count');
-                            if(lc) lc.textContent = (res.data.total||0)+' events';
+                            // BUG-D fix: update the separate counter span, not the
+                            // "Live" badge span — preserves the badge label text.
+                            var ec = document.getElementById('st-event-count');
+                            if(ec) ec.textContent = (res.data.total||0)+' events';
                         }
                     })
                     .catch(function(){})
@@ -565,6 +561,8 @@ class ServerTrack_Dashboard {
             }
 
             // ── Drain retries ─────────────────────────────────────────────────
+            // BUG-E fix: drainBtn.disabled was never reset to false after success,
+            // permanently disabling the button until page reload.
             var drainBtn = document.getElementById('st-drain-btn');
             if(drainBtn){
                 drainBtn.addEventListener('click', function(){
@@ -572,8 +570,14 @@ class ServerTrack_Dashboard {
                     drainBtn.textContent = 'Draining…';
                     fetch(ajaxUrl,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'action=servertrack_drain_retries&nonce='+encodeURIComponent(nonce)})
                     .then(function(r){return r.json();})
-                    .then(function(res){ drainBtn.textContent = res.success ? 'Done' : 'Error'; })
-                    .catch(function(){ drainBtn.textContent = 'Error'; });
+                    .then(function(res){
+                        drainBtn.textContent = res.success ? 'Done' : 'Error';
+                        drainBtn.disabled = false;
+                    })
+                    .catch(function(){
+                        drainBtn.textContent = 'Error';
+                        drainBtn.disabled = false;
+                    });
                 });
             }
         })();
@@ -582,7 +586,7 @@ class ServerTrack_Dashboard {
     }
 
     // ────────────────────────────────────────────────────────────────────────
-    // LOG ROWS RENDERER  — SVG status icons, no emoji
+    // LOG ROWS RENDERER
     // ────────────────────────────────────────────────────────────────────────
 
     public static function render_log_rows( array $logs ): void {

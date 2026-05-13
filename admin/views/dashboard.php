@@ -1,10 +1,18 @@
 <?php
 /**
- * ServerTrack — Dashboard Overview Tab  v2.3
+ * ServerTrack — Dashboard Overview Tab  v2.4
  *
- * Uses .st-dashboard-grid CSS class for responsive two-column layout.
- * The old inline style="display:grid;grid-template-columns:1fr 320px"
- * has been removed — it had no responsive breakpoint and broke on narrow screens.
+ * v2.4 — BUG-A + BUG-B fixes:
+ *         BUG-A: KPI grid wrapper was id="st-kpi-grid" but the JS auto-refresh
+ *                (in class-servertrack-dashboard.php) targets id="st-kpis".
+ *                Renamed to id="st-kpis" so both contexts share the same target.
+ *         BUG-B: KPI value/label divs contained <div class="st-skeleton"> placeholders
+ *                that were never hydrated — no AJAX runs in this view context to
+ *                replace them, so skeletons spun forever. Replaced with direct PHP
+ *                values (matching what render_page() outputs) so the dashboard tab
+ *                always shows real data on first paint.
+ *
+ * v2.3 — Removed old inline grid style (no responsive breakpoint).
  */
 if ( ! defined( 'ABSPATH' ) ) exit;
 
@@ -16,21 +24,36 @@ $st_google_configured = get_option( 'servertrack_google_enabled', 0 )
 $st_tiktok_configured = get_option( 'servertrack_tiktok_enabled', 0 )
                         && get_option( 'servertrack_tiktok_pixel_id', '' )
                         && get_option( 'servertrack_tiktok_access_token', '' );
+
+// Compute the same stats that render_page() uses so values are consistent.
+$_st_logs        = get_option( 'servertrack_debug_log', [] );
+$_st_today       = gmdate( 'Y-m-d' );
+$_st_week_ago    = gmdate( 'Y-m-d', strtotime( '-7 days' ) );
+$_st_today_count = 0;
+$_st_week_total  = 0;
+$_st_week_success = 0;
+foreach ( $_st_logs as $_e ) {
+    $_ts = substr( $_e['timestamp'] ?? '', 0, 10 );
+    if ( $_ts === $_st_today ) $_st_today_count++;
+    if ( $_ts >= $_st_week_ago ) {
+        $_st_week_total++;
+        if ( ( $_e['status'] ?? '' ) === 'success' ) $_st_week_success++;
+    }
+}
+$_st_success_rate = $_st_week_total > 0 ? (int) round( $_st_week_success / $_st_week_total * 100 ) : 0;
 ?>
 
 <!-- KPI Cards -->
-<div class="st-kpi-grid" id="st-kpi-grid">
+<!-- BUG-A fix: id changed from "st-kpi-grid" to "st-kpis" to match JS target -->
+<div class="st-kpi-grid" id="st-kpis">
 
     <div class="st-kpi-card">
         <div class="st-kpi-icon st-kpi-icon-teal">
             <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
         </div>
-        <div class="st-kpi-value" id="st-kpi-total">
-            <div class="st-skeleton st-skeleton-kpi-value"></div>
-        </div>
-        <div class="st-kpi-label" id="st-kpi-label-total">
-            <div class="st-skeleton st-skeleton-kpi-label"></div>
-        </div>
+        <!-- BUG-B fix: replaced skeleton placeholder with real PHP value -->
+        <div class="st-kpi-value" id="st-kpi-total"><?php echo esc_html( $_st_today_count ); ?></div>
+        <div class="st-kpi-label" id="st-kpi-label-total"><?php esc_html_e( 'Events Today', 'servertrack' ); ?></div>
         <div class="st-kpi-trend st-kpi-trend-info"></div>
     </div>
 
@@ -38,12 +61,9 @@ $st_tiktok_configured = get_option( 'servertrack_tiktok_enabled', 0 )
         <div class="st-kpi-icon st-kpi-icon-green">
             <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
         </div>
-        <div class="st-kpi-value" id="st-kpi-success">
-            <div class="st-skeleton st-skeleton-kpi-value"></div>
-        </div>
-        <div class="st-kpi-label" id="st-kpi-label-success">
-            <div class="st-skeleton st-skeleton-kpi-label"></div>
-        </div>
+        <!-- BUG-B fix: replaced skeleton placeholder with real PHP value -->
+        <div class="st-kpi-value" id="st-kpi-success"><?php echo esc_html( $_st_week_success ); ?></div>
+        <div class="st-kpi-label" id="st-kpi-label-success"><?php esc_html_e( 'Successful (7d)', 'servertrack' ); ?></div>
         <div class="st-kpi-trend st-kpi-trend-success"></div>
     </div>
 
@@ -51,12 +71,9 @@ $st_tiktok_configured = get_option( 'servertrack_tiktok_enabled', 0 )
         <div class="st-kpi-icon st-kpi-icon-red">
             <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
         </div>
-        <div class="st-kpi-value" id="st-kpi-failed">
-            <div class="st-skeleton st-skeleton-kpi-value"></div>
-        </div>
-        <div class="st-kpi-label" id="st-kpi-label-failed">
-            <div class="st-skeleton st-skeleton-kpi-label"></div>
-        </div>
+        <!-- BUG-B fix: replaced skeleton placeholder with real PHP value -->
+        <div class="st-kpi-value" id="st-kpi-failed"><?php echo esc_html( $_st_week_total - $_st_week_success ); ?></div>
+        <div class="st-kpi-label" id="st-kpi-label-failed"><?php esc_html_e( 'Failed (7d)', 'servertrack' ); ?></div>
         <div class="st-kpi-trend st-kpi-trend-error"></div>
     </div>
 
@@ -64,16 +81,13 @@ $st_tiktok_configured = get_option( 'servertrack_tiktok_enabled', 0 )
         <div class="st-kpi-icon st-kpi-icon-blue">
             <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
         </div>
-        <div class="st-kpi-value" id="st-kpi-rate">
-            <div class="st-skeleton st-skeleton-kpi-value"></div>
-        </div>
-        <div class="st-kpi-label" id="st-kpi-label-rate">
-            <div class="st-skeleton st-skeleton-kpi-label"></div>
-        </div>
+        <!-- BUG-B fix: replaced skeleton placeholder with real PHP value -->
+        <div class="st-kpi-value" id="st-kpi-rate"><?php echo esc_html( $_st_success_rate ); ?>%</div>
+        <div class="st-kpi-label" id="st-kpi-label-rate"><?php esc_html_e( 'Success Rate', 'servertrack' ); ?></div>
         <div class="st-kpi-trend st-kpi-trend-info"></div>
     </div>
 
-</div><!-- /.st-kpi-grid -->
+</div><!-- /.st-kpis -->
 
 <!-- Responsive two-column layout: Platform Health + Activity Feed -->
 <div class="st-dashboard-grid">
