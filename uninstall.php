@@ -1,10 +1,25 @@
 <?php
 /**
- * ServerTrack Uninstall  — v4.0
+ * ServerTrack Uninstall  — v6.0.5
  *
  * Runs when the plugin is deleted from WP Admin → Plugins.
  * Removes ALL stored options, order meta (classic + HPOS), retry/abandonment
  * transients, and all scheduled cron hooks from the database.
+ *
+ * Updated in v6.0.5 (BUG-9, BUG-10, BUG-13, BUG-14):
+ *   BUG-9  — Added all options introduced in v5.0–v6.0.4 that were missing:
+ *             servertrack_source_woo_extended,
+ *             servertrack_source_order_status_enabled,
+ *             servertrack_source_wishlist_enabled,
+ *             servertrack_source_partial_refund_enabled,
+ *             servertrack_debug_mode,
+ *             servertrack_webhook_enabled/url/secret/events,
+ *             servertrack_retry_queue, servertrack_db_version
+ *   BUG-10 — Fixed cron hook typo: _abandonments (plural) → _abandonment (singular)
+ *   BUG-13 — Fixed renewal cron hook: _send_renewal_purchase → _send_sub_renewal
+ *   BUG-14 — Added 3 missing cron hooks that were only cleared on deactivation:
+ *             servertrack_deliver_webhook, servertrack_process_retry_queue,
+ *             servertrack_send_offline_conversion
  *
  * Updated in v4.0:
  *   - Added v4.0 options: abandonment, gtag, scroll/video/wishlist tracking
@@ -23,6 +38,8 @@ $servertrack_options = [
     'servertrack_enabled',
     'servertrack_test_mode',
     'servertrack_consent_mode',
+    'servertrack_debug_mode',           // BUG-9: added (v5.0+)
+    'servertrack_db_version',           // BUG-9: added (v5.0+)
     // Meta CAPI
     'servertrack_meta_enabled',
     'servertrack_meta_pixel_id',
@@ -32,6 +49,7 @@ $servertrack_options = [
     'servertrack_google_enabled',
     'servertrack_google_customer_id',
     'servertrack_google_conversion_id',
+    'servertrack_google_conversion_label',
     'servertrack_google_developer_token',
     'servertrack_google_client_id',
     'servertrack_google_client_secret',
@@ -46,11 +64,24 @@ $servertrack_options = [
     'servertrack_tiktok_access_token',
     // Sources
     'servertrack_source_woo_enabled',
+    'servertrack_source_woo_extended',          // BUG-9: added (v6.0.4+)
+    'servertrack_source_order_status_enabled',  // BUG-9: added (v5.0+)
+    'servertrack_source_wishlist_enabled',      // BUG-9: added (v5.0+)
+    'servertrack_source_partial_refund_enabled',// BUG-9: added (v5.0+)
     'servertrack_source_cf7_enabled',
     'servertrack_source_edd_enabled',
     'servertrack_source_abandonment_enabled',
+    'servertrack_source_cart_abandonment_enabled', // BUG-9: old key — clean both
+    'servertrack_source_subscriptions_enabled',
     'servertrack_abandonment_window_minutes',
     'servertrack_cf7_mappings',
+    // Webhook (BUG-9: added — v5.0+)
+    'servertrack_webhook_enabled',
+    'servertrack_webhook_url',
+    'servertrack_webhook_secret',
+    'servertrack_webhook_events',
+    // Retry queue (BUG-9: added — v5.0+)
+    'servertrack_retry_queue',
     // Browser tracking
     'servertrack_scroll_depth',
     'servertrack_video_tracking',
@@ -121,12 +152,17 @@ $cron_hooks = [
     'servertrack_send_woo_view_content',
     'servertrack_send_woo_refund',
     'servertrack_send_edd_purchase',
-    'servertrack_send_renewal_purchase',
+    'servertrack_send_sub_renewal',             // BUG-13: was _send_renewal_purchase (wrong)
     'servertrack_send_subscription_cancellation',
-    // Retry processor (v3.1+ correct name)
+    // Retry processor
     'servertrack_process_retry',
-    // Cart abandonment
-    'servertrack_check_abandonments',
+    'servertrack_process_retry_queue',          // BUG-14: added — present in deactivation hook
+    // Cart abandonment — BUG-10: was _abandonments (plural) — now singular (correct)
+    'servertrack_check_abandonment',
+    // Webhook delivery — BUG-14: added
+    'servertrack_deliver_webhook',
+    // Offline conversions — BUG-14: added
+    'servertrack_send_offline_conversion',
 ];
 foreach ( $cron_hooks as $hook ) {
     wp_clear_scheduled_hook( $hook );
