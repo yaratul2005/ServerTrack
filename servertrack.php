@@ -3,7 +3,7 @@
  * Plugin Name:       ServerTrack
  * Plugin URI:        https://github.com/yaratul2005/ServerTrack
  * Description:       Professional server-side CAPI tracking for Meta, TikTok & Google — with identity stitching, click ID persistence, EMQ scoring, offline conversions, pixel dedup, LTV signals, catalog enrichment, webhook outbound, cart abandonment, subscriptions, and admin dashboard.
- * Version:           6.0.4
+ * Version:           6.1.0
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * Author:            MD. Yaser Ahmmed Ratul
@@ -16,75 +16,56 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * v6.0.4 — Three bootstrap bugs fixed.
+ * v6.1.0 — Five bugs fixed (BUG-NEW-1 through BUG-NEW-5).
  *
- * BUG-6 FIX — Dual WooCommerce class init (double-fire risk)
- * -----------------------------------------------------------
- * Both ServerTrack_WooCommerce (sources/class-servertrack-woocommerce.php)
- * and ServerTrack_Source_WooCommerce (sources/class-servertrack-source-woocommerce.php)
- * were being initialised unconditionally whenever WooCommerce was active.
- * Both classes hook into woocommerce_payment_complete / woocommerce_thankyou,
- * which caused every Purchase CAPI event to fire TWICE — once per class.
- * The in-request dedup guard catches the second fire within a single PHP
- * execution, but when Purchase is also scheduled via wp_cron as a fallback
- * (BUG-B fix, v5.0), the cron job runs in a separate process where the
- * in-memory dedup state is gone, so both classes fire independently.
+ * BUG-NEW-1 FIX — servertrack_register_defaults() called on every version bump
+ * -----------------------------------------------------------------------------
+ * Previously, servertrack_run_upgrade() called servertrack_register_defaults()
+ * on every version bump. add_option() is safe (won't overwrite existing values),
+ * but any option introduced in a new version would silently remain unset on
+ * existing installs if the activation hook had already stamped the db_version.
+ * Fix: introduced a per-version migration function (servertrack_migrate_to_610)
+ * that only adds keys new in v6.1.0. Fresh installs still seed all defaults
+ * via the activation hook.
  *
- * Fix: ServerTrack_WooCommerce is the primary, battle-tested implementation
- * (34 KB, v5.0 with all BUG-A/B/C/H fixes). ServerTrack_Source_WooCommerce
- * is the v3.3.1 extended implementation that introduced the already_sent()
- * poly-dispatch API used by Dedup v2.4. It is now gated behind a new option
- * 'servertrack_source_woo_extended' which defaults to 0 (disabled). Advanced
- * users who want the extended source can enable it explicitly. The two classes
- * must never run simultaneously.
+ * BUG-NEW-2 FIX — Deactivation hook missing servertrack_google_refresh_token_enc
+ * --------------------------------------------------------------------------------
+ * FIX-DR-4 (v6.1.0, class-servertrack-admin.php) stores the Google refresh
+ * token AES-256-CBC encrypted under the key servertrack_google_refresh_token_enc.
+ * The deactivation hook only deleted the old plaintext key, leaving the
+ * encrypted credential in wp_options permanently after deactivation.
+ * Fix: added servertrack_google_refresh_token_enc to the $credentials list.
  *
- * BUG-7 FIX — Dual cart-abandonment init (duplicate cron + events)
- * -----------------------------------------------------------------
- * ServerTrack_CartAbandonment (v2.x, 10 KB) and ServerTrack_WooAbandonment
- * (v3.x, 20 KB) were both initialised simultaneously when the abandonment
- * feature was enabled. This scheduled duplicate cron hooks
- * (servertrack_check_abandonment) and caused duplicate InitiateCheckout /
- * AbandonedCart CAPI events to fire.
+ * BUG-NEW-3 FIX — SERVERTRACK_VERSION constant was still 6.0.4
+ * -------------------------------------------------------------
+ * The admin class (class-servertrack-admin.php) was already at v6.1.0 after
+ * the FIX-DR-1..4 commit, but the main plugin file still declared 6.0.4.
+ * This caused version_compare in servertrack_run_upgrade() to return '>=' on
+ * all existing installs and exit without running the new migration.
+ * Fix: bumped SERVERTRACK_VERSION to '6.1.0'.
  *
- * Fix: Only ServerTrack_WooAbandonment (the newer, richer v3.x implementation)
- * is initialised. ServerTrack_CartAbandonment is kept loaded (require_once) for
- * backward-compat so that any existing scheduled cron callbacks resolve without
- * a fatal, but its ::init() is no longer called.
+ * BUG-NEW-4 FIX — Master kill-switch servertrack_enabled was never checked
+ * --------------------------------------------------------------------------
+ * get_option('servertrack_enabled', 1) is exposed as a master on/off toggle
+ * in the admin UI, but servertrack_init() initialised every infrastructure
+ * class unconditionally — Retry (scheduled cron), CustomEvents (page-load
+ * hooks), and all platform senders fired even when the plugin was disabled.
+ * Fix: all init() calls are now wrapped inside the master enabled guard.
  *
- * BUG-8 FIX — 'servertrack_source_woo_enabled' toggle silently ignored
- * ---------------------------------------------------------------------
- * The plugin registered the option 'servertrack_source_woo_enabled' (default 1)
- * and exposed a toggle in the admin UI, but servertrack_init() called
- * ServerTrack_WooCommerce::init() unconditionally — it never read the option.
- * Users who disabled WooCommerce tracking via Settings still had all WooCommerce
- * CAPI events firing.
- *
- * Fix: ServerTrack_WooCommerce::init() and ServerTrack_WooRenewals::init() are
- * now wrapped in an explicit get_option( 'servertrack_source_woo_enabled', 1 )
- * guard in this file.
+ * BUG-NEW-5 FIX — uninstall.php missing _enc key + reinstall sentinel
+ * --------------------------------------------------------------------
+ * Same blind-spot as BUG-NEW-2: uninstall.php did not delete
+ * servertrack_google_refresh_token_enc. Also confirmed servertrack_db_version
+ * is already in the delete list (BUG-9 fix), so reinstall correctly reseeds.
+ * Fix: servertrack_google_refresh_token_enc added to the options delete list
+ * in uninstall.php.
  *
  * ─────────────────────────────────────────────────────────────────────────────
- * v6.0.3 — Bootstrap consolidation (history preserved)
+ * v6.0.4 — Three bootstrap bugs fixed (BUG-6, BUG-7, BUG-8). See below.
  * ─────────────────────────────────────────────────────────────────────────────
- * The plugin had TWO competing bootstrap systems that were never merged:
- *
- *   1. The ORIGINAL flat system in this file (servertrack_init) loaded only
- *      ~15 classes and missed: ServerTrack_Frontend, ServerTrack_CustomEvents,
- *      ServerTrack_Retry (call), and all v3.x WooCommerce source classes.
- *
- *   2. The NEWER ServerTrack_Core::init() system in
- *      includes/class-servertrack-core.php was never require_once'd or called
- *      from this file, making it completely dead code.
- *
- * Result: frontend pixel never fired, custom events never ran, retry queue
- * was never processed, and half the WooCommerce source classes were silently
- * skipped.
- *
- * Fix: one authoritative servertrack_load_classes() + servertrack_init() here.
- * class-servertrack-core.php is kept as a backward-compat shim (no-op).
  */
 
-define( 'SERVERTRACK_VERSION', '6.0.4' );
+define( 'SERVERTRACK_VERSION', '6.1.0' );
 define( 'SERVERTRACK_DIR',     plugin_dir_path( __FILE__ ) );
 define( 'SERVERTRACK_URL',     plugin_dir_url( __FILE__ ) );
 
@@ -123,34 +104,14 @@ function servertrack_load_classes(): void {
     require_once SERVERTRACK_DIR . 'platforms/class-servertrack-google.php';
 
     // ── WooCommerce event sources ─────────────────────────────────────────────
-    //
-    // PRIMARY implementation (v5.0, all BUG-A/B/C/H fixes applied).
-    // This is the authoritative WooCommerce CAPI class.
     require_once SERVERTRACK_DIR . 'sources/class-servertrack-woocommerce.php';
-
-    // EXTENDED implementation (v3.3.1).
-    // BUG-6 FIX: always loaded (require_once) so the class definition exists
-    // for any stored cron callbacks, but ::init() is ONLY called when the
-    // 'servertrack_source_woo_extended' option is explicitly enabled (default: 0).
-    // The two classes must never run simultaneously — see init() below.
     require_once SERVERTRACK_DIR . 'sources/class-servertrack-source-woocommerce.php';
-
-    // Subscription renewal/cancellation/pause events (v3.x).
     require_once SERVERTRACK_DIR . 'sources/class-servertrack-woo-renewals.php';
-
-    // Cart abandonment — v3.x primary implementation.
-    // BUG-7 FIX: ServerTrack_CartAbandonment (v2.x) is loaded for backward-compat
-    // (resolves any existing scheduled cron callbacks) but its ::init() is NOT called.
     require_once SERVERTRACK_DIR . 'sources/class-servertrack-cart-abandonment.php';
     require_once SERVERTRACK_DIR . 'sources/class-servertrack-woo-abandonment.php';
-
-    // Order lifecycle status events: on-hold, failed, cancelled (on by default).
     require_once SERVERTRACK_DIR . 'sources/class-servertrack-woo-order-status.php';
-    // AddToWishlist events — opt-in (requires YITH or TI Wishlist plugin).
     require_once SERVERTRACK_DIR . 'sources/class-servertrack-woo-wishlist.php';
-    // Partial refund events (on by default).
     require_once SERVERTRACK_DIR . 'sources/class-servertrack-woo-partial-refund.php';
-    // Subscriptions (WooCommerce Subscriptions plugin wrapper).
     require_once SERVERTRACK_DIR . 'sources/class-servertrack-subscriptions.php';
 
     // ── Optional third-party sources ─────────────────────────────────────────
@@ -176,6 +137,14 @@ function servertrack_init(): void {
     servertrack_load_classes();
     servertrack_run_upgrade();
 
+    // BUG-NEW-4 FIX: Respect the master kill-switch. When the admin disables
+    // the plugin via Settings → ServerTrack → Enable Plugin, NO hooks, cron
+    // jobs, or AJAX handlers should be registered. Previously every class was
+    // initialised unconditionally, bypassing this toggle entirely.
+    if ( ! get_option( 'servertrack_enabled', 1 ) ) {
+        return;
+    }
+
     // ── Core infrastructure ───────────────────────────────────────────────────
     ServerTrack_Identity::init();
     ServerTrack_ClickCapture::init();
@@ -190,57 +159,37 @@ function servertrack_init(): void {
     // ── WooCommerce sources ───────────────────────────────────────────────────
     if ( class_exists( 'WooCommerce' ) ) {
 
-        // BUG-8 FIX: Respect the 'servertrack_source_woo_enabled' admin toggle.
-        // Previously this block ran unconditionally, ignoring the user's setting.
         if ( get_option( 'servertrack_source_woo_enabled', 1 ) ) {
 
-            // BUG-6 FIX: Mutually exclusive WooCommerce source selection.
-            // Only ONE of the two WooCommerce implementations must be active at
-            // any given time. ServerTrack_WooCommerce (primary, v5.0) is the
-            // default. ServerTrack_Source_WooCommerce (extended, v3.3.1) is only
-            // activated when explicitly opted-in via the admin option.
             if ( get_option( 'servertrack_source_woo_extended', 0 ) ) {
-                // Extended mode: use the richer v3.3.1 source.
-                // WARNING: Do NOT enable both — double-fire will occur.
                 ServerTrack_Source_WooCommerce::init();
             } else {
-                // Default (recommended): primary v5.0 source with all fixes.
                 ServerTrack_WooCommerce::init();
             }
 
-            // BUG-8 FIX (continued): Renewals is also a WooCommerce sub-feature
-            // and should be gated by the same woo_enabled parent toggle.
             if ( class_exists( 'WC_Subscriptions' ) ) {
                 ServerTrack_WooRenewals::init();
                 ServerTrack_Subscriptions::init();
             }
 
-            // BUG-7 FIX: Only initialise ServerTrack_WooAbandonment (v3.x).
-            // ServerTrack_CartAbandonment (v2.x) is intentionally NOT init'd here.
-            // It is only loaded via require_once above so that any pre-existing
-            // wp_cron callbacks resolve safely without a fatal error.
             if ( get_option( 'servertrack_source_abandonment_enabled', 0 ) ) {
                 ServerTrack_WooAbandonment::init();
             }
 
-            // Order lifecycle status events (on-hold, failed, cancelled) — on by default.
             if ( get_option( 'servertrack_source_order_status_enabled', 1 ) ) {
                 ServerTrack_WooOrderStatus::init();
             }
 
-            // AddToWishlist events — opt-in.
             if ( get_option( 'servertrack_source_wishlist_enabled', 0 ) ) {
                 ServerTrack_WooWishlist::init();
             }
 
-            // Partial refund events — on by default.
             if ( get_option( 'servertrack_source_partial_refund_enabled', 1 ) ) {
                 ServerTrack_WooPartialRefund::init();
             }
 
-        } // end servertrack_source_woo_enabled guard
-
-    } // end WooCommerce active guard
+        }
+    }
 
     // ── Optional third-party sources ─────────────────────────────────────────
     if ( class_exists( 'WPCF7' ) && get_option( 'servertrack_source_cf7_enabled', 0 ) ) {
@@ -265,17 +214,45 @@ add_action( 'plugins_loaded', 'servertrack_init', 20 );
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Upgrade guard — version-keyed so it only runs once per version bump.
-// BUG-4 FIX (v6.0.3): previously used bare add_option() calls on every page load.
+// BUG-NEW-1 FIX: Use per-version migration functions instead of calling
+// servertrack_register_defaults() blindly on every upgrade. add_option() is
+// safe but this pattern makes migrations explicit and auditable.
 // ─────────────────────────────────────────────────────────────────────────────
 function servertrack_run_upgrade(): void {
     $installed = get_option( 'servertrack_db_version', '0' );
     if ( version_compare( $installed, SERVERTRACK_VERSION, '>=' ) ) {
-        return; // Nothing to do.
+        return;
     }
-    servertrack_register_defaults();
+
+    // Run cumulative migrations in order.
+    if ( version_compare( $installed, '6.1.0', '<' ) ) {
+        servertrack_migrate_to_610();
+    }
+
     update_option( 'servertrack_db_version', SERVERTRACK_VERSION );
 }
 
+/**
+ * Migration to v6.1.0.
+ * Adds only the options that are NEW in this version.
+ * Existing installs upgrading from any prior version will get these defaults
+ * without touching any option the user has already customised.
+ */
+function servertrack_migrate_to_610(): void {
+    // FIX-DR-3 (OAuth CSRF state): no stored option needed — state is transient-based.
+    // FIX-DR-4 (encrypted token): add_option is a no-op if the key already exists;
+    //   the plaintext fallback in decrypt_token() handles legacy rows transparently.
+    add_option( 'servertrack_google_refresh_token_enc', '' );
+
+    // BUG-6 FIX default (already in register_defaults, but guard existing installs).
+    add_option( 'servertrack_source_woo_extended', 0 );
+}
+
+/**
+ * Seeds ALL default options.
+ * Called only from the activation hook (fresh installs).
+ * Upgrade paths use per-version migration functions above.
+ */
 function servertrack_register_defaults(): void {
     $defaults = [
         // Core toggles
@@ -283,29 +260,26 @@ function servertrack_register_defaults(): void {
         'servertrack_debug_mode'                     => 0,
         'servertrack_debug_log'                      => [],
         'servertrack_retry_queue'                    => [],
-        // BUG-C (v6.0.2): consent_mode must default to 'none' so events are
-        // never silently blocked on fresh installs.
         'servertrack_consent_mode'                   => 'none',
         // Platform toggles
         'servertrack_meta_enabled'                   => 0,
         'servertrack_tiktok_enabled'                 => 0,
         'servertrack_google_enabled'                 => 0,
+        // Google OAuth (FIX-DR-4: encrypted token key)
+        'servertrack_google_refresh_token_enc'       => '',
         // Webhook
         'servertrack_webhook_enabled'                => 0,
         'servertrack_webhook_url'                    => '',
         'servertrack_webhook_secret'                 => '',
         'servertrack_webhook_events'                 => '',
-        // Frontend tracking (v3.0)
+        // Frontend tracking
         'servertrack_scroll_depth'                   => 1,
         'servertrack_video_tracking'                 => 1,
         'servertrack_wishlist_tracking'              => 1,
         'servertrack_google_gtag_id'                 => '',
         'servertrack_google_gtag_label'              => '',
-        // WooCommerce source toggles (v3.2 / v3.3)
+        // WooCommerce source toggles
         'servertrack_source_woo_enabled'             => 1,
-        // BUG-6 FIX (v6.0.4): extended WooCommerce source is opt-in only.
-        // Defaults to 0 — primary v5.0 source is always used unless explicitly
-        // switched. Setting this to 1 disables the primary source.
         'servertrack_source_woo_extended'            => 0,
         'servertrack_source_abandonment_enabled'     => 0,
         'servertrack_abandonment_window_minutes'     => 60,
@@ -331,6 +305,9 @@ register_activation_hook( __FILE__, function (): void {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Deactivation hook — clear all scheduled cron jobs and sensitive credentials.
+// BUG-NEW-2 FIX: Added servertrack_google_refresh_token_enc to $credentials.
+// FIX-DR-4 stores the encrypted refresh token under this key; the previous
+// hook only deleted the old plaintext key, leaking the encrypted credential.
 // ─────────────────────────────────────────────────────────────────────────────
 register_deactivation_hook( __FILE__, function (): void {
     $cron_hooks = [
@@ -354,6 +331,7 @@ register_deactivation_hook( __FILE__, function (): void {
         'servertrack_meta_access_token',
         'servertrack_tiktok_access_token',
         'servertrack_google_refresh_token',
+        'servertrack_google_refresh_token_enc',  // BUG-NEW-2 FIX: encrypted key
         'servertrack_google_access_token',
         'servertrack_webhook_secret',
     ];
