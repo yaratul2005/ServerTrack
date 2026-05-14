@@ -2,6 +2,11 @@
 /**
  * TikTok Events settings tab — view fragment only.
  * C1/C9: <form> and settings_fields() removed. render_page() owns the form.
+ *
+ * v3.6 fixes:
+ *  - Test button class changed from "servertrack-test-btn" to "st-test-connection"
+ *    so admin.js click handler fires correctly.
+ *  - Response container changed to <span class="st-test-result"> to match JS siblings selector.
  */
 if ( ! defined( 'ABSPATH' ) ) exit;
 ?>
@@ -45,7 +50,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 <hr />
 <h2><?php esc_html_e( 'Send Test Event', 'servertrack' ); ?></h2>
 <p><?php esc_html_e( 'Sends a dummy Purchase event to TikTok Events API to verify your credentials.', 'servertrack' ); ?></p>
-<button type="button" class="button button-secondary servertrack-test-btn" data-platform="tiktok">
+<button type="button" class="button button-secondary st-test-connection" data-platform="tiktok">
     <?php esc_html_e( 'Send Test Event → TikTok', 'servertrack' ); ?>
 </button>
-<div class="servertrack-test-response" id="servertrack-test-response-tiktok"></div>
+<span class="st-test-result" aria-live="polite"></span>

@@ -2,6 +2,12 @@
 /**
  * Meta CAPI settings tab — view fragment only.
  * C1/C9: <form> and settings_fields() removed. render_page() owns the form.
+ *
+ * v3.6 fixes:
+ *  - Test button class changed from "servertrack-test-btn" to "st-test-connection"
+ *    so admin.js click handler fires correctly.
+ *  - Response container id changed to match JS selector (.st-test-result sibling).
+ *  - Input name unified to servertrack_meta_test_event_code (matches ajax_save_settings whitelist).
  */
 if ( ! defined( 'ABSPATH' ) ) exit;
 ?>
@@ -57,7 +63,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 <hr />
 <h2><?php esc_html_e( 'Send Test Event', 'servertrack' ); ?></h2>
 <p><?php esc_html_e( 'Sends a dummy Purchase event to Meta CAPI to verify your credentials.', 'servertrack' ); ?></p>
-<button type="button" class="button button-secondary servertrack-test-btn" data-platform="meta">
+<button type="button" class="button button-secondary st-test-connection" data-platform="meta">
     <?php esc_html_e( 'Send Test Event → Meta', 'servertrack' ); ?>
 </button>
-<div class="servertrack-test-response" id="servertrack-test-response-meta"></div>
+<span class="st-test-result" aria-live="polite"></span>

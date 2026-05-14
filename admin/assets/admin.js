@@ -1,4 +1,4 @@
-/* ServerTrack Admin JS — v3.5 */
+/* ServerTrack Admin JS — v3.6 */
 /* global servertrackAdmin, Chart */
 ( function ( $ ) {
     'use strict';
@@ -24,31 +24,44 @@
     /* ── Settings Form Save ───────────────────────────────────────────── */
 
     $( document ).on( 'click', '.st-save-settings', function () {
-        var $btn  = $( this );
-        var $form = $btn.closest( 'form, .st-settings-tab-content' );
-        var data  = {};
+        var $btn      = $( this );
+        var $content  = $btn.closest( '.st-settings-tab-content' );
+        var $feedback = $content.find( '.st-save-feedback' );
+        var data      = {};
 
-        $form.find( '[name]' ).each( function () {
+        // Collect all named inputs inside the tab content area
+        $content.find( '[name]' ).each( function () {
             var $el = $( this );
             var key = $el.attr( 'name' );
             if ( $el.attr( 'type' ) === 'checkbox' ) {
                 data[ key ] = $el.is( ':checked' ) ? '1' : '';
+            } else if ( $el.prop( 'disabled' ) || $el.prop( 'readonly' ) ) {
+                // Skip read-only / disabled fields (e.g. masked refresh token)
+                return;
             } else {
                 data[ key ] = $el.val();
             }
         } );
 
-        $btn.prop( 'disabled', true ).text( '…' );
+        var origLabel = $btn.text();
+        $btn.prop( 'disabled', true ).text( '\u2026' );
+        $feedback.text( '' ).removeClass( 'ok error' );
 
         stAjax(
             'servertrack_save_settings',
             { settings: data },
-            function () {
-                $btn.prop( 'disabled', false ).text( servertrackAdmin.strings.saved );
-                setTimeout( function () { $btn.text( $btn.data( 'label' ) || 'Save Settings' ); }, 2500 );
+            function ( d ) {
+                $btn.prop( 'disabled', false ).text( origLabel );
+                $feedback
+                    .text( ( d && d.message ) || servertrackAdmin.strings.saved )
+                    .addClass( 'ok' );
+                setTimeout( function () { $feedback.text( '' ).removeClass( 'ok' ); }, 3000 );
             },
-            function () {
-                $btn.prop( 'disabled', false ).text( servertrackAdmin.strings.saveError );
+            function ( d ) {
+                $btn.prop( 'disabled', false ).text( origLabel );
+                $feedback
+                    .text( ( d && d.message ) || servertrackAdmin.strings.saveError )
+                    .addClass( 'error' );
             }
         );
     } );
@@ -56,9 +69,9 @@
     /* ── Test Connection ──────────────────────────────────────────────── */
 
     $( document ).on( 'click', '.st-test-connection', function () {
-        var $btn      = $( this );
-        var platform  = $btn.data( 'platform' );
-        var $result   = $btn.siblings( '.st-test-result' );
+        var $btn     = $( this );
+        var platform = $btn.data( 'platform' );
+        var $result  = $btn.siblings( '.st-test-result' );
 
         $btn.prop( 'disabled', true );
         $result.text( servertrackAdmin.strings.testing ).removeClass( 'ok error' );
@@ -93,7 +106,7 @@
         var $list = $( '#st-sources-list' );
         if ( ! $list.length ) return;
 
-        $list.html( '<tr><td colspan="5" class="st-loading">Loading…</td></tr>' );
+        $list.html( '<tr><td colspan="5" class="st-loading">Loading\u2026</td></tr>' );
 
         stAjax(
             'servertrack_get_sources',
@@ -106,7 +119,7 @@
                 }
                 var html = '';
                 sources.forEach( function ( s ) {
-                    var platforms = ( s.platforms || [] ).join( ', ' ) || '—';
+                    var platforms    = ( s.platforms || [] ).join( ', ' ) || '\u2014';
                     var enabledLabel = s.enabled
                         ? '<span class="st-badge st-badge-success">Active</span>'
                         : '<span class="st-badge off">Inactive</span>';
@@ -149,7 +162,6 @@
         $form.find( 'input[type=checkbox]' ).each( function () {
             data[ $( this ).attr( 'name' ) ] = $( this ).is( ':checked' ) ? '1' : '';
         } );
-        // Collect checked platforms
         var platforms = [];
         $form.find( 'input[name="platforms[]"]' ).filter( ':checked' ).each( function () {
             platforms.push( $( this ).val() );
@@ -164,7 +176,6 @@
     /* ── Init ─────────────────────────────────────────────────────────── */
 
     $( function () {
-        // Load sources table if on sources page
         if ( $( '#st-sources-list' ).length ) {
             loadSources();
         }

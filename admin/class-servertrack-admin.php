@@ -4,15 +4,18 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Admin  v3.5
+ * ServerTrack_Admin  v3.6
  *
  * Handles Settings + Event Sources admin pages.
  * Dashboard page is handled by ServerTrack_Dashboard.
  *
  * Changelog:
+ * v3.6 — Save button added to every settings tab via st-settings-form-footer.
+ *         Option key servertrack_meta_test_event_code unified (was servertrack_meta_test_code).
+ *         Google tab double-form conflict removed; Google now saves via AJAX like all other tabs.
+ *         Google string keys added to ajax_save_settings() whitelist.
  * v3.5 — CSS class names realigned with admin.css selectors.
- *         render_page_header() extracted as a shared static method
- *         so Dashboard can call it too (fixes blank header on dashboard).
+ *         render_page_header() extracted as a shared static method.
  *         Nonce action for dashboard AJAX corrected to servertrack_dashboard.
  * v3.4 — Settings / Sources submenu routing fixed.
  * v3.3 — Dead variable + duplicate enqueue removed.
@@ -135,6 +138,9 @@ class ServerTrack_Admin {
 
         $is_sources  = ( $page === 'servertrack-sources' );
         $is_settings = ( $page === 'servertrack-settings' );
+
+        // Tabs that have a dedicated test-connection button (no extra save footer needed below test btn)
+        $tabs_with_test = [ 'meta', 'tiktok' ];
         ?>
         <div class="wrap" id="servertrack-wrap">
 
@@ -203,6 +209,18 @@ class ServerTrack_Admin {
                             echo '</p>';
                         }
                         ?>
+
+                        <?php if ( $active_tab !== 'debug' ) : ?>
+                        <div class="st-settings-form-footer">
+                            <button type="button"
+                                    class="button button-primary st-save-settings"
+                                    data-label="<?php esc_attr_e( 'Save Settings', 'servertrack' ); ?>">
+                                <?php esc_html_e( 'Save Settings', 'servertrack' ); ?>
+                            </button>
+                            <span class="st-save-feedback" aria-live="polite"></span>
+                        </div>
+                        <?php endif; ?>
+
                     </div>
                 </div>
 
@@ -269,6 +287,8 @@ class ServerTrack_Admin {
         }
 
         $boolean_keys = [
+            'servertrack_enabled',
+            'servertrack_test_mode',
             'servertrack_meta_enabled',
             'servertrack_google_enabled',
             'servertrack_tiktok_enabled',
@@ -277,15 +297,25 @@ class ServerTrack_Admin {
             'servertrack_dedup_enabled',
         ];
         $string_keys = [
+            // Meta
             'servertrack_meta_pixel_id',
             'servertrack_meta_access_token',
-            'servertrack_meta_test_code',
+            'servertrack_meta_test_event_code',   // unified key (was servertrack_meta_test_code)
+            // Google
+            'servertrack_google_customer_id',
+            'servertrack_google_conversion_id',
+            'servertrack_google_developer_token',
+            'servertrack_google_client_id',
+            'servertrack_google_client_secret',
             'servertrack_google_measurement_id',
             'servertrack_google_api_secret',
             'servertrack_google_refresh_token',
+            // TikTok
             'servertrack_tiktok_pixel_id',
             'servertrack_tiktok_access_token',
+            // Other
             'servertrack_webhook_secret',
+            'servertrack_consent_mode',
         ];
 
         foreach ( $boolean_keys as $key ) {
@@ -312,7 +342,6 @@ class ServerTrack_Admin {
 
         // phpcs:ignore WordPress.Security.NonceVerification.Missing
         $platform = isset( $_POST['platform'] ) ? sanitize_key( wp_unslash( $_POST['platform'] ) ) : '';
-        $result   = [];
 
         switch ( $platform ) {
             case 'meta':
@@ -378,11 +407,11 @@ class ServerTrack_Admin {
         $id      = ! empty( $source['id'] ) ? sanitize_key( $source['id'] ) : 'src_' . uniqid();
 
         $sources[ $id ] = [
-            'id'       => $id,
-            'name'     => sanitize_text_field( $source['name']     ?? '' ),
-            'type'     => sanitize_key( $source['type']            ?? 'woocommerce' ),
-            'enabled'  => ! empty( $source['enabled'] ),
-            'platforms'=> array_map( 'sanitize_key', (array) ( $source['platforms'] ?? [] ) ),
+            'id'        => $id,
+            'name'      => sanitize_text_field( $source['name']      ?? '' ),
+            'type'      => sanitize_key( $source['type']             ?? 'woocommerce' ),
+            'enabled'   => ! empty( $source['enabled'] ),
+            'platforms' => array_map( 'sanitize_key', (array) ( $source['platforms'] ?? [] ) ),
         ];
 
         update_option( 'servertrack_sources', $sources );
