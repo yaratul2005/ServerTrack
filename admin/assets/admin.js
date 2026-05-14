@@ -1,9 +1,23 @@
-/* ServerTrack Admin JS — v3.6 */
+/* ServerTrack Admin JS — v3.7 */
 /* global servertrackAdmin, Chart */
 ( function ( $ ) {
     'use strict';
 
-    /* ── Helpers ──────────────────────────────────────────────────────── */
+    /* ------------------------------------------------------------------ *
+     * NONCE ROUTING NOTE
+     * stAjax() always sends servertrackAdmin.nonce (action:
+     * servertrack_admin_nonce). This covers: servertrack_save_settings,
+     * servertrack_test_connection, servertrack_get_sources,
+     * servertrack_save_source, servertrack_toggle_source,
+     * servertrack_delete_source.
+     *
+     * The Dashboard auto-refresh XHR is sent by inline JS in
+     * class-servertrack-dashboard.php and uses servertrackAdmin.dashNonce
+     * (action: servertrack_dashboard) — it does NOT go through stAjax().
+     * Do NOT merge these two nonces; they verify different actions.
+     * ------------------------------------------------------------------ */
+
+    /* ── Helpers ──────────────────────────────────────────────────────────── */
 
     function stAjax( action, data, onSuccess, onError ) {
         $.post(
@@ -21,7 +35,59 @@
         } );
     }
 
-    /* ── Settings Form Save ───────────────────────────────────────────── */
+    /* ── Active Tab Highlighting ──────────────────────────────────────────── */
+    /*
+     * Problem: The Dashboard tab renders via ServerTrack_Dashboard::render_page()
+     * which is a separate render path from the Settings/Sources tabs inside
+     * render_page(). PHP never writes nav-tab-active onto the Dashboard link,
+     * so the nav bar shows no active state when viewing the Dashboard.
+     *
+     * Fix: On DOM ready compare each .nav-tab href against the current URL
+     * (page param + optional tab param) and toggle nav-tab-active in JS.
+     * This works for all three tabs: Dashboard (page=servertrack),
+     * Settings (page=servertrack-settings), Sources (page=servertrack-sources).
+     */
+    function highlightActiveTab() {
+        var $tabs = $( '.st-tab-nav .nav-tab, .nav-tab-wrapper .nav-tab' );
+        if ( ! $tabs.length ) return;
+
+        var loc   = window.location.href;
+        var page  = new URLSearchParams( window.location.search ).get( 'page' )  || '';
+        var tab   = new URLSearchParams( window.location.search ).get( 'tab' )   || '';
+
+        var bestMatch = null;
+        var bestScore = -1;
+
+        $tabs.each( function () {
+            var href   = $( this ).attr( 'href' ) || '';
+            var hPage  = '';
+            var hTab   = '';
+            try {
+                // href may be relative (admin.php?...) or absolute
+                var url = new URL( href, window.location.origin );
+                hPage   = url.searchParams.get( 'page' )  || '';
+                hTab    = url.searchParams.get( 'tab' )   || '';
+            } catch ( e ) {}
+
+            var score = 0;
+            if ( hPage && hPage === page ) score += 2;
+            if ( hTab  && hTab  === tab  ) score += 1;
+            // A tab link with no tab param matches a page with no tab param
+            if ( hPage === page && hTab === '' && tab === '' ) score += 1;
+
+            if ( score > bestScore ) {
+                bestScore = score;
+                bestMatch = this;
+            }
+        } );
+
+        if ( bestScore > 0 && bestMatch ) {
+            $tabs.removeClass( 'nav-tab-active' );
+            $( bestMatch ).addClass( 'nav-tab-active' );
+        }
+    }
+
+    /* ── Settings Form Save ─────────────────────────────────────────────────── */
 
     $( document ).on( 'click', '.st-save-settings', function () {
         var $btn     = $( this );
@@ -67,7 +133,7 @@
         );
     } );
 
-    /* ── Test Connection ──────────────────────────────────────────────── */
+    /* ── Test Connection ────────────────────────────────────────────────────── */
     /*  Handles both .st-test-connection (current) and                     */
     /*  .servertrack-test-btn (legacy alias) so old views still work.      */
 
@@ -93,7 +159,7 @@
         );
     } );
 
-    /* ── Toggle Password Visibility ───────────────────────────────────── */
+    /* ── Toggle Password Visibility ───────────────────────────────────────────── */
 
     $( document ).on( 'click', '.st-toggle-visibility', function () {
         var $btn   = $( this );
@@ -103,7 +169,7 @@
         $btn.attr( 'aria-pressed', type === 'text' );
     } );
 
-    /* ── Event Sources ────────────────────────────────────────────────── */
+    /* ── Event Sources ──────────────────────────────────────────────────────────── */
 
     function loadSources() {
         var $list = $( '#st-sources-list' );
@@ -176,9 +242,11 @@
         } );
     } );
 
-    /* ── Init ─────────────────────────────────────────────────────────── */
+    /* ── Init ────────────────────────────────────────────────────────────────── */
 
     $( function () {
+        highlightActiveTab();
+
         if ( $( '#st-sources-list' ).length ) {
             loadSources();
         }
