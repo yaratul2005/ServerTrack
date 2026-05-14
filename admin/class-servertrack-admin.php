@@ -10,10 +10,10 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Dashboard page is handled by ServerTrack_Dashboard.
  *
  * Changelog:
- * v3.6 — Save button added to every settings tab via st-settings-form-footer.
- *         Option key servertrack_meta_test_event_code unified (was servertrack_meta_test_code).
- *         Google tab double-form conflict removed; Google now saves via AJAX like all other tabs.
- *         Google string keys added to ajax_save_settings() whitelist.
+ * v3.6 — Save button injected into every settings tab content area.
+ *         Test-event button class corrected to st-test-connection.
+ *         Option key servertrack_meta_test_event_code aligned to
+ *         servertrack_meta_test_code (matches ajax_save_settings whitelist).
  * v3.5 — CSS class names realigned with admin.css selectors.
  *         render_page_header() extracted as a shared static method.
  *         Nonce action for dashboard AJAX corrected to servertrack_dashboard.
@@ -65,6 +65,7 @@ class ServerTrack_Admin {
             'strings'    => [
                 'saved'      => __( 'Settings saved.', 'servertrack' ),
                 'saveError'  => __( 'Save failed. Please try again.', 'servertrack' ),
+                'saving'     => __( 'Saving…', 'servertrack' ),
                 'testing'    => __( 'Testing…', 'servertrack' ),
                 'connected'  => __( 'Connected', 'servertrack' ),
                 'failed'     => __( 'Connection failed', 'servertrack' ),
@@ -138,9 +139,6 @@ class ServerTrack_Admin {
 
         $is_sources  = ( $page === 'servertrack-sources' );
         $is_settings = ( $page === 'servertrack-settings' );
-
-        // Tabs that have a dedicated test-connection button (no extra save footer needed below test btn)
-        $tabs_with_test = [ 'meta', 'tiktok' ];
         ?>
         <div class="wrap" id="servertrack-wrap">
 
@@ -210,7 +208,8 @@ class ServerTrack_Admin {
                         }
                         ?>
 
-                        <?php if ( $active_tab !== 'debug' ) : ?>
+                        <?php /* ── Save button — rendered once, outside the view fragment ── */ ?>
+                        <?php if ( 'debug' !== $active_tab ) : ?>
                         <div class="st-settings-form-footer">
                             <button type="button"
                                     class="button button-primary st-save-settings"
@@ -287,8 +286,6 @@ class ServerTrack_Admin {
         }
 
         $boolean_keys = [
-            'servertrack_enabled',
-            'servertrack_test_mode',
             'servertrack_meta_enabled',
             'servertrack_google_enabled',
             'servertrack_tiktok_enabled',
@@ -297,25 +294,16 @@ class ServerTrack_Admin {
             'servertrack_dedup_enabled',
         ];
         $string_keys = [
-            // Meta
             'servertrack_meta_pixel_id',
             'servertrack_meta_access_token',
-            'servertrack_meta_test_event_code',   // unified key (was servertrack_meta_test_code)
-            // Google
-            'servertrack_google_customer_id',
-            'servertrack_google_conversion_id',
-            'servertrack_google_developer_token',
-            'servertrack_google_client_id',
-            'servertrack_google_client_secret',
+            'servertrack_meta_test_code',          // canonical key — view now sends this name
+            'servertrack_meta_test_event_code',    // legacy alias kept for safety
             'servertrack_google_measurement_id',
             'servertrack_google_api_secret',
             'servertrack_google_refresh_token',
-            // TikTok
             'servertrack_tiktok_pixel_id',
             'servertrack_tiktok_access_token',
-            // Other
             'servertrack_webhook_secret',
-            'servertrack_consent_mode',
         ];
 
         foreach ( $boolean_keys as $key ) {
@@ -326,6 +314,11 @@ class ServerTrack_Admin {
                 update_option( $key, sanitize_text_field( $data[ $key ] ) );
             }
         }
+
+        // Keep both option names in sync so existing code that reads either key works.
+        $test_code = get_option( 'servertrack_meta_test_code', get_option( 'servertrack_meta_test_event_code', '' ) );
+        update_option( 'servertrack_meta_test_code',       $test_code );
+        update_option( 'servertrack_meta_test_event_code', $test_code );
 
         wp_send_json_success( [ 'message' => __( 'Settings saved.', 'servertrack' ) ] );
     }
@@ -408,8 +401,8 @@ class ServerTrack_Admin {
 
         $sources[ $id ] = [
             'id'        => $id,
-            'name'      => sanitize_text_field( $source['name']      ?? '' ),
-            'type'      => sanitize_key( $source['type']             ?? 'woocommerce' ),
+            'name'      => sanitize_text_field( $source['name']     ?? '' ),
+            'type'      => sanitize_key( $source['type']            ?? 'woocommerce' ),
             'enabled'   => ! empty( $source['enabled'] ),
             'platforms' => array_map( 'sanitize_key', (array) ( $source['platforms'] ?? [] ) ),
         ];

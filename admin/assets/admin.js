@@ -24,54 +24,57 @@
     /* ── Settings Form Save ───────────────────────────────────────────── */
 
     $( document ).on( 'click', '.st-save-settings', function () {
-        var $btn      = $( this );
-        var $content  = $btn.closest( '.st-settings-tab-content' );
-        var $feedback = $content.find( '.st-save-feedback' );
-        var data      = {};
+        var $btn     = $( this );
+        var $content = $btn.closest( '.st-settings-tab-content' );
+        // Fallback: walk up to the nearest containing form or settings wrapper
+        if ( ! $content.length ) {
+            $content = $btn.closest( 'form, .st-settings-tabs-wrap, #servertrack-wrap' );
+        }
+        var data = {};
 
-        // Collect all named inputs inside the tab content area
         $content.find( '[name]' ).each( function () {
             var $el = $( this );
             var key = $el.attr( 'name' );
             if ( $el.attr( 'type' ) === 'checkbox' ) {
                 data[ key ] = $el.is( ':checked' ) ? '1' : '';
-            } else if ( $el.prop( 'disabled' ) || $el.prop( 'readonly' ) ) {
-                // Skip read-only / disabled fields (e.g. masked refresh token)
-                return;
             } else {
                 data[ key ] = $el.val();
             }
         } );
 
-        var origLabel = $btn.text();
-        $btn.prop( 'disabled', true ).text( '\u2026' );
-        $feedback.text( '' ).removeClass( 'ok error' );
+        var origLabel = $btn.data( 'label' ) || $btn.text().trim();
+        $btn.data( 'label', origLabel );
+        $btn.prop( 'disabled', true ).text( servertrackAdmin.strings.saving || '\u2026' );
+
+        var $feedback = $btn.siblings( '.st-save-feedback' );
 
         stAjax(
             'servertrack_save_settings',
             { settings: data },
-            function ( d ) {
+            function () {
                 $btn.prop( 'disabled', false ).text( origLabel );
                 $feedback
-                    .text( ( d && d.message ) || servertrackAdmin.strings.saved )
-                    .addClass( 'ok' );
+                    .text( servertrackAdmin.strings.saved )
+                    .removeClass( 'error' ).addClass( 'ok' );
                 setTimeout( function () { $feedback.text( '' ).removeClass( 'ok' ); }, 3000 );
             },
             function ( d ) {
                 $btn.prop( 'disabled', false ).text( origLabel );
                 $feedback
                     .text( ( d && d.message ) || servertrackAdmin.strings.saveError )
-                    .addClass( 'error' );
+                    .removeClass( 'ok' ).addClass( 'error' );
             }
         );
     } );
 
     /* ── Test Connection ──────────────────────────────────────────────── */
+    /*  Handles both .st-test-connection (current) and                     */
+    /*  .servertrack-test-btn (legacy alias) so old views still work.      */
 
-    $( document ).on( 'click', '.st-test-connection', function () {
-        var $btn     = $( this );
-        var platform = $btn.data( 'platform' );
-        var $result  = $btn.siblings( '.st-test-result' );
+    $( document ).on( 'click', '.st-test-connection, .servertrack-test-btn', function () {
+        var $btn      = $( this );
+        var platform  = $btn.data( 'platform' );
+        var $result   = $btn.siblings( '.st-test-result, .servertrack-test-response' ).first();
 
         $btn.prop( 'disabled', true );
         $result.text( servertrackAdmin.strings.testing ).removeClass( 'ok error' );
@@ -94,7 +97,7 @@
 
     $( document ).on( 'click', '.st-toggle-visibility', function () {
         var $btn   = $( this );
-        var $input = $btn.siblings( 'input' );
+        var $input = $btn.closest( '.st-input-with-action, td' ).find( 'input' ).first();
         var type   = $input.attr( 'type' ) === 'password' ? 'text' : 'password';
         $input.attr( 'type', type );
         $btn.attr( 'aria-pressed', type === 'text' );
@@ -130,7 +133,7 @@
                     html += '<td>' + enabledLabel + '</td>';
                     html += '<td class="st-source-actions">';
                     html += '<button class="button st-toggle-source" data-id="' + s.id + '" data-enabled="' + ( s.enabled ? '1' : '' ) + '">' + ( s.enabled ? 'Disable' : 'Enable' ) + '</button> ';
-                    html += '<button class="button st-delete-source" data-id="' + s.id + '">Delete</button>';
+                    html += '<button class="button button-link-delete st-delete-source" data-id="' + s.id + '">Delete</button>';
                     html += '</td></tr>';
                 } );
                 $list.html( html );
