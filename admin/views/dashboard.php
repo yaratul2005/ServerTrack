@@ -1,13 +1,8 @@
 <?php
 /**
- * ServerTrack — Dashboard Overview Tab  v2.4
+ * ServerTrack — Dashboard Overview Tab  v2.3
  *
- * F4 Fix: Truncated HTML in status pill ternary logic (lines 104-106).
- *        Regenerated with proper line breaks and complete logic.
- *
- * Uses .st-dashboard-grid CSS class for responsive two-column layout.
- * The old inline style="display:grid;grid-template-columns:1fr 320px"
- * has been removed — it had no responsive breakpoint and broke on narrow screens.
+ * Stable baseline view (reverted from broken v6.2.0)
  */
 if ( ! defined( 'ABSPATH' ) ) exit;
 
@@ -21,64 +16,6 @@ $st_tiktok_configured = get_option( 'servertrack_tiktok_enabled', 0 )
                         && get_option( 'servertrack_tiktok_access_token', '' );
 ?>
 
-<!-- KPI Cards -->
-<div class="st-kpi-grid" id="st-kpi-grid">
-
-    <div class="st-kpi">
-        <div class="st-kpi-icon st-kpi-icon-teal">
-            <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-        </div>
-        <div class="st-kpi-val" id="st-kpi-total">
-            <div class="st-skeleton st-skeleton-kpi-value"></div>
-        </div>
-        <div class="st-kpi-label" id="st-kpi-label-total">
-            <div class="st-skeleton st-skeleton-kpi-label"></div>
-        </div>
-        <div class="st-kpi-sub st-kpi-trend st-kpi-trend-info"></div>
-    </div>
-
-    <div class="st-kpi">
-        <div class="st-kpi-icon st-kpi-icon-green">
-            <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-        </div>
-        <div class="st-kpi-val" id="st-kpi-success">
-            <div class="st-skeleton st-skeleton-kpi-value"></div>
-        </div>
-        <div class="st-kpi-label" id="st-kpi-label-success">
-            <div class="st-skeleton st-skeleton-kpi-label"></div>
-        </div>
-        <div class="st-kpi-sub st-kpi-trend st-kpi-trend-success"></div>
-    </div>
-
-    <div class="st-kpi">
-        <div class="st-kpi-icon st-kpi-icon-red">
-            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-        </div>
-        <div class="st-kpi-val" id="st-kpi-failed">
-            <div class="st-skeleton st-skeleton-kpi-value"></div>
-        </div>
-        <div class="st-kpi-label" id="st-kpi-label-failed">
-            <div class="st-skeleton st-skeleton-kpi-label"></div>
-        </div>
-        <div class="st-kpi-sub st-kpi-trend st-kpi-trend-error"></div>
-    </div>
-
-    <div class="st-kpi">
-        <div class="st-kpi-icon st-kpi-icon-blue">
-            <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-        </div>
-        <div class="st-kpi-val" id="st-kpi-rate">
-            <div class="st-skeleton st-skeleton-kpi-value"></div>
-        </div>
-        <div class="st-kpi-label" id="st-kpi-label-rate">
-            <div class="st-skeleton st-skeleton-kpi-label"></div>
-        </div>
-        <div class="st-kpi-sub st-kpi-trend st-kpi-trend-info"></div>
-    </div>
-
-</div><!-- /.st-kpi-grid -->
-
-<!-- Responsive two-column layout: Platform Health + Activity Feed -->
 <div class="st-dashboard-grid">
 
     <!-- Platform Health Cards -->
@@ -91,7 +28,6 @@ $st_tiktok_configured = get_option( 'servertrack_tiktok_enabled', 0 )
         </div>
 
         <div class="st-platform-grid">
-
             <!-- Meta CAPI -->
             <div class="st-platform-card">
                 <div class="st-platform-card-header">
@@ -104,16 +40,9 @@ $st_tiktok_configured = get_option( 'servertrack_tiktok_enabled', 0 )
                             <div class="st-platform-subtext"><?php esc_html_e( 'Conversions API', 'servertrack' ); ?></div>
                         </div>
                     </div>
-                    <!-- F4 Fix: Complete ternary logic with proper line breaks -->
-                    <?php
-                    $meta_status_class = $st_meta_configured ? 'st-status-ok' : 
-                                        ( get_option( 'servertrack_meta_enabled', 0 ) ? 'st-status-warning' : 'st-status-inactive' );
-                    $meta_status_text = $st_meta_configured ? esc_html__( 'Active', 'servertrack' ) : 
-                                       ( get_option( 'servertrack_meta_enabled', 0 ) ? esc_html__( 'Setup Required', 'servertrack' ) : esc_html__( 'Inactive', 'servertrack' ) );
-                    ?>
-                    <span class="st-status-pill <?php echo esc_attr( $meta_status_class ); ?>">
+                    <span class="st-status-pill <?php echo $st_meta_configured ? 'st-status-ok' : 'st-status-inactive'; ?>">
                         <span class="st-status-pill-dot"></span>
-                        <?php echo $meta_status_text; ?>
+                        <?php echo $st_meta_configured ? esc_html__( 'Active', 'servertrack' ) : esc_html__( 'Inactive', 'servertrack' ); ?>
                     </span>
                 </div>
                 <div class="st-platform-stats">
@@ -126,11 +55,6 @@ $st_tiktok_configured = get_option( 'servertrack_tiktok_enabled', 0 )
                         <div class="st-platform-stat-key"><?php esc_html_e( 'Token', 'servertrack' ); ?></div>
                     </div>
                 </div>
-                <button type="button" class="st-test-btn" data-platform="meta" aria-label="<?php esc_attr_e( 'Send test event to Meta', 'servertrack' ); ?>">
-                    <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                    <?php esc_html_e( 'Send Test → Meta', 'servertrack' ); ?>
-                </button>
-                <div class="st-test-result" id="st-test-result-meta" aria-live="polite"></div>
             </div>
 
             <!-- Google Ads -->
@@ -145,15 +69,9 @@ $st_tiktok_configured = get_option( 'servertrack_tiktok_enabled', 0 )
                             <div class="st-platform-subtext"><?php esc_html_e( 'Enhanced Conversions', 'servertrack' ); ?></div>
                         </div>
                     </div>
-                    <?php
-                    $google_status_class = $st_google_configured ? 'st-status-ok' : 
-                                          ( get_option( 'servertrack_google_enabled', 0 ) ? 'st-status-warning' : 'st-status-inactive' );
-                    $google_status_text = $st_google_configured ? esc_html__( 'Active', 'servertrack' ) : 
-                                         ( get_option( 'servertrack_google_enabled', 0 ) ? esc_html__( 'Setup Required', 'servertrack' ) : esc_html__( 'Inactive', 'servertrack' ) );
-                    ?>
-                    <span class="st-status-pill <?php echo esc_attr( $google_status_class ); ?>">
+                    <span class="st-status-pill <?php echo $st_google_configured ? 'st-status-ok' : 'st-status-inactive'; ?>">
                         <span class="st-status-pill-dot"></span>
-                        <?php echo $google_status_text; ?>
+                        <?php echo $st_google_configured ? esc_html__( 'Active', 'servertrack' ) : esc_html__( 'Inactive', 'servertrack' ); ?>
                     </span>
                 </div>
                 <div class="st-platform-stats">
@@ -166,11 +84,6 @@ $st_tiktok_configured = get_option( 'servertrack_tiktok_enabled', 0 )
                         <div class="st-platform-stat-key"><?php esc_html_e( 'OAuth', 'servertrack' ); ?></div>
                     </div>
                 </div>
-                <button type="button" class="st-test-btn" data-platform="google" aria-label="<?php esc_attr_e( 'Send test event to Google', 'servertrack' ); ?>">
-                    <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                    <?php esc_html_e( 'Send Test → Google', 'servertrack' ); ?>
-                </button>
-                <div class="st-test-result" id="st-test-result-google" aria-live="polite"></div>
             </div>
 
             <!-- TikTok -->
@@ -185,15 +98,9 @@ $st_tiktok_configured = get_option( 'servertrack_tiktok_enabled', 0 )
                             <div class="st-platform-subtext"><?php esc_html_e( 'Events API', 'servertrack' ); ?></div>
                         </div>
                     </div>
-                    <?php
-                    $tiktok_status_class = $st_tiktok_configured ? 'st-status-ok' : 
-                                          ( get_option( 'servertrack_tiktok_enabled', 0 ) ? 'st-status-warning' : 'st-status-inactive' );
-                    $tiktok_status_text = $st_tiktok_configured ? esc_html__( 'Active', 'servertrack' ) : 
-                                         ( get_option( 'servertrack_tiktok_enabled', 0 ) ? esc_html__( 'Setup Required', 'servertrack' ) : esc_html__( 'Inactive', 'servertrack' ) );
-                    ?>
-                    <span class="st-status-pill <?php echo esc_attr( $tiktok_status_class ); ?>">
+                    <span class="st-status-pill <?php echo $st_tiktok_configured ? 'st-status-ok' : 'st-status-inactive'; ?>">
                         <span class="st-status-pill-dot"></span>
-                        <?php echo $tiktok_status_text; ?>
+                        <?php echo $st_tiktok_configured ? esc_html__( 'Active', 'servertrack' ) : esc_html__( 'Inactive', 'servertrack' ); ?>
                     </span>
                 </div>
                 <div class="st-platform-stats">
@@ -206,15 +113,9 @@ $st_tiktok_configured = get_option( 'servertrack_tiktok_enabled', 0 )
                         <div class="st-platform-stat-key"><?php esc_html_e( 'Token', 'servertrack' ); ?></div>
                     </div>
                 </div>
-                <button type="button" class="st-test-btn" data-platform="tiktok" aria-label="<?php esc_attr_e( 'Send test event to TikTok', 'servertrack' ); ?>">
-                    <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                    <?php esc_html_e( 'Send Test → TikTok', 'servertrack' ); ?>
-                </button>
-                <div class="st-test-result" id="st-test-result-tiktok" aria-live="polite"></div>
             </div>
-
-        </div><!-- /.st-platform-grid -->
-    </div><!-- /platform health col -->
+        </div>
+    </div>
 
     <!-- Activity Feed -->
     <div class="st-card">
@@ -222,12 +123,10 @@ $st_tiktok_configured = get_option( 'servertrack_tiktok_enabled', 0 )
             <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
             <?php esc_html_e( 'Recent Events', 'servertrack' ); ?>
         </h3>
-        <ul class="st-activity-feed" id="st-activity-feed" aria-label="<?php esc_attr_e( 'Recent events list', 'servertrack' ); ?>">
-            <li class="st-loading-screen">
-                <div class="st-spinner"></div>
-                <div class="st-loading-text"><?php esc_html_e( 'Loading…', 'servertrack' ); ?></div>
+        <ul class="st-activity-feed" id="st-activity-feed">
+            <li style="padding: 20px; text-align: center; color: var(--st-text-muted);">
+                <?php esc_html_e( 'No events yet.', 'servertrack' ); ?>
             </li>
         </ul>
     </div>
-
-</div><!-- /.st-dashboard-grid -->
+</div>
