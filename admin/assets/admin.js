@@ -1,239 +1,173 @@
-/**
- * ServerTrack Admin JS — v3.2
- *
- * Changes in v3.2 (GAP fixes):
- *
- *   GAP-7 — showToast() built msg via raw string concatenation.
- *            msg is now escaped through a temporary DOM text node so
- *            HTML characters in API error strings cannot inject markup.
- *
- * Changes in v3.1:
- *   Fix: $.get() → $.post() for log refresh (WP AJAX requires POST).
- *   Fix: ajax_get_logs now returns { html } instead of raw array.
- *
- * Handles (Settings page only):
- *  - Platform test-event buttons
- *  - Debug log: filter, clear, refresh, response toggle
- *  - Toast notification system
- *  - Confirm dialogs for destructive actions
- *
- * Dashboard AJAX (drain retries, manual refresh, KPI auto-refresh,
- * dashboard clear-log) is handled by the inline <script> block rendered
- * by ServerTrack_Dashboard::render_page() — it uses the dashboard nonce
- * directly from PHP via wp_json_encode().
- *
- * Depends on: servertrack_admin (wp_localize_script)
- * {
- *   ajax_url,
- *   nonce,           — wp_create_nonce('servertrack_admin_nonce')
- *                       Used by: test_event, get_logs, clear_log (Settings)
- *   dashboard_nonce, — wp_create_nonce('servertrack_dashboard')
- *                       Used by: Dashboard inline JS (not this file)
- *   platforms: { meta, google, tiktok } (enabled, configured)
- * }
- */
-(function ($) {
-  'use strict';
+/* ServerTrack Admin JS — v3.5 */
+/* global servertrackAdmin, Chart */
+( function ( $ ) {
+    'use strict';
 
-  if (typeof servertrack_admin === 'undefined') return;
+    /* ── Helpers ──────────────────────────────────────────────────────── */
 
-  var cfg = servertrack_admin;
-
-  /* ─────────────────────────────────────────────────
-     TOAST SYSTEM
-  ───────────────────────────────────────────────── */
-  var $toastContainer;
-
-  function ensureToastContainer() {
-    if (!$toastContainer || !$toastContainer.length) {
-      $toastContainer = $('<div id="st-toast-container"></div>').appendTo('body');
+    function stAjax( action, data, onSuccess, onError ) {
+        $.post(
+            servertrackAdmin.ajaxUrl,
+            $.extend( { action: action, nonce: servertrackAdmin.nonce }, data ),
+            function ( res ) {
+                if ( res.success ) {
+                    if ( onSuccess ) onSuccess( res.data );
+                } else {
+                    if ( onError ) onError( res.data );
+                }
+            }
+        ).fail( function () {
+            if ( onError ) onError( null );
+        } );
     }
-    return $toastContainer;
-  }
 
-  var TOAST_ICONS = {
-    success: '<svg class="st-toast-icon" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>',
-    error:   '<svg class="st-toast-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
-    info:    '<svg class="st-toast-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'
-  };
+    /* ── Settings Form Save ───────────────────────────────────────────── */
 
-  /**
-   * GAP-7: Escape a string for safe insertion as text into the DOM.
-   * Uses a temporary text node so HTML entities in msg (e.g. from API
-   * error bodies) cannot inject markup into the toast.
-   */
-  function escapeHtml(str) {
-    if (!str) return '';
-    var node = document.createTextNode(String(str));
-    var div  = document.createElement('div');
-    div.appendChild(node);
-    return div.innerHTML;
-  }
+    $( document ).on( 'click', '.st-save-settings', function () {
+        var $btn  = $( this );
+        var $form = $btn.closest( 'form, .st-settings-tab-content' );
+        var data  = {};
 
-  function showToast(type, title, msg, duration) {
-    var container = ensureToastContainer();
-    var icon      = TOAST_ICONS[type] || TOAST_ICONS.info;
-    // GAP-7: escape both title and msg before inserting into HTML.
-    var safeTitle = escapeHtml(title);
-    var safeMsg   = escapeHtml(msg);
-    var msgHtml   = safeMsg ? '<div class="st-toast-msg">' + safeMsg + '</div>' : '';
-    var $toast = $(
-      '<div class="st-toast st-toast-' + type + '">' +
-        icon +
-        '<div class="st-toast-body">' +
-          '<div class="st-toast-title">' + safeTitle + '</div>' +
-          msgHtml +
-        '</div>' +
-      '</div>'
-    ).appendTo(container);
+        $form.find( '[name]' ).each( function () {
+            var $el = $( this );
+            var key = $el.attr( 'name' );
+            if ( $el.attr( 'type' ) === 'checkbox' ) {
+                data[ key ] = $el.is( ':checked' ) ? '1' : '';
+            } else {
+                data[ key ] = $el.val();
+            }
+        } );
 
-    setTimeout(function () {
-      $toast.addClass('is-leaving');
-      setTimeout(function () { $toast.remove(); }, 220);
-    }, duration || 3500);
-  }
+        $btn.prop( 'disabled', true ).text( '…' );
 
-  /* ─────────────────────────────────────────────────
-     PLATFORM TEST BUTTONS
-  ───────────────────────────────────────────────── */
-  $(document).on('click', '.st-test-btn[data-platform]', function () {
-    var $btn      = $(this);
-    var platform  = $btn.data('platform');
-    var $result   = $btn.closest('.st-platform-card').find('.st-test-result');
+        stAjax(
+            'servertrack_save_settings',
+            { settings: data },
+            function () {
+                $btn.prop( 'disabled', false ).text( servertrackAdmin.strings.saved );
+                setTimeout( function () { $btn.text( $btn.data( 'label' ) || 'Save Settings' ); }, 2500 );
+            },
+            function () {
+                $btn.prop( 'disabled', false ).text( servertrackAdmin.strings.saveError );
+            }
+        );
+    } );
 
-    if ($btn.prop('disabled')) return;
+    /* ── Test Connection ──────────────────────────────────────────────── */
 
-    $btn.prop('disabled', true).addClass('is-sending');
-    $result.removeClass('is-visible is-success is-error').text('');
+    $( document ).on( 'click', '.st-test-connection', function () {
+        var $btn      = $( this );
+        var platform  = $btn.data( 'platform' );
+        var $result   = $btn.siblings( '.st-test-result' );
 
-    $.post(
-      cfg.ajax_url,
-      {
-        action:   'servertrack_test_event',
-        nonce:    cfg.nonce,
-        platform: platform
-      },
-      function (res) {
-        $btn.prop('disabled', false).removeClass('is-sending');
+        $btn.prop( 'disabled', true );
+        $result.text( servertrackAdmin.strings.testing ).removeClass( 'ok error' );
 
-        if (res.success) {
-          $result.addClass('is-visible is-success').text('\u2713 ' + (res.data.message || 'Test event sent'));
-          showToast('success', 'Test sent', platform + ' test event delivered.');
-        } else {
-          var errMsg = (res.data && res.data.message) ? res.data.message : 'Request failed';
-          $result.addClass('is-visible is-error').text('\u2717 ' + errMsg);
-          showToast('error', 'Test failed', errMsg);
-        }
-      }
-    ).fail(function () {
-      $btn.prop('disabled', false).removeClass('is-sending');
-      $result.addClass('is-visible is-error').text('\u2717 Network error');
-      showToast('error', 'Network error', 'Could not reach the server.');
-    });
-  });
+        stAjax(
+            'servertrack_test_connection',
+            { platform: platform },
+            function ( d ) {
+                $result.text( d.message || servertrackAdmin.strings.connected ).addClass( 'ok' );
+                $btn.prop( 'disabled', false );
+            },
+            function ( d ) {
+                $result.text( ( d && d.message ) || servertrackAdmin.strings.failed ).addClass( 'error' );
+                $btn.prop( 'disabled', false );
+            }
+        );
+    } );
 
-  /* ─────────────────────────────────────────────────
-     CLEAR DEBUG LOG  (Settings → Debug tab only)
-     Button ID: #st-clear-log
-     Nonce action: servertrack_admin_nonce  → cfg.nonce
-     Handler: ServerTrack_Admin::ajax_clear_log()  (GAP-1 fix)
-     NOTE: Dashboard clear-log (#st-clear-log-btn) is handled by
-           the dashboard inline <script> using the dashboard nonce.
-  ───────────────────────────────────────────────── */
-  $(document).on('click', '#st-clear-log', function () {
-    if (!window.confirm('Clear all log entries? This cannot be undone.')) return;
+    /* ── Toggle Password Visibility ───────────────────────────────────── */
 
-    var $btn = $(this).prop('disabled', true);
+    $( document ).on( 'click', '.st-toggle-visibility', function () {
+        var $btn   = $( this );
+        var $input = $btn.siblings( 'input' );
+        var type   = $input.attr( 'type' ) === 'password' ? 'text' : 'password';
+        $input.attr( 'type', type );
+        $btn.attr( 'aria-pressed', type === 'text' );
+    } );
 
-    $.post(
-      cfg.ajax_url,
-      { action: 'servertrack_clear_log', nonce: cfg.nonce },
-      function (res) {
-        $btn.prop('disabled', false);
-        if (res.success) {
-          $('#st-log-tbody').html(
-            '<tr><td colspan="7" class="st-empty">Log cleared.</td></tr>'
-          );
-          showToast('success', 'Log cleared', 'All debug entries removed.');
-        } else {
-          showToast('error', 'Error', 'Could not clear the log.');
-        }
-      }
-    ).fail(function () {
-      $btn.prop('disabled', false);
-      showToast('error', 'Network error', 'Could not reach the server.');
-    });
-  });
+    /* ── Event Sources ────────────────────────────────────────────────── */
 
-  /* ─────────────────────────────────────────────────
-     LOG FILTER BUTTONS
-  ───────────────────────────────────────────────── */
-  $(document).on('click', '.st-filter-btn', function () {
-    var $btn    = $(this);
-    var filter  = $btn.data('filter');
-    var $group  = $btn.closest('.st-log-filters');
+    function loadSources() {
+        var $list = $( '#st-sources-list' );
+        if ( ! $list.length ) return;
 
-    $group.find('.st-filter-btn').removeClass('is-active');
-    $btn.addClass('is-active');
+        $list.html( '<tr><td colspan="5" class="st-loading">Loading…</td></tr>' );
 
-    $('#st-log-tbody tr[data-row]').each(function () {
-      var $row = $(this);
-      if (!filter || filter === 'all') {
-        $row.show();
-      } else {
-        $row.toggle($row.data('status') === filter);
-      }
-    });
-  });
-
-  /* ─────────────────────────────────────────────────
-     LOG REFRESH BUTTON  (Settings → Debug tab)
-     Returns { html: '<tr>…</tr>' } from ajax_get_logs (GAP-2 fix).
-  ───────────────────────────────────────────────── */
-  $(document).on('click', '#st-refresh-log', function () {
-    var $btn = $(this).addClass('st-spinning').prop('disabled', true);
-
-    $.post(
-      cfg.ajax_url,
-      { action: 'servertrack_get_logs', nonce: cfg.nonce },
-      function (res) {
-        $btn.removeClass('st-spinning').prop('disabled', false);
-        if (res.success && res.data) {
-          $('#st-log-tbody').html(res.data.html || '');
-          showToast('info', 'Refreshed', 'Log updated.');
-        }
-      }
-    ).fail(function () {
-      $btn.removeClass('st-spinning').prop('disabled', false);
-      showToast('error', 'Error', 'Refresh failed.');
-    });
-  });
-
-  /* ─────────────────────────────────────────────────
-     RESPONSE CELL EXPAND TOGGLE
-  ───────────────────────────────────────────────── */
-  $(document).on('click', '.st-response-toggle', function () {
-    $(this).next('.st-response-full').toggleClass('is-open');
-  });
-
-  /* ─────────────────────────────────────────────────
-     GENERIC CONFIRM FOR DESTRUCTIVE ACTIONS
-  ───────────────────────────────────────────────── */
-  $(document).on('click', '[data-confirm]', function (e) {
-    if (!window.confirm($(this).data('confirm'))) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
+        stAjax(
+            'servertrack_get_sources',
+            {},
+            function ( d ) {
+                var sources = d.sources || [];
+                if ( ! sources.length ) {
+                    $list.html( '<tr><td colspan="5" class="st-empty">No event sources yet.</td></tr>' );
+                    return;
+                }
+                var html = '';
+                sources.forEach( function ( s ) {
+                    var platforms = ( s.platforms || [] ).join( ', ' ) || '—';
+                    var enabledLabel = s.enabled
+                        ? '<span class="st-badge st-badge-success">Active</span>'
+                        : '<span class="st-badge off">Inactive</span>';
+                    html += '<tr data-id="' + s.id + '">';
+                    html += '<td>' + $( '<span>' ).text( s.name ).html() + '</td>';
+                    html += '<td>' + $( '<span>' ).text( s.type ).html() + '</td>';
+                    html += '<td>' + platforms + '</td>';
+                    html += '<td>' + enabledLabel + '</td>';
+                    html += '<td class="st-source-actions">';
+                    html += '<button class="button st-toggle-source" data-id="' + s.id + '" data-enabled="' + ( s.enabled ? '1' : '' ) + '">' + ( s.enabled ? 'Disable' : 'Enable' ) + '</button> ';
+                    html += '<button class="button st-delete-source" data-id="' + s.id + '">Delete</button>';
+                    html += '</td></tr>';
+                } );
+                $list.html( html );
+            },
+            function () {
+                $list.html( '<tr><td colspan="5" class="st-error">Failed to load sources.</td></tr>' );
+            }
+        );
     }
-  });
 
-  /* ─────────────────────────────────────────────────
-     AUTO-DISMISS WP NOTICES after 4 s
-  ───────────────────────────────────────────────── */
-  setTimeout(function () {
-    $('#servertrack-wrap .notice.is-dismissible, #servertrack-wrap .notice-success').each(function () {
-      var $n = $(this);
-      $n.fadeOut(400, function () { $n.remove(); });
-    });
-  }, 4000);
+    $( document ).on( 'click', '.st-toggle-source', function () {
+        var $btn    = $( this );
+        var id      = $btn.data( 'id' );
+        var enabled = ! $btn.data( 'enabled' );
+        stAjax( 'servertrack_toggle_source', { source_id: id, enabled: enabled ? '1' : '' }, loadSources );
+    } );
 
-}(jQuery));
+    $( document ).on( 'click', '.st-delete-source', function () {
+        if ( ! window.confirm( servertrackAdmin.strings.confirm_del ) ) return;
+        var id = $( this ).data( 'id' );
+        stAjax( 'servertrack_delete_source', { source_id: id }, loadSources );
+    } );
+
+    $( document ).on( 'submit', '#st-add-source-form', function ( e ) {
+        e.preventDefault();
+        var $form = $( this );
+        var data  = {};
+        $form.serializeArray().forEach( function ( f ) { data[ f.name ] = f.value; } );
+        $form.find( 'input[type=checkbox]' ).each( function () {
+            data[ $( this ).attr( 'name' ) ] = $( this ).is( ':checked' ) ? '1' : '';
+        } );
+        // Collect checked platforms
+        var platforms = [];
+        $form.find( 'input[name="platforms[]"]' ).filter( ':checked' ).each( function () {
+            platforms.push( $( this ).val() );
+        } );
+        data.platforms = platforms;
+        stAjax( 'servertrack_save_source', { source: data }, function () {
+            $form[ 0 ].reset();
+            loadSources();
+        } );
+    } );
+
+    /* ── Init ─────────────────────────────────────────────────────────── */
+
+    $( function () {
+        // Load sources table if on sources page
+        if ( $( '#st-sources-list' ).length ) {
+            loadSources();
+        }
+    } );
+
+} )( jQuery );
