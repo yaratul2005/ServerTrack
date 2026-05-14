@@ -30,7 +30,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
     <tr>
         <th scope="row"><label for="servertrack_consent_mode"><?php esc_html_e( 'Consent Mode', 'servertrack' ); ?></label></th>
         <td>
-            <select id="servertrack_consent_mode" name="servertrack_consent_mode">
+            <select id="servertrack_consent_mode" name="servertrack_consent_mode" aria-label="<?php esc_attr_e( 'Consent mode setting', 'servertrack' ); ?>">
                 <?php
                 $current = get_option( 'servertrack_consent_mode', 'none' );
                 $options = [

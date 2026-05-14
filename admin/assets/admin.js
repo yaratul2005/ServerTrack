@@ -1,4 +1,4 @@
-/* ServerTrack Admin JS — v3.7 */
+/* ServerTrack Admin JS — v3.8 */
 /* global servertrackAdmin, Chart */
 ( function ( $ ) {
     'use strict';
@@ -17,7 +17,7 @@
      * Do NOT merge these two nonces; they verify different actions.
      * ------------------------------------------------------------------ */
 
-    /* ── Helpers ──────────────────────────────────────────────────────────── */
+    /* ── Helpers ──────────────────────────────────────────────────────────[...] */
 
     function stAjax( action, data, onSuccess, onError ) {
         $.post(
@@ -102,7 +102,7 @@
             var $el = $( this );
             var key = $el.attr( 'name' );
             if ( $el.attr( 'type' ) === 'checkbox' ) {
-                data[ key ] = $el.is( ':checked' ) ? '1' : '';
+                data[ key ] = $el.is( ':checked' ) ? '1' : '0';
             } else {
                 data[ key ] = $el.val();
             }
@@ -137,7 +137,7 @@
     /*  Handles both .st-test-connection (current) and                     */
     /*  .servertrack-test-btn (legacy alias) so old views still work.      */
 
-    $( document ).on( 'click', '.st-test-connection, .servertrack-test-btn', function () {
+    $( document ).on( 'click', '.st-test-connection, .st-test-btn, .servertrack-test-btn', function () {
         var $btn      = $( this );
         var platform  = $btn.data( 'platform' );
         var $result   = $btn.siblings( '.st-test-result, .servertrack-test-response' ).first();
@@ -146,7 +146,7 @@
         $result.text( servertrackAdmin.strings.testing ).removeClass( 'ok error' );
 
         stAjax(
-            'servertrack_test_connection',
+            'servertrack_test_event',
             { platform: platform },
             function ( d ) {
                 $result.text( d.message || servertrackAdmin.strings.connected ).addClass( 'ok' );
@@ -169,7 +169,7 @@
         $btn.attr( 'aria-pressed', type === 'text' );
     } );
 
-    /* ── Event Sources ──────────────────────────────────────────────────────────── */
+    /* ── Event Sources ───────────────────────────────────────────────────────── */
 
     function loadSources() {
         var $list = $( '#st-sources-list' );
@@ -242,7 +242,7 @@
         } );
     } );
 
-    /* ── Init ────────────────────────────────────────────────────────────────── */
+    /* ── Init ──────────────────────────────────────────────────────────── */
 
     $( function () {
         highlightActiveTab();

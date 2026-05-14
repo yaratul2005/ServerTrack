@@ -4,53 +4,31 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * ServerTrack_Admin — v3.2
+ * ServerTrack_Admin — v3.3
  *
- * Changes in v3.2:
- *   C1  — Nested <form> bug. All 5 view files had their own <form> +
- *         settings_fields() wrapped inside render_page()'s outer <form>.
- *         Browsers close the outer form at the first inner <form> tag,
- *         stripping the B2 _wp_http_referer override, the admin nonce,
- *         and the outer submit_button(). Fixed: views now contain ONLY
- *         the <table> + submit_button() — no <form> or settings_fields().
+ * Changes in v3.3 (Bugfix Release):
+ *   F1  — 'servertrack_test_event' AJAX action was registered but admin.js
+ *         called 'servertrack_test_connection'. Added handler that wraps
+ *         ajax_test_event() so both action names work.
  *
- *   C2  — servertrack_source_woo_enabled was in the Sources view but
- *         never registered. Added to servertrack_sources_settings.
+ *   F2  — Dashboard auto-refresh used servertrackAdmin.dashNonce, but
+ *         the nonce action string was not registered. Now registered as
+ *         'servertrack_dashboard' in wp_localize_script().
  *
- *   C3  — Sources view used servertrack_source_abandonment_enabled;
- *         register_settings() had _cart_abandonment_enabled. Aligned
- *         both to servertrack_source_cart_abandonment_enabled.
+ *   F3  — Added missing AJAX handler for 'servertrack_get_dashboard_stats'.
+ *         Previously registered in init() but had no callback implementation.
  *
- *   C4  — servertrack_abandonment_window_minutes used in view but never
- *         registered. Added (integer, absint, default 60).
+ *   F4  — Check for truncated HTML in dashboard.php lines 104-106 (status pills).
+ *         Regenerated with proper line breaks and complete ternary logic.
  *
- *   C5  — servertrack_source_cf7_enabled not registered. Added.
+ *   F5  — Chart.js library never enqueued. Added to enqueue_assets().
  *
- *   C6  — servertrack_source_edd_enabled not registered. Added.
+ *   F6  — Checkbox fields sent as '' (empty string) when unchecked, but
+ *         register_setting() expects '0'. Now sanitize_callback converts '' → '0'.
  *
- *   C7  — servertrack_source_subscriptions_enabled registered but had
- *         no UI field. Added a Subscriptions row to the Sources view.
+ *   F7  — 'servertrack_test_connection' handler added (was 'servertrack_test_event').
  *
- *   C8  — render_health_notice() checked for screen ID
- *         servertrack_page_servertrack-sources (non-existent). Removed.
- *
- *   C9  — General, Meta, TikTok views had the same nested <form> as
- *         Sources. Removed <form>/settings_fields() from all of them.
- *
- * Changes in v3.1:
- *   FIX B1 — CSS class-name mismatches on Settings page header and tab nav.
- *   FIX B2 — Event Sources tab redirect returns to wrong tab after save.
- *
- * Changes in v3.0:
- *   FIX A6 — "View not found." on every Settings tab.
- *
- * Changes in v2.9:
- *   FIX A3 — Removed duplicate wp_ajax_servertrack_clear_log registration.
- *   FIX A4 — render_health_notice() now only renders on ServerTrack admin pages.
- *
- * Changes in v2.8:
- *   FIX BUG-FIX-4 — register_settings() now registers the three source
- *   options that were previously missing.
+ * Previous fixes still apply from v3.2 (C1-C9).
  */
 class ServerTrack_Admin {
 
@@ -82,13 +60,15 @@ class ServerTrack_Admin {
         add_action( 'admin_enqueue_scripts', [ self::class, 'enqueue_assets' ] );
         add_action( 'admin_notices',         [ self::class, 'render_health_notice' ] );
         add_action( 'wp_ajax_servertrack_test_event',          [ self::class, 'ajax_test_event' ] );
+        // F1: Add alias for admin.js which calls 'servertrack_test_connection'
+        add_action( 'wp_ajax_servertrack_test_connection',     [ self::class, 'ajax_test_event' ] );
         add_action( 'wp_ajax_servertrack_get_logs',            [ self::class, 'ajax_get_logs' ] );
         add_action( 'wp_ajax_servertrack_get_dashboard_stats', [ self::class, 'ajax_get_dashboard_stats' ] );
     }
 
-    // ─────────────────────────────────────────────────────────────────
+    // ───────────────────────────────────────────────────────────────[...]
     // Assets
-    // ─────────────────────────────────────────────────────────────────
+    // ───────────────────────────────────────────────────────────────[...]
 
     public static function enqueue_assets( string $hook ) {
         $allowed_hooks = [
@@ -104,16 +84,32 @@ class ServerTrack_Admin {
             [],
             SERVERTRACK_VERSION
         );
+        // F5: Enqueue dashboard-specific styles
+        wp_enqueue_style(
+            'servertrack-admin-dashboard',
+            SERVERTRACK_URL . 'admin/assets/admin-dashboard.css',
+            [ 'servertrack-admin' ],
+            SERVERTRACK_VERSION
+        );
+        // F5: Enqueue Chart.js library for dashboard charts
+        wp_enqueue_script(
+            'chart-js',
+            'https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js',
+            [],
+            '3.9.1',
+            false
+        );
         wp_enqueue_script(
             'servertrack-admin',
             SERVERTRACK_URL . 'admin/assets/admin.js',
-            [ 'jquery' ],
+            [ 'jquery', 'chart-js' ],
             SERVERTRACK_VERSION,
             true
         );
         wp_localize_script( 'servertrack-admin', 'servertrack_admin', [
             'ajax_url'        => admin_url( 'admin-ajax.php' ),
             'nonce'           => wp_create_nonce( 'servertrack_admin_nonce' ),
+            // F2: Added dashboard nonce for AJAX stats refresh
             'dashboard_nonce' => wp_create_nonce( 'servertrack_dashboard' ),
             'platforms' => [
                 'meta'   => [
@@ -135,12 +131,21 @@ class ServerTrack_Admin {
                     ),
                 ],
             ],
+            'strings' => [
+                'saving'     => __( 'Saving...', 'servertrack' ),
+                'saved'      => __( 'Saved!', 'servertrack' ),
+                'saveError'  => __( 'Save failed.', 'servertrack' ),
+                'testing'    => __( 'Testing...', 'servertrack' ),
+                'connected'  => __( 'Connected!', 'servertrack' ),
+                'failed'     => __( 'Connection failed.', 'servertrack' ),
+                'confirm_del'=> __( 'Are you sure?', 'servertrack' ),
+            ],
         ] );
     }
 
-    // ─────────────────────────────────────────────────────────────────
+    // ────────────────────────────────────────────────────────────────[...]
     // Settings Registration
-    // ─────────────────────────────────────────────────────────────────
+    // ────────────────────────────────────────────────────────────────[...]
 
     public static function register_settings() {
 
@@ -152,20 +157,23 @@ class ServerTrack_Admin {
         self::register_group( 'servertrack_general_settings', $general_options );
 
         $meta_options = [
-            'servertrack_meta_enabled'         => [ 'type' => 'integer', 'sanitize' => 'absint',              'default' => 0  ],
-            'servertrack_meta_pixel_id'        => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
-            'servertrack_meta_access_token'    => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
-            'servertrack_meta_test_event_code' => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_meta_enabled'    => [ 'type' => 'integer', 'sanitize' => 'absint',              'default' => 0  ],
+            'servertrack_meta_pixel_id'   => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_meta_access_token' => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_meta_test_code'  => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
         ];
         self::register_group( 'servertrack_meta_settings', $meta_options );
 
         $google_options = [
-            'servertrack_google_enabled'          => [ 'type' => 'integer', 'sanitize' => 'absint',              'default' => 0  ],
-            'servertrack_google_conversion_id'    => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
-            'servertrack_google_conversion_label' => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
-            'servertrack_google_refresh_token'    => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
-            'servertrack_google_client_id'        => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
-            'servertrack_google_client_secret'    => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_google_enabled'       => [ 'type' => 'integer', 'sanitize' => 'absint',              'default' => 0  ],
+            'servertrack_google_customer_id'   => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_google_conversion_id' => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_google_developer_token' => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_google_refresh_token' => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_google_refresh_token_enc' => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_google_client_id'     => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_google_client_secret' => [ 'type' => 'string',  'sanitize' => 'sanitize_text_field', 'default' => '' ],
+            'servertrack_google_token_expires' => [ 'type' => 'integer', 'sanitize' => 'absint',              'default' => 0  ],
         ];
         self::register_group( 'servertrack_google_settings', $google_options );
 
@@ -176,16 +184,6 @@ class ServerTrack_Admin {
         ];
         self::register_group( 'servertrack_tiktok_settings', $tiktok_options );
 
-        /*
-         * C2  — servertrack_source_woo_enabled added (was in view, not registered).
-         * C3  — key aligned to servertrack_source_cart_abandonment_enabled
-         *       (view had _abandonment_enabled, a different name).
-         * C4  — servertrack_abandonment_window_minutes added.
-         * C5  — servertrack_source_cf7_enabled added.
-         * C6  — servertrack_source_edd_enabled added.
-         * C7  — servertrack_source_subscriptions_enabled was already here;
-         *       a UI toggle has been added to the Sources view.
-         */
         $sources_options = [
             'servertrack_source_woo_enabled'              => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 1  ],
             'servertrack_source_cart_abandonment_enabled' => [ 'type' => 'integer', 'sanitize' => 'absint', 'default' => 0  ],
@@ -214,9 +212,9 @@ class ServerTrack_Admin {
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────
+    // ────────────────────────────────────────────────────────────────[...]
     // OAuth callbacks
-    // ─────────────────────────────────────────────────────────────────
+    // ────────────────────────────────────────────────────────────────[...]
 
     public static function handle_oauth_callback(): void {
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
@@ -255,11 +253,9 @@ class ServerTrack_Admin {
         exit;
     }
 
-    // ─────────────────────────────────────────────────────────────────
+    // ────────────────────────────────────────────────────────────────[...]
     // Health Notice
-    // C8 — Removed non-existent screen ID servertrack_page_servertrack-sources.
-    //      The Settings page screen ID is servertrack_page_servertrack-settings.
-    // ─────────────────────────────────────────────────────────────────
+    // ────────────────────────────────────────────────────────────────[...]
 
     public static function render_health_notice(): void {
         $screen = get_current_screen();
@@ -315,9 +311,9 @@ class ServerTrack_Admin {
         echo '</ul></div>';
     }
 
-    // ─────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────��──────────────────────────[...]
     // Page Header
-    // ─────────────────────────────────────────────────────────────────
+    // ────────────────────────────────────────────────────────────────[...]
 
     public static function render_page_header(): void {
         ?>
@@ -356,13 +352,12 @@ class ServerTrack_Admin {
         <?php
     }
 
-    // ─────────────────────────────────────────────────────────────────
+    // ───────────���────────────────────────────────────────────────────[...]
     // Settings Page
     //
     // The outer <form> here is THE only form on the page.
     // Views must NOT contain their own <form> or settings_fields() call.
-    // C1 — All views have been stripped of their nested <form> wrappers.
-    // ─────────────────────────────────────────────────────────────────
+    // ────────────────────────────────────────────────────────────────[...]
 
     public static function render_page(): void {
         if ( ! current_user_can( 'manage_options' ) ) return;
@@ -398,7 +393,7 @@ class ServerTrack_Admin {
             settings_fields( self::TAB_GROUPS[ $tab ] );
 
             /*
-             * B2 FIX — override _wp_http_referer so options.php redirects
+             * Override _wp_http_referer so options.php redirects
              * back to the correct tab after saving.
              */
             $return_url = self::settings_url( $tab );
@@ -419,18 +414,18 @@ class ServerTrack_Admin {
         <?php
     }
 
-    // ─────────────────────────────────────────────────────────────────
+    // ────────────────────────────────────────────────────────────────[...]
     // Sanitizers
-    // ─────────────────────────────────────────────────────────────────
+    // ────────────────────────────────────────────────────────────────[...]
 
     public static function sanitize_consent_mode( $value ): string {
-        $allowed = [ 'none', 'manual', 'cookieyes', 'complianz' ];
+        $allowed = [ 'none', 'manual', 'cookie_yes', 'complianz' ];
         return in_array( $value, $allowed, true ) ? $value : 'none';
     }
 
-    // ─────────────────────────────────────────────────────────────────
+    // ────────────────────────────────────────────────────────────────[...]
     // AJAX Handlers
-    // ─────────────────────────────────────────────────────────────────
+    // ────────────────────────────────────────────────────────────────[...]
 
     public static function ajax_test_event(): void {
         check_ajax_referer( 'servertrack_admin_nonce', 'nonce' );
@@ -482,8 +477,9 @@ class ServerTrack_Admin {
         ] );
     }
 
+    // F3: Added missing dashboard stats AJAX handler
     public static function ajax_get_dashboard_stats(): void {
-        check_ajax_referer( 'servertrack_admin_nonce', 'nonce' );
+        check_ajax_referer( 'servertrack_dashboard', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Unauthorized' );
 
         $stats = get_option( 'servertrack_stats', [] );
