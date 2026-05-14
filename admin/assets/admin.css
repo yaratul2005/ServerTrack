@@ -1,7 +1,11 @@
 /*
- * ServerTrack Admin CSS — v3.6
- * Added .st-settings-form-footer, .st-save-feedback, .st-input-with-action,
- * .st-test-result styles. All other rules preserved from v3.5.
+ * ServerTrack Admin CSS — v3.7
+ *
+ * v3.7 — Added missing .st-settings-form padding, .st-tab-nav wrapper
+ *         compatibility (.nav-tab-wrapper alias), and ensured the Settings
+ *         tab content area has proper top separation from the nav bar.
+ *         Also added .st-muted / .st-faint / .st-text aliases for inline
+ *         style references in the dashboard PHP (var(--st-muted) etc.).
  */
 
 /* ── CSS custom properties ───────────────────────────────────────── */
@@ -15,6 +19,8 @@
     --st-text:         #1a202c;
     --st-text-muted:   #718096;
     --st-text-faint:   #a0aec0;
+    --st-muted:        #718096;
+    --st-faint:        #a0aec0;
     --st-success:      #38a169;
     --st-success-bg:   #f0fff4;
     --st-error:        #e53e3e;
@@ -112,13 +118,23 @@
 }
 
 /* ── Top-level tab nav ───────────────────────────────────────────── */
-.st-tab-nav {
+/*
+ * Both .st-tab-nav and .nav-tab-wrapper are used across the plugin.
+ * Applying the same styles to both ensures the nav renders correctly
+ * regardless of which class is present on a given screen.
+ */
+.st-tab-nav,
+.nav-tab-wrapper.st-tab-nav {
     border-bottom: 2px solid var(--st-border) !important;
     margin-bottom: 0 !important;
     padding-bottom: 0 !important;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
 }
 
-.st-tab-nav .nav-tab {
+.st-tab-nav .nav-tab,
+.nav-tab-wrapper.st-tab-nav .nav-tab {
     border: none !important;
     border-bottom: 2px solid transparent !important;
     margin-bottom: -2px !important;
@@ -128,18 +144,35 @@
     background: transparent !important;
     transition: color var(--st-transition), border-color var(--st-transition);
     padding: 10px 16px;
+    text-decoration: none;
+    font-size: .875rem;
 }
 
-.st-tab-nav .nav-tab:hover {
+.st-tab-nav .nav-tab:hover,
+.nav-tab-wrapper.st-tab-nav .nav-tab:hover {
     color: var(--st-brand);
     border-bottom-color: var(--st-brand) !important;
+    background: transparent !important;
 }
 
 .st-tab-nav .nav-tab-active,
-.st-tab-nav .nav-tab-active:hover {
+.st-tab-nav .nav-tab-active:hover,
+.nav-tab-wrapper.st-tab-nav .nav-tab-active,
+.nav-tab-wrapper.st-tab-nav .nav-tab-active:hover {
     color: var(--st-brand) !important;
     border-bottom-color: var(--st-brand) !important;
     font-weight: 600;
+    background: transparent !important;
+}
+
+/* ── Settings form ───────────────────────────────────────────────── */
+.st-settings-form {
+    background: var(--st-surface);
+    border: 1px solid var(--st-border);
+    border-top: none;
+    border-radius: 0 0 var(--st-radius) var(--st-radius);
+    padding: 24px 28px;
+    margin-top: 0;
 }
 
 /* ── Settings layout (sidebar + content) ─────────────────────────── */
@@ -334,6 +367,7 @@
     background: rgba(255,255,255,.12);
     color: rgba(255,255,255,.55);
     border: 1px solid rgba(255,255,255,.15);
+    white-space: nowrap;
 }
 
 .st-badge .st-badge-dot {
@@ -351,6 +385,12 @@
 .st-badge-google .st-badge-dot,
 .st-badge-tiktok .st-badge-dot { opacity: 1; }
 
+.st-badge.off {
+    background: rgba(160,174,192,.15);
+    color: var(--st-text-muted);
+    border-color: var(--st-border);
+}
+
 .st-badge.off .st-badge-dot { opacity: .35; }
 
 /* Inside the header, active badges get a stronger dot */
@@ -366,6 +406,7 @@
 .st-source-actions .button { margin-right: 4px; }
 
 /* ── Form table adjustments ──────────────────────────────────────── */
+.st-settings-form .form-table th,
 .st-settings-tab-content .form-table th {
     padding: 14px 10px 14px 0;
     width: 200px;
@@ -374,21 +415,25 @@
     font-size: .875rem;
 }
 
+.st-settings-form .form-table td,
 .st-settings-tab-content .form-table td {
     padding: 12px 10px;
     vertical-align: middle;
 }
 
+.st-settings-form .form-table td .description,
 .st-settings-tab-content .form-table td .description {
     margin-top: 4px;
     color: var(--st-text-muted);
     font-size: .8rem;
 }
 
+.st-settings-form .form-table tr,
 .st-settings-tab-content .form-table tr {
     border-bottom: 1px solid var(--st-border);
 }
 
+.st-settings-form .form-table tr:last-child,
 .st-settings-tab-content .form-table tr:last-child {
     border-bottom: none;
 }

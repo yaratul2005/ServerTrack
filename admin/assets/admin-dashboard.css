@@ -1,17 +1,16 @@
 /*
- * ServerTrack Admin — Dashboard-specific styles v3.0
- * Covers every CSS class used in admin/views/dashboard.php:
- *   .st-kpi-grid / .st-kpi-card / .st-kpi-icon / .st-kpi-value / .st-kpi-label / .st-kpi-trend
- *   .st-skeleton / .st-skeleton-kpi-value / .st-skeleton-kpi-label
- *   .st-dashboard-grid
- *   .st-platform-grid / .st-platform-card / .st-platform-card-header
- *   .st-platform-identity / .st-platform-logo / .st-platform-name / .st-platform-subtext
- *   .st-status-pill / .st-status-ok / .st-status-warning / .st-status-inactive / .st-status-pill-dot
- *   .st-platform-stats / .st-platform-stat / .st-platform-stat-val / .st-platform-stat-key
- *   .st-test-btn / .st-test-result
- *   .st-card / .st-card-title
- *   .st-activity-feed / .st-loading-screen / .st-spinner / .st-loading-text
- *   Responsive breakpoints
+ * ServerTrack Admin — Dashboard-specific styles v4.3
+ *
+ * v4.3 — CLASS NAME ALIGNMENT FIX
+ *   The PHP in class-servertrack-dashboard.php render_page() uses:
+ *     .st-kpi-grid  .st-kpi  .st-kpi-icon  .st-kpi-label  .st-kpi-val  .st-kpi-sub
+ *     .st-refresh-badge  .st-live-label  .st-pulse  .st-refresh-btn  .st-spinner  .st-spinning
+ *     .st-row  .st-panel  .st-panel-header  .st-panel-title  .st-panel-action
+ *     .st-plat-list  .st-plat-row  .st-plat-name  .st-plat-stat  .st-badge .on/.off/.warn
+ *     .st-emq-grades  .st-grade-pill  .st-grade-count
+ *     .st-retry-list  .st-retry-item  .st-retry-plat
+ *     .st-filter-bar  .st-log-wrap  .st-log-table  .st-dot
+ *   All selectors below match exactly what the PHP renders.
  */
 
 /* ═══════════════════════════════════════════════════════════════
@@ -32,40 +31,24 @@
 @keyframes st-spin {
   to { transform: rotate(360deg); }
 }
-
-/* ═══════════════════════════════════════════════════════════════
-   SKELETON LOADERS
-═══════════════════════════════════════════════════════════════ */
-.st-skeleton {
-  display: block;
-  border-radius: 5px;
-  background: linear-gradient(90deg, var(--st-border) 25%, #e9eef4 50%, var(--st-border) 75%);
-  background-size: 200% 100%;
-  animation: st-shimmer 1.4s ease-in-out infinite;
-}
-
-.st-skeleton-kpi-value {
-  height: 2rem;
-  width: 64px;
-}
-
-.st-skeleton-kpi-label {
-  height: .85rem;
-  width: 80px;
-  margin-top: 4px;
+@keyframes st-pulse-ring {
+  0%   { transform: scale(.8); opacity: .8; }
+  70%  { transform: scale(1.4); opacity: 0; }
+  100% { transform: scale(.8); opacity: 0; }
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   KPI GRID
+   KPI GRID  —  uses .st-kpi (not .st-kpi-card)
 ═══════════════════════════════════════════════════════════════ */
 .st-kpi-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 14px;
-  margin-bottom: 22px;
+  margin-bottom: 20px;
 }
 
-.st-kpi-card {
+/* PHP renders: <div class="st-kpi"> */
+.st-kpi {
   background: var(--st-surface);
   border: 1px solid var(--st-border);
   border-radius: var(--st-radius);
@@ -80,7 +63,7 @@
   overflow: hidden;
 }
 
-.st-kpi-card::before {
+.st-kpi::before {
   content: '';
   position: absolute;
   top: 0; left: 0; right: 0;
@@ -91,28 +74,29 @@
   transition: opacity var(--st-transition);
 }
 
-.st-kpi-card:hover { box-shadow: var(--st-shadow-md); transform: translateY(-2px); }
-.st-kpi-card:hover::before { opacity: 1; }
+.st-kpi:hover { box-shadow: var(--st-shadow-md); transform: translateY(-2px); }
+.st-kpi:hover::before { opacity: 1; }
 
-.st-kpi-card:nth-child(1) { animation-delay: .05s; }
-.st-kpi-card:nth-child(2) { animation-delay: .10s; }
-.st-kpi-card:nth-child(3) { animation-delay: .15s; }
-.st-kpi-card:nth-child(4) { animation-delay: .20s; }
-.st-kpi-card:nth-child(5) { animation-delay: .25s; }
-.st-kpi-card:nth-child(6) { animation-delay: .30s; }
+.st-kpi:nth-child(1) { animation-delay: .05s; }
+.st-kpi:nth-child(2) { animation-delay: .10s; }
+.st-kpi:nth-child(3) { animation-delay: .15s; }
+.st-kpi:nth-child(4) { animation-delay: .20s; }
+.st-kpi:nth-child(5) { animation-delay: .25s; }
+.st-kpi:nth-child(6) { animation-delay: .30s; }
 
-/* KPI Icon */
+/* KPI Icon — .st-kpi-icon + .st-kpi-icon-{color} */
 .st-kpi-icon {
   width: 34px; height: 34px;
   border-radius: 9px;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   flex-shrink: 0;
 }
 
-.st-kpi-icon svg {
+.st-kpi-icon svg,
+.st-kpi-icon .st-icon {
   width: 16px; height: 16px;
   fill: none;
   stroke: currentColor;
@@ -128,8 +112,17 @@
 .st-kpi-icon-blue   { background: var(--st-info-bg);     color: var(--st-info); }
 .st-kpi-icon-red    { background: var(--st-error-bg);    color: var(--st-error); }
 
-/* KPI Text */
-.st-kpi-value {
+/* KPI text — PHP renders .st-kpi-label / .st-kpi-val / .st-kpi-sub */
+.st-kpi-label {
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--st-text-muted);
+  margin-bottom: 2px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.st-kpi-val {
   font-size: 1.7rem;
   font-weight: 700;
   color: var(--st-text);
@@ -137,82 +130,133 @@
   letter-spacing: -.035em;
   animation: st-count-up .4s ease both;
   font-variant-numeric: tabular-nums;
-  min-height: 1.7rem;
-}
-
-.st-kpi-label {
-  font-size: .78rem;
-  font-weight: 600;
-  color: var(--st-text);
-  margin-top: 2px;
-  min-height: .85rem;
 }
 
 .st-kpi-sub {
   font-size: .72rem;
   color: var(--st-text-faint);
-  margin-top: 1px;
+  margin-top: 2px;
 }
 
-/* KPI Trend badges */
-.st-kpi-trend {
+/* ═══════════════════════════════════════════════════════════════
+   REFRESH BADGE
+═══════════════════════════════════════════════════════════════ */
+.st-refresh-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-size: .8rem;
+  color: var(--st-text-muted);
+}
+
+.st-live-label {
+  font-size: .72rem;
+  font-weight: 600;
+  background: var(--st-success-bg);
+  color: var(--st-success);
+  border: 1px solid rgba(56,161,105,.2);
+  padding: 1px 8px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.st-pulse {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--st-success);
+  position: relative;
+}
+
+.st-pulse::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: var(--st-success);
+  opacity: .4;
+  animation: st-pulse-ring 2s ease infinite;
+}
+
+.st-refresh-btn {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  font-size: .7rem;
-  font-weight: 600;
-  margin-top: 4px;
-  padding: 1px 6px;
-  border-radius: 20px;
-  width: fit-content;
+  gap: 5px;
+  padding: 4px 12px;
+  font-size: .8rem;
+  font-weight: 500;
+  color: var(--st-brand);
+  background: var(--st-brand-light);
+  border: 1px solid rgba(14,159,160,.25);
+  border-radius: var(--st-radius-sm);
+  cursor: pointer;
+  transition: background var(--st-transition), color var(--st-transition);
+  margin-left: auto;
 }
 
-.st-kpi-trend:empty { display: none; }
-.st-kpi-trend-success { background: var(--st-success-bg); color: var(--st-success); }
-.st-kpi-trend-error   { background: var(--st-error-bg);   color: var(--st-error); }
-.st-kpi-trend-info    { background: var(--st-info-bg);    color: var(--st-info); }
+.st-refresh-btn:hover { background: rgba(14,159,160,.15); }
+.st-refresh-btn.st-spinning .st-spinner { display: inline-block !important; }
 
 /* ═══════════════════════════════════════════════════════════════
-   DASHBOARD TWO-COLUMN GRID
-   dashboard.php uses .st-dashboard-grid — the old .st-dash-row
-   class no longer exists in the view.
+   SPINNER
 ═══════════════════════════════════════════════════════════════ */
-.st-dashboard-grid {
+.st-spinner {
+  display: none;
+  width: 13px; height: 13px;
+  border: 2px solid var(--st-border);
+  border-top-color: var(--st-brand);
+  border-radius: 50%;
+  animation: st-spin .7s linear infinite;
+  flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TWO-COLUMN ROW + PANEL
+   PHP renders: <div class="st-row">  <div class="st-panel">
+═══════════════════════════════════════════════════════════════ */
+.st-row {
   display: grid;
-  grid-template-columns: 1fr 340px;
-  gap: 18px;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
   align-items: start;
-  margin-bottom: 18px;
+  margin-bottom: 16px;
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   GENERIC CARD SHELL  (.st-card / .st-card-title)
-   Used by the Activity Feed panel and chart panels.
-═══════════════════════════════════════════════════════════════ */
-.st-card {
+@media (max-width: 900px) {
+  .st-row { grid-template-columns: 1fr; }
+}
+
+.st-panel {
   background: var(--st-surface);
   border: 1px solid var(--st-border);
   border-radius: var(--st-radius);
   box-shadow: var(--st-shadow-sm);
   overflow: hidden;
   animation: st-fade-in .4s ease both;
-  padding: 0;
 }
 
-/* .st-card-title is used as a standalone heading outside cards too */
-.st-card-title {
+.st-panel-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: .88rem;
-  font-weight: 700;
-  color: var(--st-text);
-  margin: 0;
+  justify-content: space-between;
+  gap: 10px;
   padding: 14px 18px 12px;
   border-bottom: 1px solid var(--st-border);
 }
 
-.st-card-title svg {
+.st-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: .88rem;
+  font-weight: 700;
+  color: var(--st-text);
+}
+
+.st-panel-title .st-icon,
+.st-panel-title svg {
   width: 15px; height: 15px;
   fill: none;
   stroke: var(--st-brand);
@@ -222,172 +266,246 @@
   flex-shrink: 0;
 }
 
-/* standalone .st-card-title (outside .st-card) has no border */
-div > .st-card-title:not(.st-card .st-card-title) {
-  padding-left: 0;
-  border-bottom: none;
-  padding-bottom: 0;
+.st-panel-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: .8rem;
+  font-weight: 500;
+  color: var(--st-brand);
+  text-decoration: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: color var(--st-transition);
 }
+
+.st-panel-action:hover { color: var(--st-brand-dark); }
 
 /* ═══════════════════════════════════════════════════════════════
-   PLATFORM GRID  (.st-platform-grid)
-   Three-card row for Meta / Google / TikTok.
-   dashboard.php wraps these in .st-platform-grid inside the
-   left column of .st-dashboard-grid.
+   PLATFORM HEALTH LIST
+   PHP: .st-plat-list  .st-plat-row  .st-plat-name  .st-plat-stat
 ═══════════════════════════════════════════════════════════════ */
-.st-platform-grid {
+.st-plat-list {
+  padding: 12px 18px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
-/* ── Individual platform card ── */
-.st-platform-card {
-  background: var(--st-surface);
+.st-plat-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--st-surface-2);
   border: 1px solid var(--st-border);
-  border-radius: var(--st-radius);
-  box-shadow: var(--st-shadow-sm);
-  padding: 14px 16px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  animation: st-fade-in .4s ease both;
-  transition: box-shadow var(--st-transition);
+  border-radius: var(--st-radius-sm);
 }
 
-.st-platform-card:hover {
-  box-shadow: var(--st-shadow-md);
-}
-
-/* ── Card header row: identity left, status pill right ── */
-.st-platform-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-/* ── Identity: logo + name/subtext ── */
-.st-platform-identity {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.st-platform-logo {
-  width: 34px; height: 34px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.st-platform-logo svg { display: block; }
-
-.st-platform-logo-meta   { background: #e7f0fd; color: #1877f2; }
-.st-platform-logo-google { background: #fef0e6; color: #ea4335; }
-.st-platform-logo-tiktok { background: #f0f0f0; color: #010101; }
-
-.st-platform-name {
+.st-plat-name {
   font-size: .85rem;
   font-weight: 600;
   color: var(--st-text);
-  line-height: 1.2;
+  flex: 1;
 }
 
-.st-platform-subtext {
-  font-size: .72rem;
-  color: var(--st-text-faint);
-  margin-top: 2px;
+.st-plat-stat {
+  font-size: .78rem;
+  color: var(--st-text-muted);
+  margin-right: 4px;
 }
 
-/* ── Status pill ── */
-.st-status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 10px;
-  border-radius: 20px;
-  font-size: .72rem;
-  font-weight: 600;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.st-status-pill-dot {
-  width: 6px; height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  flex-shrink: 0;
-}
-
-.st-status-ok {
+/* ═══════════════════════════════════════════════════════════════
+   STATUS BADGES  (used in platform list + log table)
+   PHP: <span class="st-badge on/off/warn">
+═══════════════════════════════════════════════════════════════ */
+/* .st-badge base is in admin.css; only state overrides here */
+.st-badge.on {
   background: var(--st-success-bg);
   color: var(--st-success);
   border: 1px solid rgba(56,161,105,.2);
 }
 
-.st-status-warning {
+.st-badge.warn {
   background: var(--st-warning-bg);
   color: var(--st-warning);
   border: 1px solid rgba(214,158,46,.2);
 }
 
-.st-status-inactive {
+/* ═══════════════════════════════════════════════════════════════
+   EMQ SCORECARD
+   PHP: .st-emq-grades  .st-grade-pill  .st-grade-count
+═══════════════════════════════════════════════════════════════ */
+.st-emq-grades {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 18px 10px;
+}
+
+.st-grade-pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border-radius: var(--st-radius-sm);
+  font-size: .82rem;
+  font-weight: 500;
+  color: var(--st-text);
   background: var(--st-surface-2);
-  color: var(--st-text-muted);
   border: 1px solid var(--st-border);
 }
 
-/* ── Stats row: Last Send + Token/OAuth ── */
-.st-platform-stats {
-  display: flex;
-  gap: 16px;
-  padding: 10px 0;
-  border-top: 1px solid var(--st-border);
-  border-bottom: 1px solid var(--st-border);
+.st-grade-pill .st-icon { flex-shrink: 0; }
+
+.st-grade-count {
+  margin-left: auto;
+  font-weight: 700;
+  font-size: .85rem;
+  color: var(--st-text);
+  font-variant-numeric: tabular-nums;
 }
 
-.st-platform-stat {
+/* ═══════════════════════════════════════════════════════════════
+   RETRY QUEUE
+   PHP: .st-retry-list  .st-retry-item  .st-retry-plat
+═══════════════════════════════════════════════════════════════ */
+.st-retry-list {
+  padding: 12px 18px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 8px;
 }
 
-.st-platform-stat-val {
+.st-retry-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--st-surface-2);
+  border: 1px solid var(--st-border);
+  border-radius: var(--st-radius-sm);
   font-size: .82rem;
-  font-weight: 600;
   color: var(--st-text);
-  line-height: 1.2;
 }
 
-.st-platform-stat-key {
-  font-size: .7rem;
-  color: var(--st-text-faint);
+.st-retry-plat {
+  font-weight: 600;
+  min-width: 56px;
+  color: var(--st-brand);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   LOG TABLE AREA
+   PHP: .st-filter-bar  .st-log-wrap  .st-log-table  .st-dot
+═══════════════════════════════════════════════════════════════ */
+.st-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--st-border);
+  background: var(--st-surface-2);
+}
+
+.st-filter-bar select,
+.st-filter-bar input[type="text"] {
+  padding: 5px 9px;
+  border: 1px solid var(--st-border);
+  border-radius: var(--st-radius-sm);
+  font-size: .82rem;
+  color: var(--st-text);
+  background: var(--st-surface);
+  transition: border-color var(--st-transition), box-shadow var(--st-transition);
+}
+
+.st-filter-bar select:focus,
+.st-filter-bar input[type="text"]:focus {
+  outline: none;
+  border-color: var(--st-brand);
+  box-shadow: 0 0 0 2px rgba(14,159,160,.15);
+}
+
+.st-log-wrap {
+  overflow-x: auto;
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.st-log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .82rem;
+}
+
+.st-log-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--st-surface-2);
+  padding: 9px 12px;
+  text-align: left;
+  font-size: .75rem;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .05em;
+  color: var(--st-text-muted);
+  border-bottom: 1px solid var(--st-border);
+  white-space: nowrap;
+  z-index: 1;
 }
 
-/* ── Send Test button ── */
-.st-test-btn {
+.st-log-table tbody tr {
+  border-bottom: 1px solid var(--st-border);
+  transition: background var(--st-transition);
+}
+
+.st-log-table tbody tr:last-child { border-bottom: none; }
+.st-log-table tbody tr:hover { background: var(--st-surface-2); }
+
+.st-log-table td {
+  padding: 7px 12px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.st-log-table td:last-child {
+  max-width: 260px;
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* Status dot cell */
+.st-dot {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  font-size: .8rem;
+  gap: 4px;
+  font-size: .78rem;
   font-weight: 600;
-  color: var(--st-brand);
-  background: var(--st-brand-light);
-  border: 1px solid rgba(14,159,160,.25);
-  border-radius: var(--st-radius-sm);
-  cursor: pointer;
-  transition: background var(--st-transition), color var(--st-transition), transform var(--st-transition);
-  width: fit-content;
+  white-space: nowrap;
 }
 
-.st-test-btn svg {
-  width: 13px; height: 13px;
+.st-dot.success { color: var(--st-success); }
+.st-dot.error   { color: var(--st-error); }
+.st-dot.skipped { color: var(--st-text-muted); }
+.st-dot.dedup   { color: var(--st-warning); }
+.st-dot.queued  { color: var(--st-info); }
+.st-dot.retrying{ color: var(--st-brand); }
+
+.st-icon-status {
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ICON HELPER
+═══════════════════════════════════════════════════════════════ */
+.st-icon {
+  display: inline-block;
+  vertical-align: middle;
   fill: none;
   stroke: currentColor;
   stroke-width: 2;
@@ -396,256 +514,25 @@ div > .st-card-title:not(.st-card .st-card-title) {
   flex-shrink: 0;
 }
 
-.st-test-btn:hover {
-  background: var(--st-brand);
-  color: #fff;
-  border-color: var(--st-brand-dark);
-  transform: translateY(-1px);
-}
-
-.st-test-btn:active { transform: translateY(0); }
-.st-test-btn:disabled { opacity: .55; cursor: not-allowed; transform: none; }
-
-/* ── Test result inline message ── */
-.st-test-result {
-  font-size: .78rem;
-  font-weight: 500;
-  min-height: 1.1em;
-  transition: color var(--st-transition);
-}
-
-.st-test-result:empty { display: none; }
-.st-test-result.ok    { color: var(--st-success); }
-.st-test-result.error { color: var(--st-error); }
-
-/* ═══════════════════════════════════════════════════════════════
-   ACTIVITY FEED  (.st-activity-feed)
-═══════════════════════════════════════════════════════════════ */
-.st-activity-feed {
-  list-style: none;
-  margin: 0; padding: 0;
-  max-height: 420px;
-  overflow-y: auto;
-}
-
-.st-activity-feed li {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--st-border);
-  font-size: .8rem;
-  color: var(--st-text);
-  animation: st-fade-in .3s ease both;
-}
-
-.st-activity-feed li:last-child { border-bottom: none; }
-
-/* Loading state */
-.st-loading-screen {
-  display: flex !important;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 32px 16px !important;
-  border-bottom: none !important;
-}
-
-.st-spinner {
-  width: 22px; height: 22px;
-  border: 2.5px solid var(--st-border);
-  border-top-color: var(--st-brand);
-  border-radius: 50%;
-  animation: st-spin .7s linear infinite;
-  flex-shrink: 0;
-}
-
-.st-loading-text {
-  font-size: .8rem;
-  color: var(--st-text-muted);
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   LEGACY ALIASES  (old class names still in admin-dashboard.css
-   kept for any older view that may still reference them)
-═══════════════════════════════════════════════════════════════ */
-.st-dash-row {
-  display: grid;
-  grid-template-columns: 1fr 340px;
-  gap: 18px;
-  margin-bottom: 18px;
-  align-items: start;
-}
-
-.st-platform-list {
-  list-style: none;
-  margin: 0; padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.st-platform-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px 14px;
-  border-radius: var(--st-radius-sm);
-  background: var(--st-surface-2);
-  border: 1px solid var(--st-border);
-  font-size: .8rem;
-  font-weight: 500;
-  color: var(--st-text);
-}
-
-.st-platform-dot {
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.st-platform-dot.ok      { background: var(--st-success); box-shadow: 0 0 0 2px rgba(56,161,105,.2); }
-.st-platform-dot.error   { background: var(--st-error);   box-shadow: 0 0 0 2px rgba(239,68,68,.2); }
-.st-platform-dot.unknown { background: var(--st-text-faint); }
-
-.st-platform-status {
-  font-size: .72rem;
-  padding: 2px 8px;
-  border-radius: 20px;
-  font-weight: 600;
-  text-transform: capitalize;
-}
-
-.st-platform-status.ok      { background: var(--st-success-bg); color: var(--st-success); }
-.st-platform-status.error   { background: var(--st-error-bg);   color: var(--st-error); }
-.st-platform-status.unknown { background: var(--st-border);     color: var(--st-text-muted); }
-
-/* ═══════════════════════════════════════════════════════════════
-   LOG TABLE
-═══════════════════════════════════════════════════════════════ */
-.st-log-table-wrap {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-.st-log-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: .78rem;
-  color: var(--st-text);
-}
-
-.st-log-table th {
-  background: var(--st-surface-2);
-  padding: 8px 12px;
-  text-align: left;
-  font-size: .7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: .06em;
-  color: var(--st-text-muted);
-  border-bottom: 1px solid var(--st-border);
-  white-space: nowrap;
-}
-
-.st-log-table td {
-  padding: 9px 12px;
-  border-bottom: 1px solid var(--st-border);
-  vertical-align: middle;
-  max-width: 300px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.st-log-table tr:last-child td { border-bottom: none; }
-.st-log-table tr:hover td      { background: var(--st-surface-2); }
-
-.st-log-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: 20px;
-  font-size: .68rem;
-  font-weight: 600;
-  text-transform: capitalize;
-}
-
-.st-log-status-success { background: var(--st-success-bg); color: var(--st-success); }
-.st-log-status-error   { background: var(--st-error-bg);   color: var(--st-error); }
-.st-log-status-pending { background: var(--st-warning-bg); color: var(--st-warning); }
-
-/* ═══════════════════════════════════════════════════════════════
-   CARD HEADER / BODY / FOOTER  (used by chart panels)
-═══════════════════════════════════════════════════════════════ */
-.st-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 18px 12px;
-  border-bottom: 1px solid var(--st-border);
-  gap: 10px;
-}
-
-.st-card-header h3 {
-  font-size: .85rem;
-  font-weight: 600;
-  color: var(--st-text);
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  line-height: 1.3;
-}
-
-.st-card-body   { padding: 16px 18px; }
-
-.st-card-footer {
-  padding: 10px 18px 14px;
-  border-top: 1px solid var(--st-border);
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   CHART PANELS
-═══════════════════════════════════════════════════════════════ */
-.st-chart-wrap {
-  position: relative;
-  padding: 14px 18px 18px;
-}
-
-.st-chart-wrap canvas {
-  max-height: 240px;
-  width: 100% !important;
-}
-
 /* ═══════════════════════════════════════════════════════════════
    RESPONSIVE
 ═══════════════════════════════════════════════════════════════ */
-@media (max-width: 1024px) {
-  .st-dashboard-grid,
-  .st-dash-row {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 640px) {
+@media (max-width: 782px) {
   .st-kpi-grid {
     grid-template-columns: repeat(2, 1fr);
   }
-
-  .st-platform-stats {
+  .st-filter-bar {
     flex-direction: column;
-    gap: 8px;
+    align-items: stretch;
   }
+  .st-filter-bar select,
+  .st-filter-bar input[type="text"] {
+    width: 100%;
+  }
+}
 
-  .st-platform-card-header {
-    flex-wrap: wrap;
+@media (max-width: 480px) {
+  .st-kpi-grid {
+    grid-template-columns: 1fr 1fr;
   }
 }
