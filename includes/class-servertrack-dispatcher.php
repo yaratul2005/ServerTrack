@@ -27,12 +27,14 @@ class ServerTrack_Dispatcher {
      */
     public static function dispatch( ServerTrack_Event $event, array $platforms, $dedup_key = null ): void {
         $key = (string) ( $dedup_key ?? $event->event_id );
+        $secret = defined( 'SECURE_AUTH_KEY' ) ? SECURE_AUTH_KEY : 'servertrack_salt';
+        $token  = hash_hmac( 'sha256', self::ACTION_NAME, $secret );
         $payload = [
             'action'    => self::ACTION_NAME,
             'event'     => wp_json_encode( ServerTrack_Retry::event_to_args( $event ) ),
             'platforms' => wp_json_encode( $platforms ),
             'dedup_key' => $key,
-            'nonce'     => wp_create_nonce( self::ACTION_NAME ),
+            'token'     => $token,
         ];
 
         $response = wp_remote_post( admin_url( 'admin-post.php' ), [
@@ -58,8 +60,9 @@ class ServerTrack_Dispatcher {
             return;
         }
 
-        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash
-        if ( empty( $_POST['nonce'] ) || ! wp_verify_nonce( $_POST['nonce'], self::ACTION_NAME ) ) {
+        $secret = defined( 'SECURE_AUTH_KEY' ) ? SECURE_AUTH_KEY : 'servertrack_salt';
+        $expected_token = hash_hmac( 'sha256', self::ACTION_NAME, $secret );
+        if ( empty( $_POST['token'] ) || ! hash_equals( $expected_token, $_POST['token'] ) ) {
             return;
         }
 
