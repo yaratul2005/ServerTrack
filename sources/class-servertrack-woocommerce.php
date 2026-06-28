@@ -263,7 +263,7 @@ class ServerTrack_WooCommerce {
             } else {
                 $e = ( new ServerTrack_Event( 'Purchase', $event_id ) )->set_user_data( $user_data )->set_custom_data( $custom_data );
                 $r = ServerTrack_Meta::send( $e );
-                if ( ( $r['status'] ?? '' ) === 'success' ) ServerTrack_Dedup::mark_as_sent( $order_id, 'meta', false );
+                if ( ( $r['status'] ?? '' ) === 'success' ) ServerTrack_Dedup::mark_as_sent( $order_id, 'meta' );
                 else ServerTrack_Retry::maybe_queue( 'meta', $r, ServerTrack_Retry::event_to_args( $e ) );
                 ServerTrack_Logger::log( $r['status'] ?? 'error', 'meta', 'Purchase #' . $order_id . ' via ' . $trigger, '', $event_id, $order_id, 'Purchase', $emq );
             }
@@ -277,7 +277,7 @@ class ServerTrack_WooCommerce {
             } else {
                 $e = ( new ServerTrack_Event( 'Purchase', $event_id ) )->set_user_data( $user_data )->set_custom_data( $custom_data );
                 $r = ServerTrack_TikTok::send( $e );
-                if ( ( $r['status'] ?? '' ) === 'success' ) ServerTrack_Dedup::mark_as_sent( $order_id, 'tiktok', false );
+                if ( ( $r['status'] ?? '' ) === 'success' ) ServerTrack_Dedup::mark_as_sent( $order_id, 'tiktok' );
                 else ServerTrack_Retry::maybe_queue( 'tiktok', $r, ServerTrack_Retry::event_to_args( $e ) );
                 ServerTrack_Logger::log( $r['status'] ?? 'error', 'tiktok', 'Purchase #' . $order_id . ' via ' . $trigger, '', $event_id, $order_id, 'Purchase', $emq );
             }
@@ -291,7 +291,7 @@ class ServerTrack_WooCommerce {
             } else {
                 $e = ( new ServerTrack_Event( 'Purchase', $event_id ) )->set_user_data( $user_data )->set_custom_data( $custom_data );
                 $r = ServerTrack_Google::send( $e );
-                if ( ( $r['status'] ?? '' ) === 'success' ) ServerTrack_Dedup::mark_as_sent( $order_id, 'google', false );
+                if ( ( $r['status'] ?? '' ) === 'success' ) ServerTrack_Dedup::mark_as_sent( $order_id, 'google' );
                 else ServerTrack_Retry::maybe_queue( 'google', $r, ServerTrack_Retry::event_to_args( $e ) );
                 ServerTrack_Logger::log( $r['status'] ?? 'error', 'google', 'Purchase #' . $order_id . ' via ' . $trigger, '', $event_id, $order_id, 'Purchase', $emq );
             }

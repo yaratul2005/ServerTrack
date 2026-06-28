@@ -55,7 +55,8 @@ class ServerTrack_PixelDedup {
 		add_action( 'woocommerce_checkout_order_created',    [ __CLASS__, 'store_purchase_event_id' ], 10, 1 );
 		add_action( 'woocommerce_before_checkout_form',      [ __CLASS__, 'inject_initiate_checkout_id' ] );
 		add_action( 'woocommerce_before_add_to_cart_button', [ __CLASS__, 'inject_add_to_cart_data' ] );
-		add_action( 'woocommerce_thankyou',                  [ __CLASS__, 'inject_purchase_dedup_snippet' ], 10, 1 );
+		// Commented out to prevent duplicate browser Purchase fires since servertrack-pixel.js already handles this using the enqueued config.
+		// add_action( 'woocommerce_thankyou',                  [ __CLASS__, 'inject_purchase_dedup_snippet' ], 10, 1 );
 		add_action( 'rest_api_init',                         [ __CLASS__, 'register_rest_endpoint' ] );
 	}
 

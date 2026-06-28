@@ -454,7 +454,15 @@ class ServerTrack_Frontend {
                         $contents[]    = [ 'id' => $sku, 'quantity' => $qty, 'item_price' => $qty > 0 ? round( (float) $item->get_total() / $qty, 2 ) : 0.0 ];
                         $content_ids[] = $sku;
                     }
-                    $config['event_id']    = ServerTrack_Dedup::get_event_id( $order_id );
+                    $event_id = ServerTrack_Dedup::get_event_id( $order_id );
+                    if ( empty( $event_id ) ) {
+                        $event_id = ServerTrack_PixelDedup::get_order_event_id( $order_id, 'purchase' );
+                    }
+                    if ( empty( $event_id ) ) {
+                        $event_id = ServerTrack_Dedup::generate_event_id( 'purchase_' . $order_id );
+                        ServerTrack_Dedup::store_event_id( $order_id, $event_id );
+                    }
+                    $config['event_id']    = $event_id;
                     $config['event_name']  = 'Purchase';
                     $config['value']       = (float) $order->get_total();
                     $config['currency']    = $order->get_currency();

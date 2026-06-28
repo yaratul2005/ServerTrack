@@ -334,7 +334,11 @@ class ServerTrack_Source_WooCommerce {
         }
         $user_data   = [ 'external_id' => ServerTrack_Identity::get_external_id_for_order( $order ) ];
         $custom_data = ServerTrack_Catalog::from_order( $order ) ?: [];
-        $event_id    = ServerTrack_Hasher::event_id( 'Purchase', $order_id );
+        $event_id = ServerTrack_Dedup::get_event_id( $order_id );
+        if ( empty( $event_id ) ) {
+            $event_id = ServerTrack_Dedup::generate_event_id( 'purchase_' . $order_id );
+            ServerTrack_Dedup::store_event_id( $order_id, $event_id );
+        }
         $event       = ( new ServerTrack_Event( 'Purchase', $event_id ) )
             ->set_user_data( $user_data )
             ->set_custom_data( $custom_data );
