@@ -218,6 +218,9 @@ class ServerTrack_WooCommerce {
     }
 
     public static function send_purchase_async( int $order_id, string $trigger ) {
+        if ( get_option( 'servertrack_manual_purchase_enabled', 0 ) ) {
+            return;
+        }
         $order = wc_get_order( $order_id );
         if ( ! $order ) {
             ServerTrack_Logger::log( 'error', 'all', 'send_purchase_async: order #' . $order_id . ' not found.', '', '', $order_id, 'Purchase' );

@@ -300,8 +300,14 @@ class ServerTrack_Source_WooCommerce {
             return [ 'success' => false, 'message' => 'Invalid order.' ];
         }
 
-        // Use a unique suffix for manual events so it doesn't get blocked by standard dedup if it was somehow triggered
-        $event_id    = ServerTrack_Hasher::event_id( 'Purchase', $order_id . '_manual' );
+        $event_id = ServerTrack_Dedup::get_event_id( $order_id );
+        if ( empty( $event_id ) ) {
+            $event_id = ServerTrack_PixelDedup::get_order_event_id( $order_id, 'purchase' );
+        }
+        if ( empty( $event_id ) ) {
+            $event_id = ServerTrack_Dedup::generate_event_id( 'purchase_' . $order_id );
+            ServerTrack_Dedup::store_event_id( $order_id, $event_id );
+        }
 
         if ( ServerTrack_Dedup::already_sent( $event_id, 'meta' )
           && ServerTrack_Dedup::already_sent( $event_id, 'tiktok' )

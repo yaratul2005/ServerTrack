@@ -440,7 +440,7 @@ class ServerTrack_Frontend {
         }
 
         // ── Thank-you / Purchase ──────────────────────────────────────────────
-        if ( function_exists( 'is_order_received_page' ) && is_order_received_page() ) {
+        if ( function_exists( 'is_order_received_page' ) && is_order_received_page() && ! get_option( 'servertrack_manual_purchase_enabled', 0 ) ) {
             $order_id = absint( get_query_var( 'order-received', 0 ) );
             if ( $order_id ) {
                 $order = wc_get_order( $order_id );

@@ -91,6 +91,13 @@ class ServerTrack_Admin {
         add_action( 'wp_ajax_servertrack_test_event',          [ self::class, 'ajax_test_event' ] );
         add_action( 'wp_ajax_servertrack_get_logs',            [ self::class, 'ajax_get_logs' ] );
         add_action( 'wp_ajax_servertrack_get_dashboard_stats', [ self::class, 'ajax_get_dashboard_stats' ] );
+
+        // Custom columns hooks for manual CAPI approval
+        add_filter( 'manage_edit-shop_order_columns',        [ self::class, 'add_orders_column' ] );
+        add_action( 'manage_shop_order_posts_custom_column', [ self::class, 'render_orders_column_content' ], 10, 2 );
+        add_filter( 'manage_woocommerce_page_wc-orders_columns',        [ self::class, 'add_orders_column' ] );
+        add_action( 'manage_woocommerce_page_wc-orders_custom_column', [ self::class, 'render_orders_column_content' ], 10, 2 );
+        add_action( 'admin_action_servertrack_mark_fraud', [ self::class, 'handle_mark_fraud_action' ] );
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -321,15 +328,99 @@ class ServerTrack_Admin {
             return;
         }
 
-        $sent = $order->get_meta( '_servertrack_manual_purchase_sent' ) === 'yes';
+        $sent = $order->get_meta( '_servertrack_manual_purchase_sent' ) === 'yes' || $order->get_meta( '_servertrack_api_sent' ) === '1';
+        $fraud = $order->get_meta( '_servertrack_manual_purchase_fraud' ) === 'yes';
         $url = wp_nonce_url( admin_url( 'admin.php?action=servertrack_manual_purchase&order_id=' . $order->get_id() ), 'servertrack_manual_purchase_' . $order->get_id() );
+        $fraud_url = wp_nonce_url( admin_url( 'admin.php?action=servertrack_mark_fraud&order_id=' . $order->get_id() ), 'servertrack_mark_fraud_' . $order->get_id() );
 
         if ( $sent ) {
             echo '<div style="color:#10b981; font-weight:600; padding:10px 0;"><span class="dashicons dashicons-yes-alt"></span> ' . __( 'Purchase event successfully synced.', 'servertrack' ) . '</div>';
+        } elseif ( $fraud ) {
+            echo '<div style="color:#ef4444; font-weight:600; padding:10px 0;"><span class="dashicons dashicons-warning"></span> ' . __( 'Order marked as fraud. Sync ignored.', 'servertrack' ) . '</div>';
+            echo '<a href="' . esc_url( $url ) . '" class="button button-primary" style="width:100%; text-align:center; margin-top:8px;">' . __( 'Fire Purchase Event anyway', 'servertrack' ) . '</a>';
         } else {
             echo '<p>' . __( 'Manual purchase mode is active. This order has not been synced to advertising platforms yet.', 'servertrack' ) . '</p>';
+            echo '<div style="display:flex; flex-direction:column; gap:8px;">';
             echo '<a href="' . esc_url( $url ) . '" class="button button-primary" style="width:100%; text-align:center;">' . __( 'Fire Purchase Event', 'servertrack' ) . '</a>';
+            echo '<a href="' . esc_url( $fraud_url ) . '" class="button" style="width:100%; text-align:center; color:#ef4444; border-color:#ef4444;">' . __( 'Mark as Fraud', 'servertrack' ) . '</a>';
+            echo '</div>';
         }
+    }
+
+    public static function add_orders_column( $columns ) {
+        if ( ! get_option( 'servertrack_manual_purchase_enabled', 0 ) ) {
+            return $columns;
+        }
+        $new_columns = [];
+        foreach ( $columns as $key => $column ) {
+            $new_columns[ $key ] = $column;
+            if ( 'order_status' === $key ) {
+                $new_columns['servertrack_capi'] = __( 'CAPI Purchase', 'servertrack' );
+            }
+        }
+        if ( ! isset( $new_columns['servertrack_capi'] ) ) {
+            $new_columns['servertrack_capi'] = __( 'CAPI Purchase', 'servertrack' );
+        }
+        return $new_columns;
+    }
+
+    public static function render_orders_column_content( $column, $post_or_order_object ) {
+        if ( 'servertrack_capi' !== $column ) {
+            return;
+        }
+
+        $order = ( $post_or_order_object instanceof WP_Post )
+            ? wc_get_order( $post_or_order_object->ID )
+            : $post_or_order_object;
+
+        if ( ! $order ) {
+            return;
+        }
+
+        $sent = $order->get_meta( '_servertrack_manual_purchase_sent' ) === 'yes' || $order->get_meta( '_servertrack_api_sent' ) === '1';
+        $fraud = $order->get_meta( '_servertrack_manual_purchase_fraud' ) === 'yes';
+
+        if ( $sent ) {
+            echo '<span style="color:#10b981; font-weight:600;"><span class="dashicons dashicons-yes-alt" style="vertical-align:middle; font-size:18px;"></span> ' . esc_html__( 'Approved', 'servertrack' ) . '</span>';
+        } elseif ( $fraud ) {
+            echo '<span style="color:#ef4444; font-weight:600;"><span class="dashicons dashicons-warning" style="vertical-align:middle; font-size:18px;"></span> ' . esc_html__( 'Fraud / Ignored', 'servertrack' ) . '</span>';
+        } else {
+            $approve_url = wp_nonce_url( admin_url( 'admin.php?action=servertrack_manual_purchase&order_id=' . $order->get_id() ), 'servertrack_manual_purchase_' . $order->get_id() );
+            $fraud_url   = wp_nonce_url( admin_url( 'admin.php?action=servertrack_mark_fraud&order_id=' . $order->get_id() ), 'servertrack_mark_fraud_' . $order->get_id() );
+
+            echo '<div style="display:flex; gap:6px;">';
+            echo '<a href="' . esc_url( $approve_url ) . '" class="button button-small button-primary" style="background:#0ea5a0; border-color:#0ea5a0;">' . esc_html__( 'Approve & Sync', 'servertrack' ) . '</a>';
+            echo '<a href="' . esc_url( $fraud_url ) . '" class="button button-small" style="color:#ef4444; border-color:#ef4444;">' . esc_html__( 'Mark Fraud', 'servertrack' ) . '</a>';
+            echo '</div>';
+        }
+    }
+
+    public static function handle_mark_fraud_action() {
+        if ( ! current_user_can( 'edit_shop_orders' ) ) {
+            wp_die( 'Unauthorized.' );
+        }
+
+        $order_id = isset( $_GET['order_id'] ) ? absint( $_GET['order_id'] ) : 0;
+        check_admin_referer( 'servertrack_mark_fraud_' . $order_id );
+
+        $order = wc_get_order( $order_id );
+        if ( $order ) {
+            $order->update_meta_data( '_servertrack_manual_purchase_fraud', 'yes' );
+            $order->save();
+        }
+
+        $url = admin_url( 'edit.php?post_type=shop_order' );
+        if ( function_exists( 'wc_get_page_screen_id' ) && wc_get_page_screen_id( 'shop-order' ) ) {
+            $url = admin_url( 'admin.php?page=wc-orders' ); // HPOS
+        }
+
+        $url = add_query_arg( [
+            'st_manual_status' => 'success',
+            'st_manual_msg'    => urlencode( __( 'Order marked as fraud. Purchase event ignored.', 'servertrack' ) )
+        ], $url );
+
+        wp_safe_redirect( $url );
+        exit;
     }
 
     public static function render_manual_purchase_notice() {
