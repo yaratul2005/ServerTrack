@@ -89,17 +89,18 @@ class ServerTrack_Source_WooCommerce {
     // ══════════════════════════════════════════════════════════════════════
 
     private static function register_core_hooks(): void {
-        add_action( 'woocommerce_payment_complete',         [ self::class, 'handle_purchase' ],              10, 1 );
-        add_action( 'woocommerce_order_status_completed',   [ self::class, 'handle_purchase' ],              10, 1 );
-        add_action( 'woocommerce_order_status_processing',  [ self::class, 'handle_purchase' ],              10, 1 );
-        add_action( 'woocommerce_add_to_cart',              [ self::class, 'handle_add_to_cart' ],           10, 3 );
-        add_action( 'woocommerce_before_checkout_form',     [ self::class, 'handle_initiate_checkout' ],     10    );
+        // Commented out to prevent duplicate CAPI sends (handled by ServerTrack_WooCommerce core triggers)
+        // add_action( 'woocommerce_payment_complete',         [ self::class, 'handle_purchase' ],              10, 1 );
+        // add_action( 'woocommerce_order_status_completed',   [ self::class, 'handle_purchase' ],              10, 1 );
+        // add_action( 'woocommerce_order_status_processing',  [ self::class, 'handle_purchase' ],              10, 1 );
+        // add_action( 'woocommerce_add_to_cart',              [ self::class, 'handle_add_to_cart' ],           10, 3 );
+        // add_action( 'woocommerce_before_checkout_form',     [ self::class, 'handle_initiate_checkout' ],     10    );
         add_action( 'wp', [ 'ServerTrack_Consent', 'capture_snapshot' ] );
         add_action( 'woocommerce_checkout_order_processed', [ 'ServerTrack_Consent', 'capture_for_order' ],  9, 1 );
-        add_action( 'woocommerce_checkout_order_processed', [ self::class, 'handle_add_payment_info' ],      10, 1 );
-        add_action( 'woocommerce_created_customer',         [ self::class, 'handle_complete_registration' ], 10, 1 );
-        add_action( 'woocommerce_order_fully_refunded',     [ self::class, 'handle_full_refund' ],           10, 2 );
-        add_filter( 'woocommerce_thankyou',                 [ self::class, 'handle_view_content' ],          10, 1 );
+        // add_action( 'woocommerce_checkout_order_processed', [ self::class, 'handle_add_payment_info' ],      10, 1 );
+        // add_action( 'woocommerce_created_customer',         [ self::class, 'handle_complete_registration' ], 10, 1 );
+        // add_action( 'woocommerce_order_fully_refunded',     [ self::class, 'handle_full_refund' ],           10, 2 );
+        // add_filter( 'woocommerce_thankyou',                 [ self::class, 'handle_view_content' ],          10, 1 );
     }
 
     // ══════════════════════════════════════════════════════════════════════

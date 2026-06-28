@@ -321,7 +321,20 @@ class ServerTrack_WooCommerce {
         if ( ! $product || 'publish' !== $product->get_status() ) return;
         $price    = (float) wc_get_price_to_display( $product );
         $sku      = $product->get_sku() ?: (string) $product->get_id();
-        $event_id = ServerTrack_Dedup::generate_event_id();
+        $user_id     = get_current_user_id();
+        $session_key = is_user_logged_in() ? $user_id . '_' : 'guest_';
+        if ( function_exists( 'WC' ) && WC()->session ) {
+            $session_key .= WC()->session->get_customer_id();
+        } else {
+            $session_key .= session_id() ?: '';
+        }
+        global $servertrack_page_load_id;
+        if ( empty( $servertrack_page_load_id ) ) {
+            $servertrack_page_load_id = wp_generate_uuid4();
+        }
+        $session_key .= '_' . $servertrack_page_load_id;
+
+        $event_id = ServerTrack_Hasher::event_id( 'ViewContent', $session_key );
         $custom_data = apply_filters( 'servertrack_view_content_custom_data', [
             'currency'     => get_woocommerce_currency(),
             'value'        => $price,
@@ -348,6 +361,12 @@ class ServerTrack_WooCommerce {
 
     public static function on_add_to_cart( string $cart_item_key, int $product_id, int $quantity, int $variation_id, array $variation = [], array $cart_item_data = [] ) {
         if ( ! get_option( 'servertrack_enabled', 1 ) ) return;
+
+        // Skip CAPI if doing AJAX (handled by browser JS + REST proxy to prevent double-firing)
+        if ( wp_doing_ajax() ) {
+            return;
+        }
+
         $meta_on   = get_option( 'servertrack_meta_enabled', 0 );
         $tiktok_on = get_option( 'servertrack_tiktok_enabled', 0 );
         if ( ! $meta_on && ! $tiktok_on ) return;
@@ -356,7 +375,10 @@ class ServerTrack_WooCommerce {
         if ( ! $product || 'publish' !== $product->get_status() ) return;
         $price    = (float) wc_get_price_to_display( $product );
         $sku      = $product->get_sku() ?: (string) $product_id;
-        $event_id = ServerTrack_Dedup::generate_event_id();
+        
+        // Use deterministic ID for non-AJAX page reloads
+        $event_id = ServerTrack_PixelDedup::generate_event_id( 'addtocart', $actual_id );
+
         $custom_data = apply_filters( 'servertrack_add_to_cart_custom_data', [
             'currency'     => get_woocommerce_currency(),
             'value'        => round( $price * $quantity, 2 ),
@@ -382,7 +404,13 @@ class ServerTrack_WooCommerce {
         $dedup_key = 'servertrack_ic_' . md5( $session_id );
         if ( get_transient( $dedup_key ) ) return;
         set_transient( $dedup_key, 1, 30 * MINUTE_IN_SECONDS );
-        $event_id = ServerTrack_Dedup::generate_event_id( 'checkout_' . $session_id );
+        $event_id = '';
+        if ( function_exists( 'WC' ) && WC()->session ) {
+            $event_id = WC()->session->get( 'servertrack_ic_event_id' );
+        }
+        if ( empty( $event_id ) ) {
+            $event_id = ServerTrack_PixelDedup::generate_event_id( 'initiatecheckout', 0 );
+        }
         $contents = [];
         foreach ( WC()->cart->get_cart() as $cart_item ) {
             $prod = $cart_item['data'];
