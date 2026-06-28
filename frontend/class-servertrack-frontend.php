@@ -457,6 +457,9 @@ class ServerTrack_Frontend {
                     $event_id = ServerTrack_Dedup::get_event_id( $order_id );
                     if ( empty( $event_id ) ) {
                         $event_id = ServerTrack_PixelDedup::get_order_event_id( $order_id, 'purchase' );
+                        if ( ! empty( $event_id ) ) {
+                            ServerTrack_Dedup::store_event_id( $order_id, $event_id );
+                        }
                     }
                     if ( empty( $event_id ) ) {
                         $event_id = ServerTrack_Dedup::generate_event_id( 'purchase_' . $order_id );

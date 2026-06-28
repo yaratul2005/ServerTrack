@@ -72,6 +72,7 @@ class ServerTrack_PixelDedup {
 	public static function store_purchase_event_id( WC_Order $order ): void {
 		$event_id = self::generate_event_id( 'purchase', $order->get_id() );
 		$order->update_meta_data( '_servertrack_event_id_purchase', $event_id );
+		$order->update_meta_data( '_servertrack_event_id', $event_id );
 		$order->save();
 	}
 
