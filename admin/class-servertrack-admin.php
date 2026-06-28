@@ -328,7 +328,11 @@ class ServerTrack_Admin {
             return;
         }
 
-        $sent = $order->get_meta( '_servertrack_manual_purchase_sent' ) === 'yes' || $order->get_meta( '_servertrack_api_sent' ) === '1';
+        $sent_platforms = $order->get_meta( '_servertrack_server_sent' );
+        if ( ! is_array( $sent_platforms ) ) {
+            $sent_platforms = [];
+        }
+        $sent = $order->get_meta( '_servertrack_manual_purchase_sent' ) === 'yes' || in_array( 'meta', $sent_platforms, true );
         $fraud = $order->get_meta( '_servertrack_manual_purchase_fraud' ) === 'yes';
         $url = wp_nonce_url( admin_url( 'admin.php?action=servertrack_manual_purchase&order_id=' . $order->get_id() ), 'servertrack_manual_purchase_' . $order->get_id() );
         $fraud_url = wp_nonce_url( admin_url( 'admin.php?action=servertrack_mark_fraud&order_id=' . $order->get_id() ), 'servertrack_mark_fraud_' . $order->get_id() );
@@ -377,7 +381,11 @@ class ServerTrack_Admin {
             return;
         }
 
-        $sent = $order->get_meta( '_servertrack_manual_purchase_sent' ) === 'yes' || $order->get_meta( '_servertrack_api_sent' ) === '1';
+        $sent_platforms = $order->get_meta( '_servertrack_server_sent' );
+        if ( ! is_array( $sent_platforms ) ) {
+            $sent_platforms = [];
+        }
+        $sent = $order->get_meta( '_servertrack_manual_purchase_sent' ) === 'yes' || in_array( 'meta', $sent_platforms, true );
         $fraud = $order->get_meta( '_servertrack_manual_purchase_fraud' ) === 'yes';
 
         if ( $sent ) {
