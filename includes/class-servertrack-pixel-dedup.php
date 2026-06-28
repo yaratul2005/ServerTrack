@@ -208,9 +208,6 @@ class ServerTrack_PixelDedup {
 		// phpcs:enable
 	}
 
-	/**
-	 * Inject AddToCart event_id as a data attribute on the product page.
-	 */
 	public static function inject_add_to_cart_data(): void {
 		global $product;
 		if ( ! $product ) {
@@ -218,15 +215,6 @@ class ServerTrack_PixelDedup {
 		}
 		$event_id = self::generate_event_id( 'addtocart', $product->get_id() );
 		echo '<input type="hidden" id="servertrack-atc-event-id" value="' . esc_attr( $event_id ) . '">' . "\n";
-		echo "<script>\n";
-		echo "document.addEventListener('click',function(e){";
-		echo "var btn=e.target.closest('.single_add_to_cart_button');";
-		echo "if(!btn)return;";
-		echo "var eid=document.getElementById('servertrack-atc-event-id');";
-		echo "if(eid&&typeof fbq==='function'){";
-		echo "fbq('track','AddToCart',{},{eventID:eid.value});";
-		echo "}});\n";
-		echo "</script>\n";
 	}
 
 	// ─────────────────────────────────────────────────────────────────────────

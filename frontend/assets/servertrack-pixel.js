@@ -184,4 +184,14 @@
         });
     }
 
+    // --- 5. Non-AJAX Event Firing ---
+    document.addEventListener('click', function(e) {
+        const btn = e.target.closest('.single_add_to_cart_button');
+        if (!btn) return;
+        const eid = document.getElementById('servertrack-atc-event-id');
+        if (eid && eid.value && typeof fbq !== 'undefined') {
+            fbq('track', 'AddToCart', {}, { eventID: eid.value });
+        }
+    });
+
 })();
