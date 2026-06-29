@@ -1,42 +1,111 @@
 # ServerTrack
 
-**Professional server-side Conversion API tracking for WordPress / WooCommerce.**
-Fires events to Meta (Facebook), TikTok, and Google Ads simultaneously — server-side, deduplicated, consent-aware, and enriched with identity-stitching signals.
+<p align="center">
+  <img src="https://img.shields.io/badge/WordPress-v6.0+-21759b?style=for-the-badge&logo=wordpress&logoColor=white" alt="WordPress v6.0+" />
+  <img src="https://img.shields.io/badge/PHP-v8.0+-777bb4?style=for-the-badge&logo=php&logoColor=white" alt="PHP v8.0+" />
+  <img src="https://img.shields.io/badge/JavaScript-ES6+-f7df1e?style=for-the-badge&logo=javascript&logoColor=black" alt="JavaScript ES6+" />
+  <img src="https://img.shields.io/badge/WooCommerce-v7.0+-96588a?style=for-the-badge&logo=woocommerce&logoColor=white" alt="WooCommerce v7.0+" />
+</p>
 
-> **Current version:** `7.0.0` · Requires WordPress 6.0+ · PHP 8.0+ · WooCommerce 7.0+
-
----
-
-## What is ServerTrack?
-
-ServerTrack acts as your own **First-Party CAPI Gateway**. Instead of paying monthly for an external server-side Tag Manager container (like Stape.io), ServerTrack integrates directly inside WordPress. It routes browser pixel calls through your own domain, bypassing ad-blockers entirely, and setting 2-year resilient cookies server-side to defeat Safari's ITP.
-
-## Core Capabilities & Advanced Modules
-
-| Category | Capability | Description |
-|---|---|---|
-| **Pixel Proxy** | 1st-Party CAPI Gateway | Exposes a local REST endpoint (`/wp-json/servertrack/v1/pixel`) that accepts browser payloads securely, enriches them with real IP/UA, and forwards to Meta/TikTok, destroying the need for external ad-blockers. |
-| **Cookie Helper** | Safari ITP Defeat | Automatically intercepts ad click IDs (`fbclid`, `gclid`) and issues them a `Set-Cookie` via PHP, elevating their lifespan from 7 days (JavaScript limit) to a full 2 years. |
-| **Identity & EMQ** | Deep Signal Enrichment | Bundled MaxMind GeoLite logic, True-Client IP resolution across CDNs, and structured User-Agent properties to maximize Event Match Quality (EMQ). |
-| **Deduplication** | Advanced 5-Min Buckets | Intelligent transient-based deduplication mechanism utilizing `SHA-256` hashing to safely deduplicate simultaneous browser + server events perfectly. |
-| **Multi-Pixel** | Agency Configurations | Dynamically loop and fire events to multiple Meta Properties concurrently (e.g. Prospecting vs Retargeting pixels). |
-| **Attribution** | Live UTM Histories | Persists up to 10 historical UTM touches directly to a user's session and automatically attaches the user's full marketing journey to key Conversion events (Purchase, Lead). |
-| **Diagnostics** | Real-Time Debug SSE | Directly inspect CAPI event request/response payloads in real-time from the dashboard via a Server-Sent Events (SSE) data stream. |
-| **Health Monitor** | Auto-Token Validation | A WP-Cron routine that continuously validates token expiry states and alerts the admin natively if an API key drops permissions. |
-| **Consent** | Consent v2 Compliant | Deep integration into cookie-banner plugins to respect GDPR/CCPA limits natively without dropping legitimate async Cron event processing. |
+<p align="center">
+  <img src="https://img.shields.io/badge/Meta_CAPI-Active_Deduplication-0668e1?style=for-the-badge&logo=meta&logoColor=white" alt="Meta CAPI" />
+  <img src="https://img.shields.io/badge/TikTok_Events_API-Active-000000?style=for-the-badge&logo=tiktok&logoColor=white" alt="TikTok Events API" />
+  <img src="https://img.shields.io/badge/Google_Ads-Enhanced_Conversions-4285f4?style=for-the-badge&logo=google&logoColor=white" alt="Google Ads" />
+</p>
 
 ---
 
-## Installation
+**ServerTrack** is a professional, high-performance server-side Conversion API (CAPI) tracking plugin for WordPress and WooCommerce. It routes client-side events through your own first-party domain, stitches browser identity parameters, and dispatches them synchronously to Meta (Facebook), TikTok, and Google Ads with perfect event deduplication and GDPR/CCPA consent compliance.
 
-1. Upload the `servertrack/` folder to `/wp-content/plugins/`.
-2. Activate the plugin through **Plugins → Installed Plugins**.
-3. Navigate to **ServerTrack → Settings** to enter your platform credentials.
-4. (Optional) Check out the real-time payloads under the **ServerTrack → Dashboard** tab.
+## Why ServerTrack?
 
-## Custom Events (REST API)
+Instead of paying high monthly fees for third-party server-side Tag Manager containers (e.g., Stape.io or Google Cloud GTM), ServerTrack acts as your own **self-hosted First-Party CAPI Gateway** directly inside WordPress. 
 
-Fire custom server events via Javascript explicitly through the proxy:
+- **Defeats Safari ITP:** Generates first-party `Set-Cookie` headers via PHP, extending ad-click identifier Lifespans (`fbclid`, `gclid`) from the JavaScript-capped 7 days to a full **2 years**.
+- **Ad-blocker Resiliency:** Bypasses browser-level trackers entirely by proxying events through a local REST endpoint (`/wp-json/servertrack/v1/pixel`).
+- **Deep Identity Stitching:** Bundles MaxMind GeoIP resolution, true client IP detection across Cloudflare/Sucuri, and user-agent parsing to maximize your Meta Event Match Quality (EMQ).
+
+---
+
+## Meta Event Manager Deduplication in Action
+
+ServerTrack aligns event ID generation seeds between the browser and the server. Below is the live verification in the Meta Event Manager, demonstrating perfect 1-to-1 event deduplication:
+
+### 1. ViewContent Event Deduplication
+Both the browser and server triggers report the exact same event ID, allowing Meta to merge them into a single processed conversion.
+![Meta Event Manager - ViewContent Deduplication](pluginss/vc.png)
+
+### 2. Add to Cart Event Deduplication
+Standard and AJAX-based Add to Cart triggers map directly to the same event ID, eliminating double counting.
+![Meta Event Manager - Add to Cart Deduplication](pluginss/add2c.png)
+
+### 3. Initiate Checkout Event Deduplication
+Deduplicates Checkout visits safely by passing the enqueued event ID between the WooCommerce session and server CAPI.
+![Meta Event Manager - Initiate Checkout Deduplication](pluginss/init_ch.png)
+
+---
+
+## Core Architecture
+
+ServerTrack is organized into modular, clean layers:
+
+```text
+servertrack.php                       ← Bootstrap loader
+│
+├── includes/
+│   ├── class-servertrack-cookiehelper.php   1st-Party Cookie Generator (ITP bypass)
+│   ├── class-servertrack-dispatcher.php       Secure Cryptotoken-based Async loopback
+│   ├── class-servertrack-pixel-dedup.php    Checkout and Cart Button ID handlers
+│   ├── class-servertrack-enrichment.php     IP, Geo, and UA Signal enrichment
+│   ├── class-servertrack-health.php         Daily API token health diagnostic cron
+│   ├── class-servertrack-stream.php         Real-time SSE Debug Console
+│   ├── class-servertrack-attribution.php    10-touch UTM History Tracker
+│   ├── class-servertrack-consent.php        GDPR Consent State manager
+│   ├── class-servertrack-event.php          Event DTO Model
+│   ├── class-servertrack-retry.php          Exponential back-off retry queue
+│   └── class-servertrack-logger.php         Structured SQL event logger
+│
+├── platforms/
+│   ├── class-servertrack-meta.php           Meta Graph API (Multi-pixel arrays)
+│   ├── class-servertrack-tiktok.php         TikTok Events API v2
+│   └── class-servertrack-google.php         Google Ads Enhanced Conversions
+│
+├── sources/
+│   ├── class-servertrack-woocommerce.php          Core WooCommerce Hooks
+│   ├── class-servertrack-source-woocommerce.php   Extended Lifecycle Hooks (Wishlist/Status)
+│   ├── class-servertrack-subscriptions.php        WooCommerce Subscriptions integration
+│   ├── class-servertrack-cart-abandonment.php     Cart Abandonment CAPI cron
+│   └── ...
+│
+├── frontend/
+│   └── class-servertrack-frontend.php       Browser JS localization bridge
+│
+└── admin/
+    ├── class-servertrack-dashboard.php      Real-time Dashboard UI & Charts
+    └── class-servertrack-admin.php          Admin Settings & Manual Approval Column
+```
+
+---
+
+## Advanced Verification Panel
+
+For high-ticket or fraud-sensitive stores, enable **Manual Purchase Verification** in settings:
+- Disables automatic purchase event firing on checkout.
+- Adds an **Approve & Sync** / **Mark Fraud** control column directly in the WooCommerce Orders list.
+- Admin can manually verify the purchase before releasing the conversion data to Meta.
+
+---
+
+## Installation & Setup
+
+1. Upload the `servertrack` directory to your WordPress `/wp-content/plugins/` directory.
+2. Activate the plugin via **Plugins → Installed Plugins** in the WordPress Dashboard.
+3. Configure your API tokens under **ServerTrack → Settings**.
+4. Check real-time API logs and matching scores under the **ServerTrack → Dashboard** tab.
+
+## Custom Events (REST API Proxy)
+
+Fire custom server events client-side securely through the local proxy endpoint:
 
 ```javascript
 fetch('/wp-json/servertrack/v1/pixel/meta', {
@@ -48,64 +117,12 @@ fetch('/wp-json/servertrack/v1/pixel/meta', {
       value: 49.99,
       currency: 'USD',
       content_name: 'Newsletter signup'
-      // Note: email, phone, credit_card, ssn are automatically redacted from payload logs for security
     }
   })
 });
 ```
 
-*Rate limited via Token Bucket Algorithm + User-Agent Fingerprinting to prevent API floods.*
-
 ---
-
-## Technical Architecture
-
-ServerTrack is composed of 8 advanced architectural modules engineered into a clean pipeline:
-
-```
-servertrack.php                  ← Bootstrap loader
-│
-├── includes/
-│   ├── class-servertrack-cookiehelper.php   Server-Side Cookie Generator (ITP bypass)
-│   ├── class-servertrack-proxy.php          1st-Party CAPI Proxy Endpoint
-│   ├── class-servertrack-dedup-engine.php   Transient-based 5-minute deduplication hashing
-│   ├── class-servertrack-enrichment.php     IP, Geo, and UA Signal enrichment
-│   ├── class-servertrack-health.php         Daily API token health diagnostic cron
-│   ├── class-servertrack-stream.php         Real-time SSE Debug Console
-│   ├── class-servertrack-attribution.php    10-touch UTM History Tracker
-│   ├── class-servertrack-consent.php        GDPR Consent State manager
-│   ├── class-servertrack-event.php          Event Object DTO Model
-│   ├── class-servertrack-retry.php          Exponential back-off cron queue
-│   └── class-servertrack-logger.php         Structured SQL event logger
-│
-├── platforms/
-│   ├── class-servertrack-meta.php           Meta Graph API (supports multi-pixel arrays)
-│   ├── class-servertrack-tiktok.php         TikTok Events API v2
-│   └── class-servertrack-google.php         Google Ads Enhanced Conversions
-│
-├── sources/
-│   ├── class-servertrack-woocommerce.php          Core WooCommerce Hooks
-│   ├── class-servertrack-source-woocommerce.php   Extended Lifecycle Hooks
-│   ├── class-servertrack-subscriptions.php        WooCommerce Subscriptions integration
-│   ├── class-servertrack-cart-abandonment.php     Cart Abandonment listeners
-│   └── ...
-│
-├── frontend/
-│   └── class-servertrack-frontend.php       Browser JS localization bridge
-│
-└── admin/
-    ├── class-servertrack-dashboard.php      Real-time Dashboard UI & Charts
-    └── class-servertrack-admin.php          Admin Configuration Settings
-```
-
----
-
-## Deduplication Logic
-
-ServerTrack employs a flawless dual-layer mechanism:
-1. **Frontend UUID Generation**: In-browser clicks (e.g. `AddToCart`) instantiate a highly unique `crypto.randomUUID()` attached to the frontend beacon.
-2. **Page Load ID Synching**: PHP synchronously generates a `$servertrack_page_load_id` tied to the transient session to synchronize page-loads (`PageView`, `ViewContent`) securely with the pixel JS config.
-3. **Advanced Dedup Engine**: `ServerTrack_DedupEngine` leverages `SHA-256` hashing to maintain a transient table ensuring duplicate parallel processing calls from identical browsers drop elegantly if matched within a 5-minute processing window.
 
 ## License
 
