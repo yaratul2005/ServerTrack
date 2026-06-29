@@ -53,7 +53,8 @@ class ServerTrack_PixelDedup {
 	 */
 	public static function init(): void {
 		add_action( 'woocommerce_checkout_order_created',    [ __CLASS__, 'store_purchase_event_id' ], 10, 1 );
-		add_action( 'woocommerce_before_checkout_form',      [ __CLASS__, 'inject_initiate_checkout_id' ] );
+		// Commented out to prevent timing issue (InitiateCheckout fired before fbq was initialized). Handled globally via servertrack-pixel.js.
+		// add_action( 'woocommerce_before_checkout_form',      [ __CLASS__, 'inject_initiate_checkout_id' ] );
 		add_action( 'woocommerce_before_add_to_cart_button', [ __CLASS__, 'inject_add_to_cart_data' ] );
 		// Commented out to prevent duplicate browser Purchase fires since servertrack-pixel.js already handles this using the enqueued config.
 		// add_action( 'woocommerce_thankyou',                  [ __CLASS__, 'inject_purchase_dedup_snippet' ], 10, 1 );

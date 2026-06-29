@@ -431,6 +431,13 @@ class ServerTrack_Frontend {
         // ── Checkout ──────────────────────────────────────────────────────────
         if ( function_exists( 'is_checkout' ) && is_checkout() && ! is_order_received_page() ) {
             $config['is_checkout'] = true;
+            $config['event_name']  = 'InitiateCheckout';
+            $event_id = ServerTrack_PixelDedup::generate_event_id( 'initiatecheckout', 0 );
+            $config['event_id']    = $event_id;
+
+            if ( function_exists( 'WC' ) && WC()->session ) {
+                WC()->session->set( 'servertrack_ic_event_id', $event_id );
+            }
         }
 
         // ── Search ────────────────────────────────────────────────────────────

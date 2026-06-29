@@ -107,6 +107,11 @@
             if (ST_Data.tiktok_pixel && typeof ttq !== 'undefined') ttq.track('PlaceAnOrder', purchaseParams, { event_id: ST_Data.event_id });
         }
 
+        if (ST_Data.event_name === 'InitiateCheckout') {
+            if (ST_Data.meta_pixel) fbq('track', 'InitiateCheckout', {}, { eventID: ST_Data.event_id });
+            if (ST_Data.tiktok_pixel && typeof ttq !== 'undefined') ttq.track('InitiateCheckout', {}, { event_id: ST_Data.event_id });
+        }
+
         // Additional ViewContent for Products
         if (ST_Data.is_product) {
             const productParams = {
