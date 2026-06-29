@@ -43,6 +43,22 @@ Standard and AJAX-based Add to Cart triggers map directly to the same event ID, 
 Deduplicates Checkout visits safely by passing the enqueued event ID between the WooCommerce session and server CAPI.
 ![Meta Event Manager - Initiate Checkout Deduplication](pluginss/init_ch.png)
 
+## Plugin Dashboard & Configuration Admin UI
+
+ServerTrack features a premium, intuitive admin dashboard and a granular settings console to configure multi-pixel events, tracking sources, and manual approvals.
+
+### 1. Real-Time Analytics Dashboard
+Directly inspect diagnostic performance, health, API logs, and events dispatch status in real-time.
+![ServerTrack - Real-Time Analytics Dashboard](pluginss/settings/Dashboard.png)
+
+### 2. Meta Pixel & CAPI Settings
+Loop and fire events to multiple Meta Properties concurrently with advanced matching parameter configurations.
+![ServerTrack - Meta Pixel & CAPI Settings](pluginss/settings/Meta.png)
+
+### 3. Event Sources & Verification Settings
+Fine-tune tracking sources (WooCommerce, Cart Abandonment, Subscriptions) and toggle Manual Purchase Verification.
+![ServerTrack - Event Sources Settings](pluginss/settings/eventS.png)
+
 ---
 
 ## Core Architecture
