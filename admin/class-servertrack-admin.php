@@ -552,7 +552,7 @@ class ServerTrack_Admin {
             return;
         }
 
-        echo '<div class="notice notice-warning is-dismissible"><p><strong>ServerTrack:</strong></p><ul>';
+        echo '<div class="notice notice-warning is-dismissible"><p><strong>Ratuls-ACT:</strong></p><ul>';
         foreach ( $issues as $issue ) {
             echo '<li>' . wp_kses( $issue, [ 'a' => [ 'href' => [] ] ] ) . '</li>';
         }
@@ -569,7 +569,7 @@ class ServerTrack_Admin {
             <div class="st-page-header-left">
                 <img
                     src="<?php echo esc_url( SERVERTRACK_URL . 'admin/assets/bglogo.png' ); ?>"
-                    alt="ServerTrack"
+                    alt="Ratuls-ACT"
                     width="46"
                     height="46"
                     class="st-logo-img"
@@ -581,7 +581,7 @@ class ServerTrack_Admin {
                     </svg>
                 </span>
                 <div class="st-page-title-group">
-                    <h1>ServerTrack</h1>
+                    <h1>Ratuls- Ads Conversion Tracker</h1>
                     <p>Server-Side Tracking</p>
                 </div>
             </div>

@@ -92,8 +92,8 @@ class ServerTrack_Dashboard {
         );
 
         add_menu_page(
-            __( 'ServerTrack', 'servertrack' ),
-            __( 'ServerTrack', 'servertrack' ),
+            __( 'Ratuls- Ads Conversion Tracker', 'servertrack' ),
+            __( 'Ratuls-ACT', 'servertrack' ),
             'manage_options',
             'servertrack',
             [ self::class, 'render_page' ],

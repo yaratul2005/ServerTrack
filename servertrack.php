@@ -1,6 +1,6 @@
 <?php
 /**
- * Plugin Name:       ServerTrack
+ * Plugin Name:       Ratuls- Ads Conversion Tracker
  * Plugin URI:        https://github.com/yaratul2005/ServerTrack
  * Description:       Professional server-side CAPI tracking for Meta, TikTok & Google — with identity stitching, click ID persistence, EMQ scoring, offline conversions, pixel dedup, LTV signals, catalog enrichment, webhook outbound, cart abandonment, subscriptions, and admin dashboard.
  * Version:           6.0.4
