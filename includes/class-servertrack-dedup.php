@@ -306,10 +306,13 @@ class ServerTrack_Dedup {
         global $wpdb;
         $table_name = $wpdb->prefix . 'servertrack_dedup';
         $hashed_key = hash( 'sha256', sanitize_key( $key ) );
+        $now = current_time( 'mysql' );
+        $expires = gmdate( 'Y-m-d H:i:s', time() + ( 30 * DAY_IN_SECONDS ) );
         $wpdb->query( $wpdb->prepare(
-            "INSERT IGNORE INTO {$table_name} (dedup_key, created_at) VALUES (%s, %s)",
+            "INSERT IGNORE INTO {$table_name} (dedup_key, created_at, expires_at) VALUES (%s, %s, %s)",
             $hashed_key,
-            current_time( 'mysql' )
+            $now,
+            $expires
         ) );
     }
 

@@ -247,8 +247,8 @@ function servertrack_create_tables(): void {
 
     $sql = "CREATE TABLE {$table_name} (
         dedup_key varchar(64) NOT NULL,
-        created_at datetime DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        expires_at datetime DEFAULT (DATE_ADD(CURRENT_TIMESTAMP, INTERVAL 30 DAY)) NOT NULL,
+        created_at datetime NOT NULL,
+        expires_at datetime NOT NULL,
         PRIMARY KEY  (dedup_key),
         KEY idx_expires_at (expires_at)
     ) $charset_collate;";

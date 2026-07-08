@@ -1,4 +1,4 @@
-# ServerTrack
+# Ratuls- Ads Conversion Tracker (Ratuls-ACT)
 
 <p align="center">
   <img src="https://img.shields.io/badge/WordPress-v6.0+-21759b?style=for-the-badge&logo=wordpress&logoColor=white" alt="WordPress v6.0+" />
@@ -15,11 +15,11 @@
 
 ---
 
-**ServerTrack** is a professional, high-performance server-side Conversion API (CAPI) tracking plugin for WordPress and WooCommerce. It routes client-side events through your own first-party domain, stitches browser identity parameters, and dispatches them synchronously to Meta (Facebook), TikTok, and Google Ads with perfect event deduplication and GDPR/CCPA consent compliance.
+**Ratuls- Ads Conversion Tracker (Ratuls-ACT)** is a professional, high-performance server-side Conversion API (CAPI) tracking plugin for WordPress and WooCommerce. It routes client-side events through your own first-party domain, stitches browser identity parameters, and dispatches them synchronously to Meta (Facebook), TikTok, and Google Ads with perfect event deduplication and GDPR/CCPA consent compliance.
 
-## Why ServerTrack?
+## Why Ratuls-ACT?
 
-Instead of paying high monthly fees for third-party server-side Tag Manager containers (e.g., Stape.io or Google Cloud GTM), ServerTrack acts as your own **self-hosted First-Party CAPI Gateway** directly inside WordPress. 
+Instead of paying high monthly fees for third-party server-side Tag Manager containers (e.g., Stape.io or Google Cloud GTM), Ratuls-ACT acts as your own **self-hosted First-Party CAPI Gateway** directly inside WordPress. 
 
 - **Defeats Safari ITP:** Generates first-party `Set-Cookie` headers via PHP, extending ad-click identifier Lifespans (`fbclid`, `gclid`) from the JavaScript-capped 7 days to a full **2 years**.
 - **Ad-blocker Resiliency:** Bypasses browser-level trackers entirely by proxying events through a local REST endpoint (`/wp-json/servertrack/v1/pixel`).
@@ -29,7 +29,7 @@ Instead of paying high monthly fees for third-party server-side Tag Manager cont
 
 ## Meta Event Manager Deduplication in Action
 
-ServerTrack aligns event ID generation seeds between the browser and the server. Below is the live verification in the Meta Event Manager, demonstrating perfect 1-to-1 event deduplication:
+Ratuls-ACT aligns event ID generation seeds between the browser and the server. Below is the live verification in the Meta Event Manager, demonstrating perfect 1-to-1 event deduplication:
 
 ### 1. ViewContent Event Deduplication
 Both the browser and server triggers report the exact same event ID, allowing Meta to merge them into a single processed conversion.
@@ -43,27 +43,29 @@ Standard and AJAX-based Add to Cart triggers map directly to the same event ID, 
 Deduplicates Checkout visits safely by passing the enqueued event ID between the WooCommerce session and server CAPI.
 ![Meta Event Manager - Initiate Checkout Deduplication](pluginss/init_ch.png)
 
+---
+
 ## Plugin Dashboard & Configuration Admin UI
 
-ServerTrack features a premium, intuitive admin dashboard and a granular settings console to configure multi-pixel events, tracking sources, and manual approvals.
+Ratuls-ACT features a premium, intuitive admin dashboard and a granular settings console to configure multi-pixel events, tracking sources, and manual approvals.
 
 ### 1. Real-Time Analytics Dashboard
 Directly inspect diagnostic performance, health, API logs, and events dispatch status in real-time.
-![ServerTrack - Real-Time Analytics Dashboard](pluginss/settings/Dashboard.png)
+![Ratuls-ACT - Real-Time Analytics Dashboard](pluginss/settings/Dashboard.png)
 
 ### 2. Meta Pixel & CAPI Settings
 Loop and fire events to multiple Meta Properties concurrently with advanced matching parameter configurations.
-![ServerTrack - Meta Pixel & CAPI Settings](pluginss/settings/Meta.png)
+![Ratuls-ACT - Meta Pixel & CAPI Settings](pluginss/settings/Meta.png)
 
 ### 3. Event Sources & Verification Settings
 Fine-tune tracking sources (WooCommerce, Cart Abandonment, Subscriptions) and toggle Manual Purchase Verification.
-![ServerTrack - Event Sources Settings](pluginss/settings/eventS.png)
+![Ratuls-ACT - Event Sources Settings](pluginss/settings/eventS.png)
 
 ---
 
 ## Core Architecture
 
-ServerTrack is organized into modular, clean layers:
+Ratuls-ACT is organized into modular, clean layers:
 
 ```text
 servertrack.php                       ← Bootstrap loader
@@ -116,8 +118,8 @@ For high-ticket or fraud-sensitive stores, enable **Manual Purchase Verification
 
 1. Upload the `servertrack` directory to your WordPress `/wp-content/plugins/` directory.
 2. Activate the plugin via **Plugins → Installed Plugins** in the WordPress Dashboard.
-3. Configure your API tokens under **ServerTrack → Settings**.
-4. Check real-time API logs and matching scores under the **ServerTrack → Dashboard** tab.
+3. Configure your API tokens under **Ratuls-ACT → Settings**.
+4. Check real-time API logs and matching scores under the **Ratuls-ACT → Dashboard** tab.
 
 ## Custom Events (REST API Proxy)
 
