@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for Ratuls_ACT_Source_WooCommerce v3.3.1
+ * Tests for Ratul_ACT_Source_WooCommerce v3.3.1
  * Section: Partial Refund Events + Full Refund Events (BUG-12 fix)
  *
  * Covers:
@@ -19,8 +19,8 @@ use PHPUnit\Framework\TestCase;
 class WooCommercePartialRefundTest extends TestCase {
 
     protected function setUp(): void {
-        Ratuls_ACT_Core::reset();
-        Ratuls_ACT_Dedup::reset();
+        Ratul_ACT_Core::reset();
+        Ratul_ACT_Dedup::reset();
 
         // Order: total $100
         $order        = new WC_Order();
@@ -51,102 +51,102 @@ class WooCommercePartialRefundTest extends TestCase {
     // ── handle_partial_refund() ──────────────────────────────────────────
 
     public function test_partial_refund_dispatches_purchase_event(): void {
-        Ratuls_ACT_Source_WooCommerce::handle_partial_refund( 200, 301 );
+        Ratul_ACT_Source_WooCommerce::handle_partial_refund( 200, 301 );
 
-        $this->assertCount( 1, Ratuls_ACT_Core::$dispatched );
-        $this->assertSame( 'Purchase', Ratuls_ACT_Core::$dispatched[0]['event'] );
+        $this->assertCount( 1, Ratul_ACT_Core::$dispatched );
+        $this->assertSame( 'Purchase', Ratul_ACT_Core::$dispatched[0]['event'] );
     }
 
     public function test_partial_refund_value_is_negative(): void {
-        Ratuls_ACT_Source_WooCommerce::handle_partial_refund( 200, 301 );
+        Ratul_ACT_Source_WooCommerce::handle_partial_refund( 200, 301 );
 
-        $value = Ratuls_ACT_Core::$dispatched[0]['custom']['value'];
+        $value = Ratul_ACT_Core::$dispatched[0]['custom']['value'];
         $this->assertLessThan( 0, $value, 'Partial refund value must be negative.' );
     }
 
     public function test_partial_refund_value_equals_exact_refund_amount(): void {
-        Ratuls_ACT_Source_WooCommerce::handle_partial_refund( 200, 301 );
+        Ratul_ACT_Source_WooCommerce::handle_partial_refund( 200, 301 );
 
-        $value = Ratuls_ACT_Core::$dispatched[0]['custom']['value'];
+        $value = Ratul_ACT_Core::$dispatched[0]['custom']['value'];
         $this->assertSame( -25.00, $value, 'Value must equal the exact refund amount, not the order total.' );
     }
 
     public function test_partial_refund_custom_data_has_refund_type(): void {
-        Ratuls_ACT_Source_WooCommerce::handle_partial_refund( 200, 301 );
+        Ratul_ACT_Source_WooCommerce::handle_partial_refund( 200, 301 );
 
-        $this->assertSame( 'partial', Ratuls_ACT_Core::$dispatched[0]['custom']['refund_type'] );
+        $this->assertSame( 'partial', Ratul_ACT_Core::$dispatched[0]['custom']['refund_type'] );
     }
 
     public function test_full_refund_is_skipped_by_partial_handler(): void {
         // Refund ID 302 has amount == order total ($100) — should be skipped
-        Ratuls_ACT_Source_WooCommerce::handle_partial_refund( 200, 302 );
+        Ratul_ACT_Source_WooCommerce::handle_partial_refund( 200, 302 );
 
-        $this->assertEmpty( Ratuls_ACT_Core::$dispatched,
+        $this->assertEmpty( Ratul_ACT_Core::$dispatched,
             'Full refund must be skipped by handle_partial_refund().' );
     }
 
     public function test_partial_refund_dedup_key_is_per_refund_id(): void {
-        Ratuls_ACT_Source_WooCommerce::handle_partial_refund( 200, 301 );
+        Ratul_ACT_Source_WooCommerce::handle_partial_refund( 200, 301 );
 
-        $dedup = Ratuls_ACT_Core::$dispatched[0]['dedup_key'];
+        $dedup = Ratul_ACT_Core::$dispatched[0]['dedup_key'];
         $this->assertSame( 'partial_refund_301', $dedup );
     }
 
     public function test_partial_refund_dedup_prevents_double_fire(): void {
-        Ratuls_ACT_Dedup::mark_as_sent( 'partial_refund_301', 'meta' );
-        Ratuls_ACT_Dedup::mark_as_sent( 'partial_refund_301', 'tiktok' );
-        Ratuls_ACT_Dedup::mark_as_sent( 'partial_refund_301', 'google' );
+        Ratul_ACT_Dedup::mark_as_sent( 'partial_refund_301', 'meta' );
+        Ratul_ACT_Dedup::mark_as_sent( 'partial_refund_301', 'tiktok' );
+        Ratul_ACT_Dedup::mark_as_sent( 'partial_refund_301', 'google' );
 
-        Ratuls_ACT_Source_WooCommerce::handle_partial_refund( 200, 301 );
+        Ratul_ACT_Source_WooCommerce::handle_partial_refund( 200, 301 );
 
-        $this->assertEmpty( Ratuls_ACT_Core::$dispatched,
+        $this->assertEmpty( Ratul_ACT_Core::$dispatched,
             'Dedup must prevent partial refund from firing twice for the same refund_id.' );
     }
 
     public function test_partial_refund_missing_order_returns_early(): void {
-        Ratuls_ACT_Source_WooCommerce::handle_partial_refund( 999, 301 ); // 999 not in stub store
+        Ratul_ACT_Source_WooCommerce::handle_partial_refund( 999, 301 ); // 999 not in stub store
 
-        $this->assertEmpty( Ratuls_ACT_Core::$dispatched,
+        $this->assertEmpty( Ratul_ACT_Core::$dispatched,
             'Missing order must result in no dispatch.' );
     }
 
     // ── handle_full_refund() (BUG-12) ────────────────────────────────────
 
     public function test_full_refund_dispatches_negative_purchase(): void {
-        Ratuls_ACT_Source_WooCommerce::handle_full_refund( 200, 302 );
+        Ratul_ACT_Source_WooCommerce::handle_full_refund( 200, 302 );
 
-        $this->assertCount( 1, Ratuls_ACT_Core::$dispatched );
-        $this->assertSame( 'Purchase', Ratuls_ACT_Core::$dispatched[0]['event'] );
-        $this->assertLessThan( 0, Ratuls_ACT_Core::$dispatched[0]['custom']['value'] );
+        $this->assertCount( 1, Ratul_ACT_Core::$dispatched );
+        $this->assertSame( 'Purchase', Ratul_ACT_Core::$dispatched[0]['event'] );
+        $this->assertLessThan( 0, Ratul_ACT_Core::$dispatched[0]['custom']['value'] );
     }
 
     public function test_bug12_full_refund_fires_when_no_platforms_sent(): void {
-        Ratuls_ACT_Source_WooCommerce::handle_full_refund( 200, 302 );
+        Ratul_ACT_Source_WooCommerce::handle_full_refund( 200, 302 );
 
-        $this->assertCount( 1, Ratuls_ACT_Core::$dispatched,
+        $this->assertCount( 1, Ratul_ACT_Core::$dispatched,
             'BUG-12: full refund must fire when no platforms have been sent yet.' );
     }
 
     public function test_bug12_full_refund_skips_when_all_platforms_sent(): void {
         $key = 'full_refund_200';
-        Ratuls_ACT_Dedup::mark_as_sent( $key, 'meta' );
-        Ratuls_ACT_Dedup::mark_as_sent( $key, 'tiktok' );
-        Ratuls_ACT_Dedup::mark_as_sent( $key, 'google' );
+        Ratul_ACT_Dedup::mark_as_sent( $key, 'meta' );
+        Ratul_ACT_Dedup::mark_as_sent( $key, 'tiktok' );
+        Ratul_ACT_Dedup::mark_as_sent( $key, 'google' );
 
-        Ratuls_ACT_Source_WooCommerce::handle_full_refund( 200, 302 );
+        Ratul_ACT_Source_WooCommerce::handle_full_refund( 200, 302 );
 
-        $this->assertEmpty( Ratuls_ACT_Core::$dispatched,
+        $this->assertEmpty( Ratul_ACT_Core::$dispatched,
             'BUG-12: full refund must be skipped when all 3 platforms already sent.' );
     }
 
     public function test_bug12_full_refund_fires_when_only_meta_sent(): void {
         // BUG-12 original: only 'meta' was checked — if Meta was sent, TikTok+Google were skipped too
         $key = 'full_refund_200';
-        Ratuls_ACT_Dedup::mark_as_sent( $key, 'meta' ); // only Meta sent
+        Ratul_ACT_Dedup::mark_as_sent( $key, 'meta' ); // only Meta sent
 
-        Ratuls_ACT_Source_WooCommerce::handle_full_refund( 200, 302 );
+        Ratul_ACT_Source_WooCommerce::handle_full_refund( 200, 302 );
 
-        $this->assertCount( 1, Ratuls_ACT_Core::$dispatched,
+        $this->assertCount( 1, Ratul_ACT_Core::$dispatched,
             'BUG-12: full refund must still fire for TikTok+Google when only Meta was sent.' );
     }
 }

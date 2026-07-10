@@ -1,4 +1,4 @@
-﻿# Ratuls- Ads Conversion Tracker (Ratuls-ACT)
+# Ratul Ads Conversion Tracker
 
 <p align="center">
   <img src="https://img.shields.io/badge/WordPress-v6.0+-21759b?style=for-the-badge&logo=wordpress&logoColor=white" alt="WordPress v6.0+" />
@@ -15,14 +15,14 @@
 
 ---
 
-**Ratuls- Ads Conversion Tracker (Ratuls-ACT)** is a professional, high-performance server-side Conversion API (CAPI) tracking plugin for WordPress and WooCommerce. It routes client-side events through your own first-party domain, stitches browser identity parameters, and dispatches them synchronously to Meta (Facebook), TikTok, and Google Ads with perfect event deduplication and GDPR/CCPA consent compliance.
+**Ratul Ads Conversion Tracker** is a professional, high-performance server-side Conversion API (CAPI) tracking plugin for WordPress and WooCommerce. It routes client-side events through your own first-party domain, stitches browser identity parameters, and dispatches them synchronously to Meta (Facebook), TikTok, and Google Ads with perfect event deduplication and GDPR/CCPA consent compliance.
 
-## Why Ratuls-ACT?
+## Why Ratul Ads Conversion Tracker?
 
-Instead of paying high monthly fees for third-party server-side Tag Manager containers (e.g., Stape.io or Google Cloud GTM), Ratuls-ACT acts as your own **self-hosted First-Party CAPI Gateway** directly inside WordPress. 
+Instead of paying high monthly fees for third-party server-side Tag Manager containers (e.g., Stape.io or Google Cloud GTM), Ratul Ads Conversion Tracker acts as your own **self-hosted First-Party CAPI Gateway** directly inside WordPress. 
 
 - **Defeats Safari ITP:** Generates first-party `Set-Cookie` headers via PHP, extending ad-click identifier Lifespans (`fbclid`, `gclid`) from the JavaScript-capped 7 days to a full **2 years**.
-- **Ad-blocker Resiliency:** Bypasses browser-level trackers entirely by proxying events through a local REST endpoint (`/wp-json/ratuls-act/v1/pixel`).
+- **Ad-blocker Resiliency:** Bypasses browser-level trackers entirely by proxying events through a local REST endpoint (`/wp-json/ratul-ads-conversion-tracker/v1/pixel`).
 - **Deep Identity Stitching:** Bundles MaxMind GeoIP resolution, true client IP detection across Cloudflare/Sucuri, and user-agent parsing to maximize your Meta Event Match Quality (EMQ).
 
 ---
@@ -68,39 +68,39 @@ Fine-tune tracking sources (WooCommerce, Cart Abandonment, Subscriptions) and to
 Ratuls-ACT is organized into modular, clean layers:
 
 ```text
-ratuls-act.php                       ← Bootstrap loader
+ratul-ads-conversion-tracker.php                       ← Bootstrap loader
 │
 ├── includes/
-│   ├── class-ratuls-act-cookiehelper.php   1st-Party Cookie Generator (ITP bypass)
-│   ├── class-ratuls-act-dispatcher.php       Secure Cryptotoken-based Async loopback
-│   ├── class-ratuls-act-pixel-dedup.php    Checkout and Cart Button ID handlers
-│   ├── class-ratuls-act-enrichment.php     IP, Geo, and UA Signal enrichment
-│   ├── class-ratuls-act-health.php         Daily API token health diagnostic cron
-│   ├── class-ratuls-act-stream.php         Real-time SSE Debug Console
-│   ├── class-ratuls-act-attribution.php    10-touch UTM History Tracker
-│   ├── class-ratuls-act-consent.php        GDPR Consent State manager
-│   ├── class-ratuls-act-event.php          Event DTO Model
-│   ├── class-ratuls-act-retry.php          Exponential back-off retry queue
-│   └── class-ratuls-act-logger.php         Structured SQL event logger
+│   ├── class-ratul-ads-conversion-tracker-cookiehelper.php   1st-Party Cookie Generator (ITP bypass)
+│   ├── class-ratul-ads-conversion-tracker-dispatcher.php       Secure Cryptotoken-based Async loopback
+│   ├── class-ratul-ads-conversion-tracker-pixel-dedup.php    Checkout and Cart Button ID handlers
+│   ├── class-ratul-ads-conversion-tracker-enrichment.php     IP, Geo, and UA Signal enrichment
+│   ├── class-ratul-ads-conversion-tracker-health.php         Daily API token health diagnostic cron
+│   ├── class-ratul-ads-conversion-tracker-stream.php         Real-time SSE Debug Console
+│   ├── class-ratul-ads-conversion-tracker-attribution.php    10-touch UTM History Tracker
+│   ├── class-ratul-ads-conversion-tracker-consent.php        GDPR Consent State manager
+│   ├── class-ratul-ads-conversion-tracker-event.php          Event DTO Model
+│   ├── class-ratul-ads-conversion-tracker-retry.php          Exponential back-off retry queue
+│   └── class-ratul-ads-conversion-tracker-logger.php         Structured SQL event logger
 │
 ├── platforms/
-│   ├── class-ratuls-act-meta.php           Meta Graph API (Multi-pixel arrays)
-│   ├── class-ratuls-act-tiktok.php         TikTok Events API v2
-│   └── class-ratuls-act-google.php         Google Ads Enhanced Conversions
+│   ├── class-ratul-ads-conversion-tracker-meta.php           Meta Graph API (Multi-pixel arrays)
+│   ├── class-ratul-ads-conversion-tracker-tiktok.php         TikTok Events API v2
+│   └── class-ratul-ads-conversion-tracker-google.php         Google Ads Enhanced Conversions
 │
 ├── sources/
-│   ├── class-ratuls-act-woocommerce.php          Core WooCommerce Hooks
-│   ├── class-ratuls-act-source-woocommerce.php   Extended Lifecycle Hooks (Wishlist/Status)
-│   ├── class-ratuls-act-subscriptions.php        WooCommerce Subscriptions integration
-│   ├── class-ratuls-act-cart-abandonment.php     Cart Abandonment CAPI cron
+│   ├── class-ratul-ads-conversion-tracker-woocommerce.php          Core WooCommerce Hooks
+│   ├── class-ratul-ads-conversion-tracker-source-woocommerce.php   Extended Lifecycle Hooks (Wishlist/Status)
+│   ├── class-ratul-ads-conversion-tracker-subscriptions.php        WooCommerce Subscriptions integration
+│   ├── class-ratul-ads-conversion-tracker-cart-abandonment.php     Cart Abandonment CAPI cron
 │   └── ...
 │
 ├── frontend/
-│   └── class-ratuls-act-frontend.php       Browser JS localization bridge
+│   └── class-ratul-ads-conversion-tracker-frontend.php       Browser JS localization bridge
 │
 └── admin/
-    ├── class-ratuls-act-dashboard.php      Real-time Dashboard UI & Charts
-    └── class-ratuls-act-admin.php          Admin Settings & Manual Approval Column
+    ├── class-ratul-ads-conversion-tracker-dashboard.php      Real-time Dashboard UI & Charts
+    └── class-ratul-ads-conversion-tracker-admin.php          Admin Settings & Manual Approval Column
 ```
 
 ---
@@ -116,7 +116,7 @@ For high-ticket or fraud-sensitive stores, enable **Manual Purchase Verification
 
 ## Installation & Setup
 
-1. Upload the `ratuls-act` directory to your WordPress `/wp-content/plugins/` directory.
+1. Upload the `ratul-ads-conversion-tracker` directory to your WordPress `/wp-content/plugins/` directory.
 2. Activate the plugin via **Plugins → Installed Plugins** in the WordPress Dashboard.
 3. Configure your API tokens under **Ratuls-ACT → Settings**.
 4. Check real-time API logs and matching scores under the **Ratuls-ACT → Dashboard** tab.
@@ -126,7 +126,7 @@ For high-ticket or fraud-sensitive stores, enable **Manual Purchase Verification
 Fire custom server events client-side securely through the local proxy endpoint:
 
 ```javascript
-fetch('/wp-json/ratuls-act/v1/pixel/meta', {
+fetch('/wp-json/ratul-ads-conversion-tracker/v1/pixel/meta', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({

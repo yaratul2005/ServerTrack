@@ -8,129 +8,129 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 <div class="st-settings-section">
 <table class="form-table" role="presentation">
     <tr>
-        <th scope="row"><?php esc_html_e( 'Enable Meta CAPI', 'servertrack' ); ?></th>
+        <th scope="row"><?php esc_html_e( 'Enable Meta CAPI', 'ratul-ads-conversion-tracker' ); ?></th>
         <td>
             <label class="st-toggle-label st-row" style="cursor:pointer; display:flex; align-items:center;">
     <div class="st-toggle" style="margin-right:12px;">
-        <input type="checkbox" name="ratuls_act_meta_enabled" value="1"
-                    <?php checked( 1, get_option( 'ratuls_act_meta_enabled', 0 ) ); ?> />
+        <input type="checkbox" name="ratul_act_meta_enabled" value="1"
+                    <?php checked( 1, get_option( 'ratul_act_meta_enabled', 0 ) ); ?> />
         <span class="st-toggle-slider"></span>
     </div>
-    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'Send events to Meta Conversions API', 'servertrack' ); ?></span>
+    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'Send events to Meta Conversions API', 'ratul-ads-conversion-tracker' ); ?></span>
 </label>
         </td>
     </tr>
     <tr>
-        <th scope="row"><label for="ratuls_act_meta_pixel_id"><?php esc_html_e( 'Meta Pixel ID', 'servertrack' ); ?></label></th>
+        <th scope="row"><label for="ratul_act_meta_pixel_id"><?php esc_html_e( 'Meta Pixel ID', 'ratul-ads-conversion-tracker' ); ?></label></th>
         <td>
             <input type="text"
-                   id="ratuls_act_meta_pixel_id"
-                   name="ratuls_act_meta_pixel_id"
-                   value="<?php echo esc_attr( get_option( 'ratuls_act_meta_pixel_id', '' ) ); ?>"
+                   id="ratul_act_meta_pixel_id"
+                   name="ratul_act_meta_pixel_id"
+                   value="<?php echo esc_attr( get_option( 'ratul_act_meta_pixel_id', '' ) ); ?>"
                    class="regular-text st-field-input"
                    placeholder="e.g. 123456789012345"
                    autocomplete="off" />
         </td>
     </tr>
     <tr>
-        <th scope="row"><label for="ratuls_act_meta_access_token"><?php esc_html_e( 'System User Access Token', 'servertrack' ); ?></label></th>
+        <th scope="row"><label for="ratul_act_meta_access_token"><?php esc_html_e( 'System User Access Token', 'ratul-ads-conversion-tracker' ); ?></label></th>
         <td>
             <input type="password"
-                   id="ratuls_act_meta_access_token"
-                   name="ratuls_act_meta_access_token"
-                   value="<?php echo esc_attr( get_option( 'ratuls_act_meta_access_token', '' ) ); ?>"
+                   id="ratul_act_meta_access_token"
+                   name="ratul_act_meta_access_token"
+                   value="<?php echo esc_attr( get_option( 'ratul_act_meta_access_token', '' ) ); ?>"
                    class="regular-text st-field-input"
                    autocomplete="new-password" />
-            <p class="description"><?php esc_html_e( 'Generate from Meta Events Manager → Settings → System User Token.', 'servertrack' ); ?></p>
+            <p class="description"><?php esc_html_e( 'Generate from Meta Events Manager → Settings → System User Token.', 'ratul-ads-conversion-tracker' ); ?></p>
         </td>
     </tr>
     <!-- Advanced Matching -->
     <tr>
-        <th scope="row"><label><?php esc_html_e( 'Advanced Matching PII', 'servertrack' ); ?></label></th>
+        <th scope="row"><label><?php esc_html_e( 'Advanced Matching PII', 'ratul-ads-conversion-tracker' ); ?></label></th>
         <td>
             <fieldset>
-                <legend class="screen-reader-text"><span><?php esc_html_e( 'Advanced Matching Signals', 'servertrack' ); ?></span></legend>
-                <p class="description" style="margin-bottom:8px;"><?php esc_html_e( 'Select which customer signals to hash and send to Meta to improve match quality.', 'servertrack' ); ?></p>
+                <legend class="screen-reader-text"><span><?php esc_html_e( 'Advanced Matching Signals', 'ratul-ads-conversion-tracker' ); ?></span></legend>
+                <p class="description" style="margin-bottom:8px;"><?php esc_html_e( 'Select which customer signals to hash and send to Meta to improve match quality.', 'ratul-ads-conversion-tracker' ); ?></p>
                 <label class="st-toggle-label st-row" style="cursor:pointer; display:flex; align-items:center;">
     <div class="st-toggle" style="margin-right:12px;">
-        <input type="checkbox" name="ratuls_act_meta_am_email" value="1"
-                        <?php checked( 1, get_option( 'ratuls_act_meta_am_email', 1 ) ); ?>>
+        <input type="checkbox" name="ratul_act_meta_am_email" value="1"
+                        <?php checked( 1, get_option( 'ratul_act_meta_am_email', 1 ) ); ?>>
         <span class="st-toggle-slider"></span>
     </div>
-    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'Email', 'servertrack' ); ?></span>
+    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'Email', 'ratul-ads-conversion-tracker' ); ?></span>
 </label><br>
                 <label class="st-toggle-label st-row" style="cursor:pointer; display:flex; align-items:center;">
     <div class="st-toggle" style="margin-right:12px;">
-        <input type="checkbox" name="ratuls_act_meta_am_phone" value="1"
-                        <?php checked( 1, get_option( 'ratuls_act_meta_am_phone', 1 ) ); ?>>
+        <input type="checkbox" name="ratul_act_meta_am_phone" value="1"
+                        <?php checked( 1, get_option( 'ratul_act_meta_am_phone', 1 ) ); ?>>
         <span class="st-toggle-slider"></span>
     </div>
-    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'Phone Number', 'servertrack' ); ?></span>
+    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'Phone Number', 'ratul-ads-conversion-tracker' ); ?></span>
 </label><br>
                 <label class="st-toggle-label st-row" style="cursor:pointer; display:flex; align-items:center;">
     <div class="st-toggle" style="margin-right:12px;">
-        <input type="checkbox" name="ratuls_act_meta_am_name" value="1"
-                        <?php checked( 1, get_option( 'ratuls_act_meta_am_name', 1 ) ); ?>>
+        <input type="checkbox" name="ratul_act_meta_am_name" value="1"
+                        <?php checked( 1, get_option( 'ratul_act_meta_am_name', 1 ) ); ?>>
         <span class="st-toggle-slider"></span>
     </div>
-    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'First & Last Name', 'servertrack' ); ?></span>
+    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'First & Last Name', 'ratul-ads-conversion-tracker' ); ?></span>
 </label><br>
                 <label class="st-toggle-label st-row" style="cursor:pointer; display:flex; align-items:center;">
     <div class="st-toggle" style="margin-right:12px;">
-        <input type="checkbox" name="ratuls_act_meta_am_city" value="1"
-                        <?php checked( 1, get_option( 'ratuls_act_meta_am_city', 1 ) ); ?>>
+        <input type="checkbox" name="ratul_act_meta_am_city" value="1"
+                        <?php checked( 1, get_option( 'ratul_act_meta_am_city', 1 ) ); ?>>
         <span class="st-toggle-slider"></span>
     </div>
-    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'City', 'servertrack' ); ?></span>
+    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'City', 'ratul-ads-conversion-tracker' ); ?></span>
 </label><br>
                 <label class="st-toggle-label st-row" style="cursor:pointer; display:flex; align-items:center;">
     <div class="st-toggle" style="margin-right:12px;">
-        <input type="checkbox" name="ratuls_act_meta_am_state" value="1"
-                        <?php checked( 1, get_option( 'ratuls_act_meta_am_state', 1 ) ); ?>>
+        <input type="checkbox" name="ratul_act_meta_am_state" value="1"
+                        <?php checked( 1, get_option( 'ratul_act_meta_am_state', 1 ) ); ?>>
         <span class="st-toggle-slider"></span>
     </div>
-    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'State / Province', 'servertrack' ); ?></span>
+    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'State / Province', 'ratul-ads-conversion-tracker' ); ?></span>
 </label><br>
                 <label class="st-toggle-label st-row" style="cursor:pointer; display:flex; align-items:center;">
     <div class="st-toggle" style="margin-right:12px;">
-        <input type="checkbox" name="ratuls_act_meta_am_zip" value="1"
-                        <?php checked( 1, get_option( 'ratuls_act_meta_am_zip', 1 ) ); ?>>
+        <input type="checkbox" name="ratul_act_meta_am_zip" value="1"
+                        <?php checked( 1, get_option( 'ratul_act_meta_am_zip', 1 ) ); ?>>
         <span class="st-toggle-slider"></span>
     </div>
-    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'ZIP / Postal Code', 'servertrack' ); ?></span>
+    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'ZIP / Postal Code', 'ratul-ads-conversion-tracker' ); ?></span>
 </label><br>
                 <label class="st-toggle-label st-row" style="cursor:pointer; display:flex; align-items:center;">
     <div class="st-toggle" style="margin-right:12px;">
-        <input type="checkbox" name="ratuls_act_meta_am_country" value="1"
-                        <?php checked( 1, get_option( 'ratuls_act_meta_am_country', 1 ) ); ?>>
+        <input type="checkbox" name="ratul_act_meta_am_country" value="1"
+                        <?php checked( 1, get_option( 'ratul_act_meta_am_country', 1 ) ); ?>>
         <span class="st-toggle-slider"></span>
     </div>
-    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'Country', 'servertrack' ); ?></span>
+    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'Country', 'ratul-ads-conversion-tracker' ); ?></span>
 </label>
             </fieldset>
         </td>
     </tr>
     <tr>
-        <th scope="row"><label for="ratuls_act_meta_test_event_code"><?php esc_html_e( 'Test Event Code', 'servertrack' ); ?></label></th>
+        <th scope="row"><label for="ratul_act_meta_test_event_code"><?php esc_html_e( 'Test Event Code', 'ratul-ads-conversion-tracker' ); ?></label></th>
         <td>
             <input type="text"
-                   id="ratuls_act_meta_test_event_code"
-                   name="ratuls_act_meta_test_event_code"
-                   value="<?php echo esc_attr( get_option( 'ratuls_act_meta_test_event_code', '' ) ); ?>"
+                   id="ratul_act_meta_test_event_code"
+                   name="ratul_act_meta_test_event_code"
+                   value="<?php echo esc_attr( get_option( 'ratul_act_meta_test_event_code', '' ) ); ?>"
                    class="regular-text st-field-input"
                    placeholder="TEST12345 (optional)"
                    autocomplete="off" />
-            <p class="description"><?php esc_html_e( 'Only required when using Meta Test Events tool. Leave blank in production.', 'servertrack' ); ?></p>
+            <p class="description"><?php esc_html_e( 'Only required when using Meta Test Events tool. Leave blank in production.', 'ratul-ads-conversion-tracker' ); ?></p>
         </td>
     </tr>
 </table>
 </div><!-- /.st-settings-section -->
 <hr />
-<h2><?php esc_html_e( 'Send Test Event', 'servertrack' ); ?></h2>
-<p><?php esc_html_e( 'Sends a dummy Purchase event to Meta CAPI to verify your credentials.', 'servertrack' ); ?></p>
-<button type="button" class="button button-secondary ratuls-act-test-btn" data-platform="meta">
-    <?php esc_html_e( 'Send Test Event → Meta', 'servertrack' ); ?>
+<h2><?php esc_html_e( 'Send Test Event', 'ratul-ads-conversion-tracker' ); ?></h2>
+<p><?php esc_html_e( 'Sends a dummy Purchase event to Meta CAPI to verify your credentials.', 'ratul-ads-conversion-tracker' ); ?></p>
+<button type="button" class="button button-secondary ratul-ads-conversion-tracker-test-btn" data-platform="meta">
+    <?php esc_html_e( 'Send Test Event → Meta', 'ratul-ads-conversion-tracker' ); ?>
 </button>
-<div class="st-test-result ratuls-act-test-response" id="ratuls-act-test-response-meta"></div>
+<div class="st-test-result ratul-ads-conversion-tracker-test-response" id="ratul-ads-conversion-tracker-test-response-meta"></div>
 
 

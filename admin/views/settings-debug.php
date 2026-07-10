@@ -1,36 +1,36 @@
 <?php
 /**
- * Ratuls_ACT — Debug Log Tab (redesigned)
+ * Ratul_ACT — Debug Log Tab (redesigned)
  *
  * Renders the full log table with filter pills, inline response
  * expand, and test-event panel. All data is either server-rendered
  * on first load then kept fresh by admin.js auto-refresh (30 s).
  */
 if ( ! defined( 'ABSPATH' ) ) exit;
-$ratuls_act_logs = get_option( 'ratuls_act_debug_log', [] );
+$ratul_act_logs = get_option( 'ratul_act_debug_log', [] );
 ?>
 
 <!-- Test Event Panel -->
 <div class="st-card" style="margin-bottom:16px">
     <h3 class="st-card-title">
         <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-        <?php esc_html_e( 'Send Test Event', 'servertrack' ); ?>
+        <?php esc_html_e( 'Send Test Event', 'ratul-ads-conversion-tracker' ); ?>
     </h3>
     <p style="color:var(--st-text-muted);font-size:.8125rem;margin:0 0 14px">
-        <?php esc_html_e( 'Fire a live Purchase test event to confirm API connectivity for each platform.', 'servertrack' ); ?>
+        <?php esc_html_e( 'Fire a live Purchase test event to confirm API connectivity for each platform.', 'ratul-ads-conversion-tracker' ); ?>
     </p>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
         <button type="button" class="st-test-btn" data-platform="meta" style="flex:1;min-width:160px">
             <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-            <?php esc_html_e( 'Send Test → Meta', 'servertrack' ); ?>
+            <?php esc_html_e( 'Send Test → Meta', 'ratul-ads-conversion-tracker' ); ?>
         </button>
         <button type="button" class="st-test-btn" data-platform="google" style="flex:1;min-width:160px">
             <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-            <?php esc_html_e( 'Send Test → Google', 'servertrack' ); ?>
+            <?php esc_html_e( 'Send Test → Google', 'ratul-ads-conversion-tracker' ); ?>
         </button>
         <button type="button" class="st-test-btn" data-platform="tiktok" style="flex:1;min-width:160px">
             <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-            <?php esc_html_e( 'Send Test → TikTok', 'servertrack' ); ?>
+            <?php esc_html_e( 'Send Test → TikTok', 'ratul-ads-conversion-tracker' ); ?>
         </button>
     </div>
     <div class="st-test-result" id="st-test-result-meta"   style="margin-top:10px"></div>
@@ -39,63 +39,63 @@ $ratuls_act_logs = get_option( 'ratuls_act_debug_log', [] );
 </div>
 
 <!-- Log Table -->
-<div class="st-log-section" id="ratuls-act-debug-panel">
+<div class="st-log-section" id="ratul-ads-conversion-tracker-debug-panel">
 
     <div class="st-log-header">
         <h2 class="st-log-title">
             <span class="st-live-dot"></span>
-            <?php esc_html_e( 'Event Log', 'servertrack' ); ?>
+            <?php esc_html_e( 'Event Log', 'ratul-ads-conversion-tracker' ); ?>
             <span style="font-size:.75rem;font-weight:400;color:var(--st-text-muted);margin-left:4px">
-                — <?php echo count( $ratuls_act_logs ); ?> <?php esc_html_e( 'entries', 'servertrack' ); ?>
+                — <?php echo count( $ratul_act_logs ); ?> <?php esc_html_e( 'entries', 'ratul-ads-conversion-tracker' ); ?>
             </span>
         </h2>
         <div class="st-log-actions">
-            <button type="button" class="st-btn" id="ratuls-act-refresh-log">
+            <button type="button" class="st-btn" id="ratul-ads-conversion-tracker-refresh-log">
                 <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                <?php esc_html_e( 'Refresh', 'servertrack' ); ?>
+                <?php esc_html_e( 'Refresh', 'ratul-ads-conversion-tracker' ); ?>
             </button>
-            <button type="button" class="st-btn st-btn-danger" id="ratuls-act-clear-log">
+            <button type="button" class="st-btn st-btn-danger" id="ratul-ads-conversion-tracker-clear-log">
                 <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-                <?php esc_html_e( 'Clear Log', 'servertrack' ); ?>
+                <?php esc_html_e( 'Clear Log', 'ratul-ads-conversion-tracker' ); ?>
             </button>
         </div>
     </div>
 
     <div class="st-log-filters">
-        <span class="st-filter-label"><?php esc_html_e( 'Filter:', 'servertrack' ); ?></span>
-        <button class="st-filter-btn is-active" data-filter="all"><?php esc_html_e( 'All', 'servertrack' ); ?></button>
-        <button class="st-filter-btn" data-filter="success"><?php esc_html_e( 'Success', 'servertrack' ); ?></button>
-        <button class="st-filter-btn" data-filter="error"><?php esc_html_e( 'Error', 'servertrack' ); ?></button>
-        <button class="st-filter-btn" data-filter="skipped"><?php esc_html_e( 'Skipped', 'servertrack' ); ?></button>
-        <button class="st-filter-btn" data-filter="dedup_blocked"><?php esc_html_e( 'Dedup', 'servertrack' ); ?></button>
+        <span class="st-filter-label"><?php esc_html_e( 'Filter:', 'ratul-ads-conversion-tracker' ); ?></span>
+        <button class="st-filter-btn is-active" data-filter="all"><?php esc_html_e( 'All', 'ratul-ads-conversion-tracker' ); ?></button>
+        <button class="st-filter-btn" data-filter="success"><?php esc_html_e( 'Success', 'ratul-ads-conversion-tracker' ); ?></button>
+        <button class="st-filter-btn" data-filter="error"><?php esc_html_e( 'Error', 'ratul-ads-conversion-tracker' ); ?></button>
+        <button class="st-filter-btn" data-filter="skipped"><?php esc_html_e( 'Skipped', 'ratul-ads-conversion-tracker' ); ?></button>
+        <button class="st-filter-btn" data-filter="dedup_blocked"><?php esc_html_e( 'Dedup', 'ratul-ads-conversion-tracker' ); ?></button>
     </div>
 
     <div class="st-log-table-wrap">
-        <table class="st-log-table" id="ratuls-act-log-table">
+        <table class="st-log-table" id="ratul-ads-conversion-tracker-log-table">
             <thead>
                 <tr>
-                    <th><?php esc_html_e( 'Time', 'servertrack' ); ?></th>
-                    <th><?php esc_html_e( 'Platform', 'servertrack' ); ?></th>
-                    <th><?php esc_html_e( 'Event', 'servertrack' ); ?></th>
-                    <th><?php esc_html_e( 'Event ID', 'servertrack' ); ?></th>
-                    <th><?php esc_html_e( 'Order ID', 'servertrack' ); ?></th>
-                    <th><?php esc_html_e( 'Status', 'servertrack' ); ?></th>
-                    <th><?php esc_html_e( 'HTTP', 'servertrack' ); ?></th>
-                    <th><?php esc_html_e( 'Message', 'servertrack' ); ?></th>
-                    <th><?php esc_html_e( 'Response', 'servertrack' ); ?></th>
+                    <th><?php esc_html_e( 'Time', 'ratul-ads-conversion-tracker' ); ?></th>
+                    <th><?php esc_html_e( 'Platform', 'ratul-ads-conversion-tracker' ); ?></th>
+                    <th><?php esc_html_e( 'Event', 'ratul-ads-conversion-tracker' ); ?></th>
+                    <th><?php esc_html_e( 'Event ID', 'ratul-ads-conversion-tracker' ); ?></th>
+                    <th><?php esc_html_e( 'Order ID', 'ratul-ads-conversion-tracker' ); ?></th>
+                    <th><?php esc_html_e( 'Status', 'ratul-ads-conversion-tracker' ); ?></th>
+                    <th><?php esc_html_e( 'HTTP', 'ratul-ads-conversion-tracker' ); ?></th>
+                    <th><?php esc_html_e( 'Message', 'ratul-ads-conversion-tracker' ); ?></th>
+                    <th><?php esc_html_e( 'Response', 'ratul-ads-conversion-tracker' ); ?></th>
                 </tr>
             </thead>
-            <tbody id="ratuls-act-log-body">
-                <?php if ( empty( $ratuls_act_logs ) ) : ?>
+            <tbody id="ratul-ads-conversion-tracker-log-body">
+                <?php if ( empty( $ratul_act_logs ) ) : ?>
                     <tr><td colspan="9" style="padding:0">
                         <div class="st-empty-state">
                             <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                            <h3><?php esc_html_e( 'No log entries yet', 'servertrack' ); ?></h3>
-                            <p><?php esc_html_e( 'Events will appear here after tracking starts.', 'servertrack' ); ?></p>
+                            <h3><?php esc_html_e( 'No log entries yet', 'ratul-ads-conversion-tracker' ); ?></h3>
+                            <p><?php esc_html_e( 'Events will appear here after tracking starts.', 'ratul-ads-conversion-tracker' ); ?></p>
                         </div>
                     </td></tr>
                 <?php else : ?>
-                    <?php foreach ( $ratuls_act_logs as $st_entry ) :
+                    <?php foreach ( $ratul_act_logs as $st_entry ) :
                         $st_platform = strtolower( $st_entry['platform'] ?? '' );
                         $st_status   = $st_entry['status'] ?? '';
                         $st_badge_cls = in_array( $st_status, [ 'success' ], true ) ? 'success'
@@ -115,7 +115,7 @@ $ratuls_act_logs = get_option( 'ratuls_act_debug_log', [] );
                         <td class="st-response-cell">
                             <?php if ( mb_strlen( $st_response ) > 60 ) : ?>
                                 <span class="st-response-short"><?php echo esc_html( $st_short ); ?></span>
-                                <button class="st-response-toggle"><?php esc_html_e( 'expand', 'servertrack' ); ?></button>
+                                <button class="st-response-toggle"><?php esc_html_e( 'expand', 'ratul-ads-conversion-tracker' ); ?></button>
                                 <div class="st-response-full"><?php echo $st_response; // already esc_html'd above ?></div>
                             <?php else : ?>
                                 <?php echo $st_response; ?>

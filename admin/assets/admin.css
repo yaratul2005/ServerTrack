@@ -1,5 +1,5 @@
-﻿/*
- * Ratuls_ACT Admin Styles — v4.0 VISUAL OVERHAUL
+/*
+ * Ratul_ACT Admin Styles — v4.0 VISUAL OVERHAUL
  * Pure CSS upgrade. Zero backend changes.
  * New: inline SVG icon system, animated decorations, glassmorphism
  *      accents, gradient meshes, sparkline shimmer, micro-interactions.
@@ -121,7 +121,7 @@
 /* ═══════════════════════════════════════════════════════════════
    2. BASE RESET
 ═══════════════════════════════════════════════════════════════ */
-#ratuls-act-wrap,
+#ratul-ads-conversion-tracker-wrap,
 #st-app {
   max-width: 1200px;
   margin-right: 20px;
@@ -132,7 +132,7 @@
   animation: st-fade-in .3s ease both;
 }
 
-#ratuls-act-wrap *,
+#ratul-ads-conversion-tracker-wrap *,
 #st-app * { box-sizing: border-box; }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1625,13 +1625,13 @@
 /* ═══════════════════════════════════════════════════════════════
    17. WP ADMIN OVERRIDES (sanitize WP defaults)
 ═══════════════════════════════════════════════════════════════ */
-#ratuls-act-wrap .wp-header-end,
+#ratul-ads-conversion-tracker-wrap .wp-header-end,
 #st-app       .wp-header-end { display: none; }
 
-#ratuls-act-wrap h1.wp-heading-inline,
+#ratul-ads-conversion-tracker-wrap h1.wp-heading-inline,
 #st-app       h1.wp-heading-inline { display: none; }
 
-#ratuls-act-wrap .notice,
+#ratul-ads-conversion-tracker-wrap .notice,
 #st-app       .notice { margin-left: 0; }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1660,7 +1660,7 @@
 }
 
 @media (max-width: 700px) {
-  #ratuls-act-wrap,
+  #ratul-ads-conversion-tracker-wrap,
   #st-app { margin-right: 10px; }
 
   .st-page-header { padding: 16px 18px; }
@@ -1871,9 +1871,9 @@
 }
 
 /*
- * Ratuls_ACT v4.1 — SVG Icon System
+ * Ratul_ACT v4.1 — SVG Icon System
  * Replaces all emoji with accessible inline SVG icons.
- * Loaded alongside admin.css via Ratuls_ACT_Admin::enqueue_assets().
+ * Loaded alongside admin.css via Ratul_ACT_Admin::enqueue_assets().
  */
 
 /* ── Base icon token ──────────────────────────────────────────────────────── */

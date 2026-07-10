@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for Ratuls_ACT_Source_WooCommerce v3.3.1
+ * Tests for Ratul_ACT_Source_WooCommerce v3.3.1
  * Section: AddToWishlist Events (BUG-10 fix)
  *
  * Covers:
@@ -18,8 +18,8 @@ use PHPUnit\Framework\TestCase;
 class WooCommerceWishlistTest extends TestCase {
 
     protected function setUp(): void {
-        Ratuls_ACT_Core::reset();
-        Ratuls_ACT_Dedup::reset();
+        Ratul_ACT_Core::reset();
+        Ratul_ACT_Dedup::reset();
 
         $product        = new WC_Product();
         $product->id    = 55;
@@ -34,23 +34,23 @@ class WooCommerceWishlistTest extends TestCase {
     }
 
     public function test_yith_hook_dispatches_add_to_wishlist(): void {
-        Ratuls_ACT_Source_WooCommerce::handle_add_to_wishlist( 55, 1 );
+        Ratul_ACT_Source_WooCommerce::handle_add_to_wishlist( 55, 1 );
 
-        $this->assertCount( 1, Ratuls_ACT_Core::$dispatched );
-        $this->assertSame( 'AddToWishlist', Ratuls_ACT_Core::$dispatched[0]['event'] );
+        $this->assertCount( 1, Ratul_ACT_Core::$dispatched );
+        $this->assertSame( 'AddToWishlist', Ratul_ACT_Core::$dispatched[0]['event'] );
     }
 
     public function test_ti_hook_dispatches_add_to_wishlist(): void {
-        Ratuls_ACT_Source_WooCommerce::handle_add_to_wishlist_ti( 55, 0 );
+        Ratul_ACT_Source_WooCommerce::handle_add_to_wishlist_ti( 55, 0 );
 
-        $this->assertCount( 1, Ratuls_ACT_Core::$dispatched );
-        $this->assertSame( 'AddToWishlist', Ratuls_ACT_Core::$dispatched[0]['event'] );
+        $this->assertCount( 1, Ratul_ACT_Core::$dispatched );
+        $this->assertSame( 'AddToWishlist', Ratul_ACT_Core::$dispatched[0]['event'] );
     }
 
     public function test_dispatches_to_meta_and_tiktok_only(): void {
-        Ratuls_ACT_Source_WooCommerce::handle_add_to_wishlist( 55, 1 );
+        Ratul_ACT_Source_WooCommerce::handle_add_to_wishlist( 55, 1 );
 
-        $platforms = Ratuls_ACT_Core::$dispatched[0]['platforms'];
+        $platforms = Ratul_ACT_Core::$dispatched[0]['platforms'];
         $this->assertContains( 'meta',   $platforms );
         $this->assertContains( 'tiktok', $platforms );
         $this->assertNotContains( 'google', $platforms,
@@ -61,42 +61,42 @@ class WooCommerceWishlistTest extends TestCase {
         // Simulate both Meta and TikTok already sent
         // uid_part = 0 (no user, no session in test env)
         $key = 'wishlist_yith_cust_123_55';
-        Ratuls_ACT_Dedup::mark_as_sent( $key, 'meta' );
-        Ratuls_ACT_Dedup::mark_as_sent( $key, 'tiktok' );
+        Ratul_ACT_Dedup::mark_as_sent( $key, 'meta' );
+        Ratul_ACT_Dedup::mark_as_sent( $key, 'tiktok' );
 
-        Ratuls_ACT_Source_WooCommerce::handle_add_to_wishlist( 55, 1 );
+        Ratul_ACT_Source_WooCommerce::handle_add_to_wishlist( 55, 1 );
 
-        $this->assertEmpty( Ratuls_ACT_Core::$dispatched,
+        $this->assertEmpty( Ratul_ACT_Core::$dispatched,
             'BUG-10: event must not fire when both Meta and TikTok already received it.' );
     }
 
     public function test_bug10_fires_to_pending_platform_only(): void {
         // Only Meta already sent — original BUG-10 would have fired to both
         $key = 'wishlist_yith_cust_123_55';
-        Ratuls_ACT_Dedup::mark_as_sent( $key, 'meta' );
+        Ratul_ACT_Dedup::mark_as_sent( $key, 'meta' );
 
-        Ratuls_ACT_Source_WooCommerce::handle_add_to_wishlist( 55, 1 );
+        Ratul_ACT_Source_WooCommerce::handle_add_to_wishlist( 55, 1 );
 
-        $this->assertCount( 1, Ratuls_ACT_Core::$dispatched,
+        $this->assertCount( 1, Ratul_ACT_Core::$dispatched,
             'BUG-10: event must still fire to pending platform (TikTok) when only Meta was sent.' );
 
-        $platforms = Ratuls_ACT_Core::$dispatched[0]['platforms'];
+        $platforms = Ratul_ACT_Core::$dispatched[0]['platforms'];
         $this->assertNotContains( 'meta',   $platforms, 'Meta must be excluded (already sent).' );
         $this->assertContains(    'tiktok', $platforms, 'TikTok must be included (pending).' );
     }
 
     public function test_no_dispatch_for_unknown_product(): void {
         // product ID 999 is not in the stub store
-        Ratuls_ACT_Source_WooCommerce::handle_add_to_wishlist( 999, 1 );
+        Ratul_ACT_Source_WooCommerce::handle_add_to_wishlist( 999, 1 );
 
-        $this->assertEmpty( Ratuls_ACT_Core::$dispatched,
+        $this->assertEmpty( Ratul_ACT_Core::$dispatched,
             'Unknown product must result in no dispatch.' );
     }
 
     public function test_custom_data_structure(): void {
-        Ratuls_ACT_Source_WooCommerce::handle_add_to_wishlist( 55, 1 );
+        Ratul_ACT_Source_WooCommerce::handle_add_to_wishlist( 55, 1 );
 
-        $custom = Ratuls_ACT_Core::$dispatched[0]['custom'];
+        $custom = Ratul_ACT_Core::$dispatched[0]['custom'];
         $this->assertSame( [ '55' ],           $custom['content_ids'] );
         $this->assertSame( 'Blue Sneakers',    $custom['content_name'] );
         $this->assertSame( 79.99,              $custom['value'] );

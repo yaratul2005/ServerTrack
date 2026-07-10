@@ -2,7 +2,7 @@
 
 use PHPUnit\Framework\TestCase;
 
-require_once __DIR__ . '/../includes/class-ratuls-act-event.php';
+require_once __DIR__ . '/../includes/class-ratul-ads-conversion-tracker-event.php';
 
 if (!function_exists('apply_filters')) {
     function apply_filters($tag, $value, $event) {
@@ -13,7 +13,7 @@ if (!function_exists('apply_filters')) {
 class EventTest extends TestCase {
 
     public function test_set_custom_data_merges_arrays() {
-        $event = new Ratuls_ACT_Event('Purchase', '123');
+        $event = new Ratul_ACT_Event('Purchase', '123');
 
         // Initial set
         $event->set_custom_data(['value' => 100.0, 'currency' => 'USD']);
@@ -29,7 +29,7 @@ class EventTest extends TestCase {
     }
 
     public function test_set_user_data_merges_arrays() {
-        $event = new Ratuls_ACT_Event('Purchase', '123');
+        $event = new Ratul_ACT_Event('Purchase', '123');
 
         // Initial set
         $event->set_user_data(['email' => 'test@example.com', 'phone' => '1234567890']);

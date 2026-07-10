@@ -320,17 +320,17 @@ https://developer.wordpress.org/apis/security/escaping/
 Remember: You must use the most appropriate functions for the context. There is pretty much an option for everything you could echo. Even echoing HTML safely.
 
 Example(s) from your plugin:
-admin/class-servertrack-admin.php:341 echo '<div style="color:#10b981; font-weight:600; padding:10px 0;"><span class="dashicons dashicons-yes-alt"></span> ' . __( 'Purchase event successfully synced.', 'servertrack' ) . '</div>';
+admin/class-servertrack-admin.php:341 echo '<div style="color:#10b981; font-weight:600; padding:10px 0;"><span class="dashicons dashicons-yes-alt"></span> ' . __( 'Purchase event successfully synced.', 'ratul-ads-conversion-tracker' ) . '</div>';
 # ✨ Issue: translated text is output with __() without escaping; use esc_html__() before concatenating into HTML.
-admin/class-servertrack-admin.php:344 echo '<a href="' . esc_url( $url ) . '" class="button button-primary" style="width:100%; text-align:center; margin-top:8px;">' . __( 'Fire Purchase Event anyway', 'servertrack' ) . '</a>';
+admin/class-servertrack-admin.php:344 echo '<a href="' . esc_url( $url ) . '" class="button button-primary" style="width:100%; text-align:center; margin-top:8px;">' . __( 'Fire Purchase Event anyway', 'ratul-ads-conversion-tracker' ) . '</a>';
 # ✨ Issue: link text uses __() without escaping; href is escaped but visible text should use esc_html__().
-admin/class-servertrack-admin.php:348 echo '<a href="' . esc_url( $url ) . '" class="button button-primary" style="width:100%; text-align:center;">' . __( 'Fire Purchase Event', 'servertrack' ) . '</a>';
+admin/class-servertrack-admin.php:348 echo '<a href="' . esc_url( $url ) . '" class="button button-primary" style="width:100%; text-align:center;">' . __( 'Fire Purchase Event', 'ratul-ads-conversion-tracker' ) . '</a>';
 # ✨ Issue: anchor text is not escaped because __() is used directly instead of esc_html__().
-admin/class-servertrack-admin.php:343 echo '<div style="color:#ef4444; font-weight:600; padding:10px 0;"><span class="dashicons dashicons-warning"></span> ' . __( 'Order marked as fraud. Sync ignored.', 'servertrack' ) . '</div>';
+admin/class-servertrack-admin.php:343 echo '<div style="color:#ef4444; font-weight:600; padding:10px 0;"><span class="dashicons dashicons-warning"></span> ' . __( 'Order marked as fraud. Sync ignored.', 'ratul-ads-conversion-tracker' ) . '</div>';
 # ✨ Issue: translated message is output with __() without escaping; use esc_html__() in HTML content.
-admin/class-servertrack-admin.php:349 echo '<a href="' . esc_url( $fraud_url ) . '" class="button" style="width:100%; text-align:center; color:#ef4444; border-color:#ef4444;">' . __( 'Mark as Fraud', 'servertrack' ) . '</a>';
+admin/class-servertrack-admin.php:349 echo '<a href="' . esc_url( $fraud_url ) . '" class="button" style="width:100%; text-align:center; color:#ef4444; border-color:#ef4444;">' . __( 'Mark as Fraud', 'ratul-ads-conversion-tracker' ) . '</a>';
 # ✨ Issue: button/link label uses __() without escaping; href is escaped but text should use esc_html__().
-admin/class-servertrack-admin.php:346 echo '<p>' . __( 'Manual purchase mode is active. This order has not been synced to advertising platforms yet.', 'servertrack' ) . '</p>';
+admin/class-servertrack-admin.php:346 echo '<p>' . __( 'Manual purchase mode is active. This order has not been synced to advertising platforms yet.', 'ratul-ads-conversion-tracker' ) . '</p>';
 # ✨ Issue: paragraph text is output with __() without escaping; use esc_html__() for safe HTML text output.
 
 
@@ -339,18 +339,18 @@ Note: The function __ retrieves the translation without escaping, please either:
 Use an alternative function that escapes the resulting value such as esc_html__ or esc_attr__ .
 Or wrap the __ function with a proper escaping function such as esc_html , esc_attr , wp_kses_post , etc.
 Examples:
-<h2><?php echo esc_html__('Settings page', 'servertrack'); ?></h2>
+<h2><?php echo esc_html__('Settings page', 'ratul-ads-conversion-tracker'); ?></h2>
 
-<h2><?php echo esc_html(__('Settings page', 'servertrack')); ?></h2>
+<h2><?php echo esc_html(__('Settings page', 'ratul-ads-conversion-tracker')); ?></h2>
 
 Example(s) from your plugin:
-admin/class-servertrack-admin.php:348 echo '<a href="' . esc_url( $url ) . '" class="button button-primary" style="width:100%; text-align:center;">' . __( 'Fire Purchase Event', 'servertrack' ) . '</a>';
- -----> __('Fire Purchase Event', 'servertrack')
-admin/class-servertrack-admin.php:346 echo '<p>' . __( 'Manual purchase mode is active. This order has not been synced to advertising platforms yet.', 'servertrack' ) . '</p>';
-admin/class-servertrack-admin.php:341 echo '<div style="color:#10b981; font-weight:600; padding:10px 0;"><span class="dashicons dashicons-yes-alt"></span> ' . __( 'Purchase event successfully synced.', 'servertrack' ) . '</div>';
- -----> __('Purchase event successfully synced.', 'servertrack')
-admin/class-servertrack-admin.php:344 echo '<a href="' . esc_url( $url ) . '" class="button button-primary" style="width:100%; text-align:center; margin-top:8px;">' . __( 'Fire Purchase Event anyway', 'servertrack' ) . '</a>';
- -----> __('Fire Purchase Event anyway', 'servertrack')
+admin/class-servertrack-admin.php:348 echo '<a href="' . esc_url( $url ) . '" class="button button-primary" style="width:100%; text-align:center;">' . __( 'Fire Purchase Event', 'ratul-ads-conversion-tracker' ) . '</a>';
+ -----> __('Fire Purchase Event', 'ratul-ads-conversion-tracker')
+admin/class-servertrack-admin.php:346 echo '<p>' . __( 'Manual purchase mode is active. This order has not been synced to advertising platforms yet.', 'ratul-ads-conversion-tracker' ) . '</p>';
+admin/class-servertrack-admin.php:341 echo '<div style="color:#10b981; font-weight:600; padding:10px 0;"><span class="dashicons dashicons-yes-alt"></span> ' . __( 'Purchase event successfully synced.', 'ratul-ads-conversion-tracker' ) . '</div>';
+ -----> __('Purchase event successfully synced.', 'ratul-ads-conversion-tracker')
+admin/class-servertrack-admin.php:344 echo '<a href="' . esc_url( $url ) . '" class="button button-primary" style="width:100%; text-align:center; margin-top:8px;">' . __( 'Fire Purchase Event anyway', 'ratul-ads-conversion-tracker' ) . '</a>';
+ -----> __('Fire Purchase Event anyway', 'ratul-ads-conversion-tracker')
 ... out of a total of 6 incidences.
 
 ✔️ You can check this using Plugin Check.
@@ -426,7 +426,7 @@ Related to this, using if (!function_exists('NAME')) { around all your functions
 Remember: Good prefix names are unique and distinct to your plugin. This will help you and the next person in debugging, as well as prevent conflicts.
 
 Analysis result:
-# This plugin is using the prefixes "servertrack", "server_track" for 102 element(s).
+# This plugin is using the prefixes "ratul-ads-conversion-tracker", "server_track" for 102 element(s).
 
 # Using the common word "wc" as a prefix.
 tests/bootstrap.php:64 class WC_Order
