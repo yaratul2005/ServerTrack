@@ -98,7 +98,7 @@ class Ratuls_ACT_WooAbandonment {
         if ( ! isset( $schedules['ratuls_act_15min'] ) ) {
             $schedules['ratuls_act_15min'] = [
                 'interval' => 15 * MINUTE_IN_SECONDS,
-                'display'  => __( 'Every 15 minutes (Ratuls_ACT)', 'ratuls-act' ),
+                'display'  => __( 'Every 15 minutes (Ratuls_ACT)', 'servertrack' ),
             ];
         }
         return $schedules;
@@ -435,4 +435,5 @@ class Ratuls_ACT_WooAbandonment {
         update_option( self::STORE_KEY, $store, false );
     }
 }
+
 

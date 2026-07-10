@@ -276,7 +276,7 @@ class Ratuls_ACT_PixelDedup {
 
 		return new WP_Error(
 			'rest_forbidden',
-			__( 'Nonce verification failed.', 'ratuls-act' ),
+			__( 'Nonce verification failed.', 'servertrack' ),
 			[ 'status' => 403 ]
 		);
 	}
@@ -297,4 +297,5 @@ class Ratuls_ACT_PixelDedup {
 		return new WP_REST_Response( [ 'event_id' => $event_id ], 200 );
 	}
 }
+
 

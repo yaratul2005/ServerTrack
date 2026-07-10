@@ -8,7 +8,7 @@
  * Requires PHP:      8.0
  * Author:            MD. Yaser Ahmmed Ratul
  * License:           GPL-2.0-or-later
- * Text Domain:       ratuls-act
+ * Text Domain:       servertrack
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -306,7 +306,7 @@ add_filter( 'cron_schedules', function ( array $schedules ): array {
     if ( ! isset( $schedules['every_five_minutes'] ) ) {
         $schedules['every_five_minutes'] = [
             'interval' => 300,
-            'display'  => __( 'Every 5 Minutes', 'ratuls-act' ),
+            'display'  => __( 'Every 5 Minutes', 'servertrack' ),
         ];
     }
     return $schedules;
@@ -343,4 +343,5 @@ register_deactivation_hook( __FILE__, function (): void {
     wp_clear_scheduled_hook( 'ratuls_act_process_retry_queue' );
     wp_clear_scheduled_hook( 'ratuls_act_check_abandonment' );
 } );
+
 

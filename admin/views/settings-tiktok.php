@@ -8,7 +8,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 <div class="st-settings-section">
 <table class="form-table" role="presentation">
     <tr>
-        <th scope="row"><?php esc_html_e( 'Enable TikTok Events', 'ratuls-act' ); ?></th>
+        <th scope="row"><?php esc_html_e( 'Enable TikTok Events', 'servertrack' ); ?></th>
         <td>
             <label class="st-toggle-label st-row" style="cursor:pointer; display:flex; align-items:center;">
     <div class="st-toggle" style="margin-right:12px;">
@@ -16,12 +16,12 @@ if ( ! defined( 'ABSPATH' ) ) exit;
                     <?php checked( 1, get_option( 'ratuls_act_tiktok_enabled', 0 ) ); ?> />
         <span class="st-toggle-slider"></span>
     </div>
-    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'Send events to TikTok Events API', 'ratuls-act' ); ?></span>
+    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'Send events to TikTok Events API', 'servertrack' ); ?></span>
 </label>
         </td>
     </tr>
     <tr>
-        <th scope="row"><label for="ratuls_act_tiktok_pixel_id"><?php esc_html_e( 'TikTok Pixel ID', 'ratuls-act' ); ?></label></th>
+        <th scope="row"><label for="ratuls_act_tiktok_pixel_id"><?php esc_html_e( 'TikTok Pixel ID', 'servertrack' ); ?></label></th>
         <td>
             <input type="text"
                    id="ratuls_act_tiktok_pixel_id"
@@ -30,11 +30,11 @@ if ( ! defined( 'ABSPATH' ) ) exit;
                    class="regular-text st-field-input"
                    placeholder="e.g. C1234ABCD5678"
                    autocomplete="off" />
-            <p class="description"><?php esc_html_e( 'Found in TikTok Ads Manager → Assets → Events → Web Events.', 'ratuls-act' ); ?></p>
+            <p class="description"><?php esc_html_e( 'Found in TikTok Ads Manager → Assets → Events → Web Events.', 'servertrack' ); ?></p>
         </td>
     </tr>
     <tr>
-        <th scope="row"><label for="ratuls_act_tiktok_access_token"><?php esc_html_e( 'Access Token', 'ratuls-act' ); ?></label></th>
+        <th scope="row"><label for="ratuls_act_tiktok_access_token"><?php esc_html_e( 'Access Token', 'servertrack' ); ?></label></th>
         <td>
             <input type="password"
                    id="ratuls_act_tiktok_access_token"
@@ -42,16 +42,17 @@ if ( ! defined( 'ABSPATH' ) ) exit;
                    value="<?php echo esc_attr( get_option( 'ratuls_act_tiktok_access_token', '' ) ); ?>"
                    class="regular-text st-field-input"
                    autocomplete="new-password" />
-            <p class="description"><?php esc_html_e( 'Generate from TikTok Events Manager → Manage → Generate Access Token.', 'ratuls-act' ); ?></p>
+            <p class="description"><?php esc_html_e( 'Generate from TikTok Events Manager → Manage → Generate Access Token.', 'servertrack' ); ?></p>
         </td>
     </tr>
 </table>
 </div><!-- /.st-settings-section -->
 <hr />
-<h2><?php esc_html_e( 'Send Test Event', 'ratuls-act' ); ?></h2>
-<p><?php esc_html_e( 'Sends a dummy Purchase event to TikTok Events API to verify your credentials.', 'ratuls-act' ); ?></p>
+<h2><?php esc_html_e( 'Send Test Event', 'servertrack' ); ?></h2>
+<p><?php esc_html_e( 'Sends a dummy Purchase event to TikTok Events API to verify your credentials.', 'servertrack' ); ?></p>
 <button type="button" class="button button-secondary ratuls-act-test-btn" data-platform="tiktok">
-    <?php esc_html_e( 'Send Test Event → TikTok', 'ratuls-act' ); ?>
+    <?php esc_html_e( 'Send Test Event → TikTok', 'servertrack' ); ?>
 </button>
 <div class="st-test-result ratuls-act-test-response" id="ratuls-act-test-response-tiktok"></div>
+
 

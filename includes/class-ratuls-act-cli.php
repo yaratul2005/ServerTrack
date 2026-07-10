@@ -333,5 +333,6 @@ class Ratuls_ACT_CLI {
 }
 
 // Register all subcommands
-WP_CLI::add_command( 'ratuls-act', 'Ratuls_ACT_CLI' );
+WP_CLI::add_command( 'servertrack', 'Ratuls_ACT_CLI' );
+
 

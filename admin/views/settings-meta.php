@@ -8,7 +8,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 <div class="st-settings-section">
 <table class="form-table" role="presentation">
     <tr>
-        <th scope="row"><?php esc_html_e( 'Enable Meta CAPI', 'ratuls-act' ); ?></th>
+        <th scope="row"><?php esc_html_e( 'Enable Meta CAPI', 'servertrack' ); ?></th>
         <td>
             <label class="st-toggle-label st-row" style="cursor:pointer; display:flex; align-items:center;">
     <div class="st-toggle" style="margin-right:12px;">
@@ -16,12 +16,12 @@ if ( ! defined( 'ABSPATH' ) ) exit;
                     <?php checked( 1, get_option( 'ratuls_act_meta_enabled', 0 ) ); ?> />
         <span class="st-toggle-slider"></span>
     </div>
-    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'Send events to Meta Conversions API', 'ratuls-act' ); ?></span>
+    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'Send events to Meta Conversions API', 'servertrack' ); ?></span>
 </label>
         </td>
     </tr>
     <tr>
-        <th scope="row"><label for="ratuls_act_meta_pixel_id"><?php esc_html_e( 'Meta Pixel ID', 'ratuls-act' ); ?></label></th>
+        <th scope="row"><label for="ratuls_act_meta_pixel_id"><?php esc_html_e( 'Meta Pixel ID', 'servertrack' ); ?></label></th>
         <td>
             <input type="text"
                    id="ratuls_act_meta_pixel_id"
@@ -33,7 +33,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
         </td>
     </tr>
     <tr>
-        <th scope="row"><label for="ratuls_act_meta_access_token"><?php esc_html_e( 'System User Access Token', 'ratuls-act' ); ?></label></th>
+        <th scope="row"><label for="ratuls_act_meta_access_token"><?php esc_html_e( 'System User Access Token', 'servertrack' ); ?></label></th>
         <td>
             <input type="password"
                    id="ratuls_act_meta_access_token"
@@ -41,23 +41,23 @@ if ( ! defined( 'ABSPATH' ) ) exit;
                    value="<?php echo esc_attr( get_option( 'ratuls_act_meta_access_token', '' ) ); ?>"
                    class="regular-text st-field-input"
                    autocomplete="new-password" />
-            <p class="description"><?php esc_html_e( 'Generate from Meta Events Manager → Settings → System User Token.', 'ratuls-act' ); ?></p>
+            <p class="description"><?php esc_html_e( 'Generate from Meta Events Manager → Settings → System User Token.', 'servertrack' ); ?></p>
         </td>
     </tr>
     <!-- Advanced Matching -->
     <tr>
-        <th scope="row"><label><?php esc_html_e( 'Advanced Matching PII', 'ratuls-act' ); ?></label></th>
+        <th scope="row"><label><?php esc_html_e( 'Advanced Matching PII', 'servertrack' ); ?></label></th>
         <td>
             <fieldset>
-                <legend class="screen-reader-text"><span><?php esc_html_e( 'Advanced Matching Signals', 'ratuls-act' ); ?></span></legend>
-                <p class="description" style="margin-bottom:8px;"><?php esc_html_e( 'Select which customer signals to hash and send to Meta to improve match quality.', 'ratuls-act' ); ?></p>
+                <legend class="screen-reader-text"><span><?php esc_html_e( 'Advanced Matching Signals', 'servertrack' ); ?></span></legend>
+                <p class="description" style="margin-bottom:8px;"><?php esc_html_e( 'Select which customer signals to hash and send to Meta to improve match quality.', 'servertrack' ); ?></p>
                 <label class="st-toggle-label st-row" style="cursor:pointer; display:flex; align-items:center;">
     <div class="st-toggle" style="margin-right:12px;">
         <input type="checkbox" name="ratuls_act_meta_am_email" value="1"
                         <?php checked( 1, get_option( 'ratuls_act_meta_am_email', 1 ) ); ?>>
         <span class="st-toggle-slider"></span>
     </div>
-    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'Email', 'ratuls-act' ); ?></span>
+    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'Email', 'servertrack' ); ?></span>
 </label><br>
                 <label class="st-toggle-label st-row" style="cursor:pointer; display:flex; align-items:center;">
     <div class="st-toggle" style="margin-right:12px;">
@@ -65,7 +65,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
                         <?php checked( 1, get_option( 'ratuls_act_meta_am_phone', 1 ) ); ?>>
         <span class="st-toggle-slider"></span>
     </div>
-    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'Phone Number', 'ratuls-act' ); ?></span>
+    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'Phone Number', 'servertrack' ); ?></span>
 </label><br>
                 <label class="st-toggle-label st-row" style="cursor:pointer; display:flex; align-items:center;">
     <div class="st-toggle" style="margin-right:12px;">
@@ -73,7 +73,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
                         <?php checked( 1, get_option( 'ratuls_act_meta_am_name', 1 ) ); ?>>
         <span class="st-toggle-slider"></span>
     </div>
-    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'First & Last Name', 'ratuls-act' ); ?></span>
+    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'First & Last Name', 'servertrack' ); ?></span>
 </label><br>
                 <label class="st-toggle-label st-row" style="cursor:pointer; display:flex; align-items:center;">
     <div class="st-toggle" style="margin-right:12px;">
@@ -81,7 +81,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
                         <?php checked( 1, get_option( 'ratuls_act_meta_am_city', 1 ) ); ?>>
         <span class="st-toggle-slider"></span>
     </div>
-    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'City', 'ratuls-act' ); ?></span>
+    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'City', 'servertrack' ); ?></span>
 </label><br>
                 <label class="st-toggle-label st-row" style="cursor:pointer; display:flex; align-items:center;">
     <div class="st-toggle" style="margin-right:12px;">
@@ -89,7 +89,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
                         <?php checked( 1, get_option( 'ratuls_act_meta_am_state', 1 ) ); ?>>
         <span class="st-toggle-slider"></span>
     </div>
-    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'State / Province', 'ratuls-act' ); ?></span>
+    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'State / Province', 'servertrack' ); ?></span>
 </label><br>
                 <label class="st-toggle-label st-row" style="cursor:pointer; display:flex; align-items:center;">
     <div class="st-toggle" style="margin-right:12px;">
@@ -97,7 +97,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
                         <?php checked( 1, get_option( 'ratuls_act_meta_am_zip', 1 ) ); ?>>
         <span class="st-toggle-slider"></span>
     </div>
-    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'ZIP / Postal Code', 'ratuls-act' ); ?></span>
+    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'ZIP / Postal Code', 'servertrack' ); ?></span>
 </label><br>
                 <label class="st-toggle-label st-row" style="cursor:pointer; display:flex; align-items:center;">
     <div class="st-toggle" style="margin-right:12px;">
@@ -105,13 +105,13 @@ if ( ! defined( 'ABSPATH' ) ) exit;
                         <?php checked( 1, get_option( 'ratuls_act_meta_am_country', 1 ) ); ?>>
         <span class="st-toggle-slider"></span>
     </div>
-    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'Country', 'ratuls-act' ); ?></span>
+    <span class="st-toggle-text" style="font-weight:500;"><?php esc_html_e( 'Country', 'servertrack' ); ?></span>
 </label>
             </fieldset>
         </td>
     </tr>
     <tr>
-        <th scope="row"><label for="ratuls_act_meta_test_event_code"><?php esc_html_e( 'Test Event Code', 'ratuls-act' ); ?></label></th>
+        <th scope="row"><label for="ratuls_act_meta_test_event_code"><?php esc_html_e( 'Test Event Code', 'servertrack' ); ?></label></th>
         <td>
             <input type="text"
                    id="ratuls_act_meta_test_event_code"
@@ -120,16 +120,17 @@ if ( ! defined( 'ABSPATH' ) ) exit;
                    class="regular-text st-field-input"
                    placeholder="TEST12345 (optional)"
                    autocomplete="off" />
-            <p class="description"><?php esc_html_e( 'Only required when using Meta Test Events tool. Leave blank in production.', 'ratuls-act' ); ?></p>
+            <p class="description"><?php esc_html_e( 'Only required when using Meta Test Events tool. Leave blank in production.', 'servertrack' ); ?></p>
         </td>
     </tr>
 </table>
 </div><!-- /.st-settings-section -->
 <hr />
-<h2><?php esc_html_e( 'Send Test Event', 'ratuls-act' ); ?></h2>
-<p><?php esc_html_e( 'Sends a dummy Purchase event to Meta CAPI to verify your credentials.', 'ratuls-act' ); ?></p>
+<h2><?php esc_html_e( 'Send Test Event', 'servertrack' ); ?></h2>
+<p><?php esc_html_e( 'Sends a dummy Purchase event to Meta CAPI to verify your credentials.', 'servertrack' ); ?></p>
 <button type="button" class="button button-secondary ratuls-act-test-btn" data-platform="meta">
-    <?php esc_html_e( 'Send Test Event → Meta', 'ratuls-act' ); ?>
+    <?php esc_html_e( 'Send Test Event → Meta', 'servertrack' ); ?>
 </button>
 <div class="st-test-result ratuls-act-test-response" id="ratuls-act-test-response-meta"></div>
+
 

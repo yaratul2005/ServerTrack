@@ -92,17 +92,17 @@ class Ratuls_ACT_Dashboard {
         );
 
         add_menu_page(
-            __( 'Ratuls- Ads Conversion Tracker', 'ratuls-act' ),
-            __( 'Ratuls-ACT', 'ratuls-act' ),
+            __( 'Ratuls- Ads Conversion Tracker', 'servertrack' ),
+            __( 'Ratuls-ACT', 'servertrack' ),
             'manage_options',
-            'ratuls-act',
+            'servertrack',
             [ self::class, 'render_page' ],
             $icon,
             56
         );
 
-        add_submenu_page( 'ratuls-act', __( 'Dashboard', 'ratuls-act' ), __( 'Dashboard', 'ratuls-act' ), 'manage_options', 'ratuls-act',          [ self::class, 'render_page' ] );
-        add_submenu_page( 'ratuls-act', __( 'Settings',  'ratuls-act' ), __( 'Settings',  'ratuls-act' ), 'manage_options', 'ratuls-act-settings', [ 'Ratuls_ACT_Admin', 'render_page' ] );
+        add_submenu_page( 'servertrack', __( 'Dashboard', 'servertrack' ), __( 'Dashboard', 'servertrack' ), 'manage_options', 'servertrack',          [ self::class, 'render_page' ] );
+        add_submenu_page( 'servertrack', __( 'Settings',  'servertrack' ), __( 'Settings',  'servertrack' ), 'manage_options', 'ratuls-act-settings', [ 'Ratuls_ACT_Admin', 'render_page' ] );
 
     }
 
@@ -128,7 +128,7 @@ class Ratuls_ACT_Dashboard {
 
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         $current_page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
-        if ( $current_page !== '' && $current_page !== 'ratuls-act' ) {
+        if ( $current_page !== '' && $current_page !== 'servertrack' ) {
             return;
         }
 
@@ -192,7 +192,7 @@ class Ratuls_ACT_Dashboard {
                     <?php foreach ( $platforms as $p ) :
                         $enabled     = $p['enabled'];
                         $badge       = $enabled ? 'on' : 'off';
-                        $badge_label = $enabled ? esc_html( $p['status'] ) : esc_html__( 'Disabled', 'ratuls-act' );
+                        $badge_label = $enabled ? esc_html( $p['status'] ) : esc_html__( 'Disabled', 'servertrack' );
                         $warn        = $enabled && strpos( $p['status'], 'Missing' ) !== false;
                         if ( $warn ) { $badge = 'warn'; }
                     ?>
@@ -201,7 +201,7 @@ class Ratuls_ACT_Dashboard {
                         <?php if ( $enabled ) : ?>
                             <span class="st-plat-stat"><?php echo esc_html( $p['today'] ?? 0 ); ?> today</span>
                         <?php endif; ?>
-                        <span class="st-badge <?php echo esc_attr( $badge ); ?>"><?php echo $badge_label; ?></span>
+                        <span class="st-badge <?php echo esc_attr( $badge ); ?>"><?php echo esc_html( $badge_label ); ?></span>
                     </div>
                     <?php endforeach; ?>
                 </div>
@@ -309,14 +309,14 @@ class Ratuls_ACT_Dashboard {
                     $ts    = esc_html( $item['last_attempt'] ?? '' );
                 ?>
                 <div class="st-retry-item">
-                    <span class="st-retry-plat"><?php echo $plat; ?></span>
-                    <span><?php echo $event; ?></span>
-                    <span style="margin-left:auto;color:var(--st-faint);"><?php echo $tries; ?> attempt<?php echo $tries !== 1 ? 's' : ''; ?></span>
-                    <span style="color:var(--st-faint);font-size:11px;"><?php echo $ts; ?></span>
+                    <span class="st-retry-plat"><?php echo esc_html( $plat ); ?></span>
+                    <span><?php echo esc_html( $event ); ?></span>
+                    <span style="margin-left:auto;color:var(--st-faint);"><?php echo esc_html( $tries ); ?> attempt<?php echo $tries !== 1 ? 's' : ''; ?></span>
+                    <span style="color:var(--st-faint);font-size:11px;"><?php echo esc_html( $ts ); ?></span>
                 </div>
                 <?php endforeach; ?>
                 <?php if ( count( $retry_items ) > 10 ) : ?>
-                <div style="text-align:center;padding:8px;font-size:12px;color:var(--st-faint);">+ <?php echo count( $retry_items ) - 10; ?> more</div>
+                <div style="text-align:center;padding:8px;font-size:12px;color:var(--st-faint);">+ <?php echo esc_html( count( $retry_items ) - 10 ); ?> more</div>
                 <?php endif; ?>
             </div>
         </div>
@@ -337,13 +337,13 @@ class Ratuls_ACT_Dashboard {
 
             <div class="st-filter-bar">
                 <select id="st-fp" onchange="stFilter()">
-                    <option value=""><?php esc_html_e( 'All Platforms', 'ratuls-act' ); ?></option>
+                    <option value=""><?php esc_html_e( 'All Platforms', 'servertrack' ); ?></option>
                     <option value="meta">Meta</option>
                     <option value="tiktok">TikTok</option>
                     <option value="google">Google</option>
                 </select>
                 <select id="st-fs" onchange="stFilter()">
-                    <option value=""><?php esc_html_e( 'All Statuses', 'ratuls-act' ); ?></option>
+                    <option value=""><?php esc_html_e( 'All Statuses', 'servertrack' ); ?></option>
                     <option value="success">Success</option>
                     <option value="error">Error</option>
                     <option value="skipped">Skipped</option>
@@ -637,7 +637,7 @@ class Ratuls_ACT_Dashboard {
                 esc_attr( $platform ), esc_attr( $status ), esc_attr( $event ), esc_attr( (string) $order ),
                 esc_html( $ts ),
                 esc_attr( $cls ),
-                $icon, // phpcs:ignore — sanitised SVG
+                wp_kses_post( $icon ),
                 esc_html( ucfirst( $status ) ),
                 esc_html( ucfirst( $platform ) ),
                 esc_html( $event ),
@@ -770,4 +770,5 @@ class Ratuls_ACT_Dashboard {
         wp_send_json_success( [ 'drained' => $drained ] );
     }
 }
+
 

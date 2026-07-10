@@ -143,7 +143,7 @@ class Ratuls_ACT_CustomEvents {
             $term = get_queried_object();
             $category_name = $term ? (string) $term->name : '';
         } elseif ( is_shop() ) {
-            $category_name = __( 'Shop', 'ratuls-act' );
+            $category_name = __( 'Shop', 'servertrack' );
         }
 
         // Dedup: once per category per session (10 min TTL)
@@ -268,4 +268,5 @@ class Ratuls_ACT_CustomEvents {
         return $data;
     }
 }
+
 

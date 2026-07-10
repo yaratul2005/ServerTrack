@@ -284,7 +284,7 @@ class Ratuls_ACT_Admin {
 
         $actions['st_manual_purchase'] = [
             'url'    => $url,
-            'name'   => __( 'Fire CAPI Purchase Event', 'ratuls-act' ),
+            'name'   => __( 'Fire CAPI Purchase Event', 'servertrack' ),
             'action' => 'st-manual-purchase',
         ];
 
@@ -310,7 +310,7 @@ class Ratuls_ACT_Admin {
 
         add_meta_box(
             'ratuls_act_manual_purchase',
-            __( 'Ratuls_ACT - Purchase Event', 'ratuls-act' ),
+            __( 'Ratuls_ACT - Purchase Event', 'servertrack' ),
             [ self::class, 'render_manual_purchase_meta_box' ],
             $screen,
             'side',
@@ -338,15 +338,15 @@ class Ratuls_ACT_Admin {
         $fraud_url = wp_nonce_url( admin_url( 'admin.php?action=ratuls_act_mark_fraud&order_id=' . $order->get_id() ), 'ratuls_act_mark_fraud_' . $order->get_id() );
 
         if ( $sent ) {
-            echo '<div style="color:#10b981; font-weight:600; padding:10px 0;"><span class="dashicons dashicons-yes-alt"></span> ' . __( 'Purchase event successfully synced.', 'ratuls-act' ) . '</div>';
+            echo '<div style="color:#10b981; font-weight:600; padding:10px 0;"><span class="dashicons dashicons-yes-alt"></span> ' . __( 'Purchase event successfully synced.', 'servertrack' ) . '</div>';
         } elseif ( $fraud ) {
-            echo '<div style="color:#ef4444; font-weight:600; padding:10px 0;"><span class="dashicons dashicons-warning"></span> ' . __( 'Order marked as fraud. Sync ignored.', 'ratuls-act' ) . '</div>';
-            echo '<a href="' . esc_url( $url ) . '" class="button button-primary" style="width:100%; text-align:center; margin-top:8px;">' . __( 'Fire Purchase Event anyway', 'ratuls-act' ) . '</a>';
+            echo '<div style="color:#ef4444; font-weight:600; padding:10px 0;"><span class="dashicons dashicons-warning"></span> ' . __( 'Order marked as fraud. Sync ignored.', 'servertrack' ) . '</div>';
+            echo '<a href="' . esc_url( $url ) . '" class="button button-primary" style="width:100%; text-align:center; margin-top:8px;">' . __( 'Fire Purchase Event anyway', 'servertrack' ) . '</a>';
         } else {
-            echo '<p>' . __( 'Manual purchase mode is active. This order has not been synced to advertising platforms yet.', 'ratuls-act' ) . '</p>';
+            echo '<p>' . __( 'Manual purchase mode is active. This order has not been synced to advertising platforms yet.', 'servertrack' ) . '</p>';
             echo '<div style="display:flex; flex-direction:column; gap:8px;">';
-            echo '<a href="' . esc_url( $url ) . '" class="button button-primary" style="width:100%; text-align:center;">' . __( 'Fire Purchase Event', 'ratuls-act' ) . '</a>';
-            echo '<a href="' . esc_url( $fraud_url ) . '" class="button" style="width:100%; text-align:center; color:#ef4444; border-color:#ef4444;">' . __( 'Mark as Fraud', 'ratuls-act' ) . '</a>';
+            echo '<a href="' . esc_url( $url ) . '" class="button button-primary" style="width:100%; text-align:center;">' . __( 'Fire Purchase Event', 'servertrack' ) . '</a>';
+            echo '<a href="' . esc_url( $fraud_url ) . '" class="button" style="width:100%; text-align:center; color:#ef4444; border-color:#ef4444;">' . __( 'Mark as Fraud', 'servertrack' ) . '</a>';
             echo '</div>';
         }
     }
@@ -359,11 +359,11 @@ class Ratuls_ACT_Admin {
         foreach ( $columns as $key => $column ) {
             $new_columns[ $key ] = $column;
             if ( 'order_status' === $key ) {
-                $new_columns['ratuls_act_capi'] = __( 'CAPI Purchase', 'ratuls-act' );
+                $new_columns['ratuls_act_capi'] = __( 'CAPI Purchase', 'servertrack' );
             }
         }
         if ( ! isset( $new_columns['ratuls_act_capi'] ) ) {
-            $new_columns['ratuls_act_capi'] = __( 'CAPI Purchase', 'ratuls-act' );
+            $new_columns['ratuls_act_capi'] = __( 'CAPI Purchase', 'servertrack' );
         }
         return $new_columns;
     }
@@ -389,16 +389,16 @@ class Ratuls_ACT_Admin {
         $fraud = $order->get_meta( '_ratuls_act_manual_purchase_fraud' ) === 'yes';
 
         if ( $sent ) {
-            echo '<span style="color:#10b981; font-weight:600;"><span class="dashicons dashicons-yes-alt" style="vertical-align:middle; font-size:18px;"></span> ' . esc_html__( 'Approved', 'ratuls-act' ) . '</span>';
+            echo '<span style="color:#10b981; font-weight:600;"><span class="dashicons dashicons-yes-alt" style="vertical-align:middle; font-size:18px;"></span> ' . esc_html__( 'Approved', 'servertrack' ) . '</span>';
         } elseif ( $fraud ) {
-            echo '<span style="color:#ef4444; font-weight:600;"><span class="dashicons dashicons-warning" style="vertical-align:middle; font-size:18px;"></span> ' . esc_html__( 'Fraud / Ignored', 'ratuls-act' ) . '</span>';
+            echo '<span style="color:#ef4444; font-weight:600;"><span class="dashicons dashicons-warning" style="vertical-align:middle; font-size:18px;"></span> ' . esc_html__( 'Fraud / Ignored', 'servertrack' ) . '</span>';
         } else {
             $approve_url = wp_nonce_url( admin_url( 'admin.php?action=ratuls_act_manual_purchase&order_id=' . $order->get_id() ), 'ratuls_act_manual_purchase_' . $order->get_id() );
             $fraud_url   = wp_nonce_url( admin_url( 'admin.php?action=ratuls_act_mark_fraud&order_id=' . $order->get_id() ), 'ratuls_act_mark_fraud_' . $order->get_id() );
 
             echo '<div style="display:flex; gap:6px;">';
-            echo '<a href="' . esc_url( $approve_url ) . '" class="button button-small button-primary" style="background:#0ea5a0; border-color:#0ea5a0;">' . esc_html__( 'Approve & Sync', 'ratuls-act' ) . '</a>';
-            echo '<a href="' . esc_url( $fraud_url ) . '" class="button button-small" style="color:#ef4444; border-color:#ef4444;">' . esc_html__( 'Mark Fraud', 'ratuls-act' ) . '</a>';
+            echo '<a href="' . esc_url( $approve_url ) . '" class="button button-small button-primary" style="background:#0ea5a0; border-color:#0ea5a0;">' . esc_html__( 'Approve & Sync', 'servertrack' ) . '</a>';
+            echo '<a href="' . esc_url( $fraud_url ) . '" class="button button-small" style="color:#ef4444; border-color:#ef4444;">' . esc_html__( 'Mark Fraud', 'servertrack' ) . '</a>';
             echo '</div>';
         }
     }
@@ -424,7 +424,7 @@ class Ratuls_ACT_Admin {
 
         $url = add_query_arg( [
             'st_manual_status' => 'success',
-            'st_manual_msg'    => urlencode( __( 'Order marked as fraud. Purchase event ignored.', 'ratuls-act' ) )
+            'st_manual_msg'    => urlencode( __( 'Order marked as fraud. Purchase event ignored.', 'servertrack' ) )
         ], $url );
 
         wp_safe_redirect( $url );
@@ -432,9 +432,14 @@ class Ratuls_ACT_Admin {
     }
 
     public static function render_manual_purchase_notice() {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         if ( isset( $_GET['st_manual_status'] ) && isset( $_GET['st_manual_msg'] ) ) {
-            $class = $_GET['st_manual_status'] === 'success' ? 'notice-success' : 'notice-error';
-            $message = sanitize_text_field( urldecode( $_GET['st_manual_msg'] ) );
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+            $status = sanitize_text_field( wp_unslash( $_GET['st_manual_status'] ) );
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+            $msg = sanitize_text_field( wp_unslash( $_GET['st_manual_msg'] ) );
+            $class = $status === 'success' ? 'notice-success' : 'notice-error';
+            $message = urldecode( $msg );
             printf( '<div class="notice %1$s is-dismissible"><p>%2$s</p></div>', esc_attr( $class ), esc_html( $message ) );
         }
     }
@@ -590,10 +595,10 @@ class Ratuls_ACT_Admin {
                 <nav>
                     <a href="<?php echo esc_url( admin_url( 'admin.php?page=ratuls-act' ) ); ?>"
                        style="color:rgba(255,255,255,.6);text-decoration:none;font-size:.8125rem;margin-right:12px;"
-                    ><?php esc_html_e( 'Dashboard', 'ratuls-act' ); ?></a>
+                    ><?php esc_html_e( 'Dashboard', 'servertrack' ); ?></a>
                     <a href="<?php echo esc_url( self::settings_url() ); ?>"
                        style="color:rgba(255,255,255,.6);text-decoration:none;font-size:.8125rem;"
-                    ><?php esc_html_e( 'Settings', 'ratuls-act' ); ?></a>
+                    ><?php esc_html_e( 'Settings', 'servertrack' ); ?></a>
                 </nav>
             </div>
         </div>
@@ -630,18 +635,18 @@ class Ratuls_ACT_Admin {
         <nav class="st-tab-nav">
             <?php
             $tabs = [
-                'general' => __( 'General', 'ratuls-act' ),
-                'meta'    => __( 'Meta CAPI', 'ratuls-act' ),
-                'google'  => __( 'Google Ads', 'ratuls-act' ),
-                'tiktok'  => __( 'TikTok', 'ratuls-act' ),
-                'sources' => __( 'Event Sources', 'ratuls-act' ),
-                'license' => __( 'License', 'ratuls-act' ),
+                'general' => __( 'General', 'servertrack' ),
+                'meta'    => __( 'Meta CAPI', 'servertrack' ),
+                'google'  => __( 'Google Ads', 'servertrack' ),
+                'tiktok'  => __( 'TikTok', 'servertrack' ),
+                'sources' => __( 'Event Sources', 'servertrack' ),
+                'license' => __( 'License', 'servertrack' ),
             ];
             foreach ( $tabs as $slug => $label ) :
                 $url     = esc_url( self::settings_url( $slug ) );
                 $classes = 'nav-tab' . ( $tab === $slug ? ' nav-tab-active' : '' );
             ?>
-            <a href="<?php echo $url; ?>" class="<?php echo esc_attr( $classes ); ?>"><?php echo esc_html( $label ); ?></a>
+            <a href="<?php echo esc_url( $url ); ?>" class="<?php echo esc_attr( $classes ); ?>"><?php echo esc_html( $label ); ?></a>
             <?php endforeach; ?>
         </nav>
 
@@ -662,7 +667,7 @@ class Ratuls_ACT_Admin {
             if ( file_exists( $view ) ) {
                 include $view;
             } else {
-                echo '<p>' . esc_html__( 'View not found.', 'ratuls-act' ) . '</p>';
+                echo '<p>' . esc_html__( 'View not found.', 'servertrack' ) . '</p>';
             }
             submit_button();
             ?>
@@ -742,4 +747,5 @@ class Ratuls_ACT_Admin {
         wp_send_json_success( $stats );
     }
 }
+
 

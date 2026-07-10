@@ -182,7 +182,7 @@ class Ratuls_ACT_Webhook {
 	public static function send_test( string $url, string $secret = '' ): array {
 		$payload  = [
 			'event'     => 'Test',
-			'platform'  => 'ratuls-act',
+			'platform'  => 'servertrack',
 			'order_id'  => 0,
 			'status'    => 'success',
 			'emq'       => [],
@@ -221,4 +221,5 @@ class Ratuls_ACT_Webhook {
 		];
 	}
 }
+
 

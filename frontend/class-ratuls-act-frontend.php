@@ -420,7 +420,7 @@ class Ratuls_ACT_Frontend {
             $config['current_category'] = $term ? $term->name : '';
         } elseif ( function_exists( 'is_shop' ) && is_shop() ) {
             $config['is_product_archive'] = true;
-            $config['current_category']   = __( 'Shop', 'ratuls-act' );
+            $config['current_category']   = __( 'Shop', 'servertrack' );
         }
 
         // ── Cart ──────────────────────────────────────────────────────────────
@@ -589,4 +589,5 @@ class Ratuls_ACT_Frontend {
         $order->save_meta_data();
     }
 }
+
 
