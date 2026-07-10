@@ -1,11 +1,11 @@
-<?php
+﻿<?php
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-$license_key = get_option( 'servertrack_license_key', '' );
-$is_active = ServerTrack_License::is_active();
+$license_key = get_option( 'ratuls_act_license_key', '' );
+$is_active = Ratuls_ACT_License::is_active();
 ?>
 
-<?php settings_errors( 'servertrack_license_messages' ); ?>
+<?php settings_errors( 'ratuls_act_license_messages' ); ?>
 <div class="st-settings-section">
     <div class="st-settings-section-header">
         <div class="st-section-icon">
@@ -21,7 +21,7 @@ $is_active = ServerTrack_License::is_active();
     </div>
 
     <div class="st-settings-section-body">
-        <?php wp_nonce_field( 'servertrack_license_action', 'servertrack_license_nonce' ); ?>
+        <?php wp_nonce_field( 'ratuls_act_license_action', 'ratuls_act_license_nonce' ); ?>
         <?php if ( $is_active ) : ?>
             <div class="st-notice st-notice-success" style="margin-bottom:20px;">
                 <svg class="st-notice-icon" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
@@ -38,7 +38,7 @@ $is_active = ServerTrack_License::is_active();
             <tr>
                 <th scope="row">License Key</th>
                 <td>
-                    <input type="text" name="servertrack_license_key" value="<?php echo esc_attr( $license_key ); ?>" class="regular-text st-field-input" <?php echo $is_active ? 'readonly' : ''; ?> />
+                    <input type="text" name="ratuls_act_license_key" value="<?php echo esc_attr( $license_key ); ?>" class="regular-text st-field-input" <?php echo $is_active ? 'readonly' : ''; ?> />
 
                     <?php if ( $is_active ) : ?>
                         <p class="description">To change your license key, deactivate the current one first.</p>
@@ -52,3 +52,4 @@ $is_active = ServerTrack_License::is_active();
         </table>
     </div>
 </div>
+

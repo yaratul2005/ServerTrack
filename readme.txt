@@ -1,4 +1,4 @@
-=== Ratuls- Ads Conversion Tracker ===
+﻿=== Ratuls- Ads Conversion Tracker ===
 Contributors: yaratul2005
 Requires at least: 6.0
 Tested up to: 7.0
@@ -12,9 +12,9 @@ A high-performance, zero-dependency server-side tracking plugin for WordPress. C
 
 == Description ==
 
-ServerTrack completely bypasses browser ad blockers and iOS tracking restrictions (ITP) by moving your conversion tracking directly to your server.
+Ratuls_ACT completely bypasses browser ad blockers and iOS tracking restrictions (ITP) by moving your conversion tracking directly to your server.
 
-Instead of relying on fragile browser pixels that can be blocked or deleted, ServerTrack communicates directly with advertising platform APIs securely from your server backend.
+Instead of relying on fragile browser pixels that can be blocked or deleted, Ratuls_ACT communicates directly with advertising platform APIs securely from your server backend.
 
 ### ⚡ Zero Dependencies & Blazing Fast
 Built strictly with core PHP and native WordPress APIs. No Composer, no NPM, no bloated vendor folders. Checkout performance is fully protected because all purchase events are offloaded to WP-Cron and executed asynchronously.
@@ -30,32 +30,32 @@ Built strictly with core PHP and native WordPress APIs. No Composer, no NPM, no 
 *   **Easy Digital Downloads:** Tracks `Purchase` and `Lead` (Registration) events. Supports EDD 3.0+ and legacy EDD <3.0 APIs.
 
 ### 🔒 Privacy & GDPR Compliant
-ServerTrack respects user privacy natively. It strictly hashes all Personally Identifiable Information (PII) using SHA-256 before transmission and includes support for native consent modes (`granted` vs `denied`).
+Ratuls_ACT respects user privacy natively. It strictly hashes all Personally Identifiable Information (PII) using SHA-256 before transmission and includes support for native consent modes (`granted` vs `denied`).
 
 ### 🛠️ Built-in Debugger
-Stop guessing if your events are sending. ServerTrack includes a live Debug Log in the admin dashboard showing real-time HTTP response codes directly from Meta, Google, and TikTok.
+Stop guessing if your events are sending. Ratuls_ACT includes a live Debug Log in the admin dashboard showing real-time HTTP response codes directly from Meta, Google, and TikTok.
 
 == Installation ==
 
-1. Upload the `servertrack` folder to the `/wp-content/plugins/` directory, or install the ZIP file via the WordPress Plugins menu.
+1. Upload the `ratuls-act` folder to the `/wp-content/plugins/` directory, or install the ZIP file via the WordPress Plugins menu.
 2. Activate the plugin through the 'Plugins' menu in WordPress.
-3. Navigate to **Settings → ServerTrack** to configure your API keys and enable your desired platforms and event sources.
+3. Navigate to **Settings → Ratuls_ACT** to configure your API keys and enable your desired platforms and event sources.
 4. For Google Ads, go to the **Google Ads** tab, enter your OAuth Client ID and Client Secret, click **Save**, then click **Connect with Google** to complete authorisation.
 5. Check the **Debug Log** tab after a test purchase to verify a 200 Success response.
 
 == Frequently Asked Questions ==
 
 = Does this replace the browser pixel? =
-No. ServerTrack is designed to work *alongside* your browser pixel. It generates a unique `event_id` and securely shares it between the server and the browser, allowing platforms like Meta and TikTok to safely deduplicate the events without over-reporting.
+No. Ratuls_ACT is designed to work *alongside* your browser pixel. It generates a unique `event_id` and securely shares it between the server and the browser, allowing platforms like Meta and TikTok to safely deduplicate the events without over-reporting.
 
 = Will this slow down my checkout? =
-Absolutely not. ServerTrack intercepts the purchase, generates an ID, and immediately hands control back to WooCommerce. The actual API transmission happens asynchronously in the background via WP-Cron a few moments later.
+Absolutely not. Ratuls_ACT intercepts the purchase, generates an ID, and immediately hands control back to WooCommerce. The actual API transmission happens asynchronously in the background via WP-Cron a few moments later.
 
 = Why isn't my CF7 form tracking? =
-Ensure that Contact Form 7 is enabled in the **Sources** tab, and double-check your field mapping. If your email field in CF7 is `[email-742]`, you must enter `email-742` in the ServerTrack mapper.
+Ensure that Contact Form 7 is enabled in the **Sources** tab, and double-check your field mapping. If your email field in CF7 is `[email-742]`, you must enter `email-742` in the Ratuls_ACT mapper.
 
-= Does ServerTrack track WooCommerce Subscriptions renewals? =
-Yes. Since version 1.1.0, renewal orders are tracked server-side automatically via the `woocommerce_subscription_renewal_payment_complete` hook. No browser session is needed — ServerTrack uses the billing data stored on the renewal order.
+= Does Ratuls_ACT track WooCommerce Subscriptions renewals? =
+Yes. Since version 1.1.0, renewal orders are tracked server-side automatically via the `woocommerce_subscription_renewal_payment_complete` hook. No browser session is needed — Ratuls_ACT uses the billing data stored on the renewal order.
 
 = How do I connect Google Ads? =
 1. Create an OAuth 2.0 Client ID in Google Cloud Console (Web Application type).
@@ -65,7 +65,7 @@ Yes. Since version 1.1.0, renewal orders are tracked server-side automatically v
 
 == Screenshots ==
 
-1. The unified ServerTrack Admin Dashboard (Settings API Native).
+1. The unified Ratuls_ACT Admin Dashboard (Settings API Native).
 2. Configuring WooCommerce and Contact Form 7 sources.
 3. The real-time Debug Log showing successful API payloads.
 4. Google Ads tab with OAuth 2.0 Connect UI and token status indicator.
@@ -80,10 +80,10 @@ Yes. Since version 1.1.0, renewal orders are tracked server-side automatically v
 * Fixed: EDD purchase sends now correctly route API failures to the retry queue. `mark_as_sent()` is only called on confirmed success.
 * Fixed: EDD registration Lead sends now wired to retry queue.
 * Improved: Activation guards — plugin now aborts activation with a clear error message if PHP < 7.4 or WordPress < 6.0.
-* Improved: Deactivation hook now clears all four ServerTrack cron hooks (including the new renewal and retry hooks).
+* Improved: Deactivation hook now clears all four Ratuls_ACT cron hooks (including the new renewal and retry hooks).
 * Improved: Uninstall now removes HPOS order meta from `wc_orders_meta` table (WooCommerce 8.2+ with HPOS enabled).
 * Improved: Uninstall now removes retry queue transients and cancels all cron hooks.
-* Improved: `servertrack_consent_mode` setting is now validated against an allowlist (`none`, `granted`, `denied`).
+* Improved: `ratuls_act_consent_mode` setting is now validated against an allowlist (`none`, `granted`, `denied`).
 
 = 1.0.0 =
 * Initial public release.
@@ -91,3 +91,4 @@ Yes. Since version 1.1.0, renewal orders are tracked server-side automatically v
 * Integrated with WooCommerce, Contact Form 7, and EDD.
 * Added async WP-Cron processing engine.
 * Added SHA-256 PII hasher and deduplication engine.
+

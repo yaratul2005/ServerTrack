@@ -1,8 +1,8 @@
-<?php
+﻿<?php
 
 use PHPUnit\Framework\TestCase;
 
-require_once __DIR__ . '/../includes/class-servertrack-enrichment.php';
+require_once __DIR__ . '/../includes/class-ratuls-act-enrichment.php';
 
 class EnrichmentTest extends TestCase {
 
@@ -17,7 +17,7 @@ class EnrichmentTest extends TestCase {
         $_SERVER['HTTP_X_FORWARDED_FOR'] = '3.3.3.3,4.4.4.4';
         $_SERVER['REMOTE_ADDR'] = '5.5.5.5';
 
-        $this->assertEquals('1.1.1.1', ServerTrack_Enrichment::get_client_ip());
+        $this->assertEquals('1.1.1.1', Ratuls_ACT_Enrichment::get_client_ip());
     }
 
     public function test_get_client_ip_returns_x_real_ip() {
@@ -25,31 +25,31 @@ class EnrichmentTest extends TestCase {
         $_SERVER['HTTP_X_FORWARDED_FOR'] = '3.3.3.3,4.4.4.4';
         $_SERVER['REMOTE_ADDR'] = '5.5.5.5';
 
-        $this->assertEquals('2.2.2.2', ServerTrack_Enrichment::get_client_ip());
+        $this->assertEquals('2.2.2.2', Ratuls_ACT_Enrichment::get_client_ip());
     }
 
     public function test_get_client_ip_returns_last_x_forwarded_for() {
         $_SERVER['HTTP_X_FORWARDED_FOR'] = '3.3.3.3, 4.4.4.4';
         $_SERVER['REMOTE_ADDR'] = '5.5.5.5';
 
-        $this->assertEquals('4.4.4.4', ServerTrack_Enrichment::get_client_ip());
+        $this->assertEquals('4.4.4.4', Ratuls_ACT_Enrichment::get_client_ip());
     }
 
     public function test_get_client_ip_returns_remote_addr_as_fallback() {
         $_SERVER['REMOTE_ADDR'] = '5.5.5.5';
 
-        $this->assertEquals('5.5.5.5', ServerTrack_Enrichment::get_client_ip());
+        $this->assertEquals('5.5.5.5', Ratuls_ACT_Enrichment::get_client_ip());
     }
 
     public function test_get_client_ip_returns_empty_if_nothing_set() {
-        $this->assertEquals('', ServerTrack_Enrichment::get_client_ip());
+        $this->assertEquals('', Ratuls_ACT_Enrichment::get_client_ip());
     }
 
     /**
      * @dataProvider userAgentProvider
      */
     public function test_parse_user_agent(string $ua, array $expected) {
-        $parsed = ServerTrack_Enrichment::parse_user_agent($ua);
+        $parsed = Ratuls_ACT_Enrichment::parse_user_agent($ua);
         $this->assertEquals($expected, $parsed);
     }
 
@@ -102,3 +102,4 @@ class EnrichmentTest extends TestCase {
         ];
     }
 }
+

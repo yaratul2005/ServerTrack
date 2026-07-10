@@ -1,5 +1,5 @@
-/**
- * ServerTrack Admin JS — v3.1
+﻿/**
+ * Ratuls_ACT Admin JS — v3.1
  *
  * Handles (Settings page only):
  *  - Platform test-event buttons
@@ -9,16 +9,16 @@
  *
  * Dashboard AJAX (drain retries, manual refresh, KPI auto-refresh,
  * dashboard clear-log) is handled by the inline <script> block rendered
- * by ServerTrack_Dashboard::render_page() — it uses the dashboard nonce
+ * by Ratuls_ACT_Dashboard::render_page() — it uses the dashboard nonce
  * directly from PHP via wp_json_encode().
  *
- * Depends on: servertrack_admin (wp_localize_script)
+ * Depends on: ratuls_act_admin (wp_localize_script)
  * {
  *   ajax_url,
- *   nonce,           — wp_create_nonce('servertrack_admin_nonce')
+ *   nonce,           — wp_create_nonce('ratuls_act_admin_nonce')
  *                       Used by: test_event, get_logs, get_dashboard_stats,
  *                                clear_log (Settings debug tab)
- *   dashboard_nonce, — wp_create_nonce('servertrack_dashboard')
+ *   dashboard_nonce, — wp_create_nonce('ratuls_act_dashboard')
  *                       Used by: Dashboard inline JS (not this file)
  *   platforms: { meta, google, tiktok } (enabled, configured)
  * }
@@ -26,9 +26,9 @@
 (function ($) {
   'use strict';
 
-  if (typeof servertrack_admin === 'undefined') return;
+  if (typeof ratuls_act_admin === 'undefined') return;
 
-  var cfg = servertrack_admin;
+  var cfg = ratuls_act_admin;
 
   /* ─────────────────────────────────────────────────
      TOAST SYSTEM
@@ -71,12 +71,12 @@
   /* ─────────────────────────────────────────────────
      PLATFORM TEST BUTTONS
   ───────────────────────────────────────────────── */
-  $(document).on('click', '.st-test-btn[data-platform], .servertrack-test-btn[data-platform]', function () {
+  $(document).on('click', '.st-test-btn[data-platform], .ratuls-act-test-btn[data-platform]', function () {
     var $btn      = $(this);
     var platform  = $btn.data('platform');
     var $result   = $btn.closest('.st-platform-card').find('.st-test-result');
     if (!$result.length) {
-      $result = $('#servertrack-test-response-' + platform);
+      $result = $('#ratuls-act-test-response-' + platform);
     }
 
     if ($btn.prop('disabled')) return;
@@ -87,7 +87,7 @@
     $.post(
       cfg.ajax_url,
       {
-        action:   'servertrack_test_event',
+        action:   'ratuls_act_test_event',
         nonce:    cfg.nonce,
         platform: platform
       },
@@ -113,8 +113,8 @@
   /* ─────────────────────────────────────────────────
      CLEAR DEBUG LOG  (Settings → Debug tab only)
      Button ID: #st-clear-log
-     Nonce action: servertrack_admin_nonce  → cfg.nonce
-     Handler: ServerTrack_Admin::ajax_clear_log()
+     Nonce action: ratuls_act_admin_nonce  → cfg.nonce
+     Handler: Ratuls_ACT_Admin::ajax_clear_log()
      NOTE: Dashboard clear-log (#st-clear-log-btn) is handled by
            the dashboard inline <script> using the dashboard nonce.
   ───────────────────────────────────────────────── */
@@ -125,7 +125,7 @@
 
     $.post(
       cfg.ajax_url,
-      { action: 'servertrack_clear_log', nonce: cfg.nonce },
+      { action: 'ratuls_act_clear_log', nonce: cfg.nonce },
       function (res) {
         $btn.prop('disabled', false);
         if (res.success) {
@@ -176,7 +176,7 @@
 
     $.post(
       cfg.ajax_url,
-      { action: 'servertrack_get_logs', nonce: cfg.nonce },
+      { action: 'ratuls_act_get_logs', nonce: cfg.nonce },
       function (res) {
         $btn.removeClass('st-spinning').prop('disabled', false);
         if (res.success && res.data) {
@@ -211,10 +211,11 @@
      AUTO-DISMISS WP NOTICES after 4 s
   ───────────────────────────────────────────────── */
   setTimeout(function () {
-    $('#servertrack-wrap .notice.is-dismissible, #servertrack-wrap .notice-success').each(function () {
+    $('#ratuls-act-wrap .notice.is-dismissible, #ratuls-act-wrap .notice-success').each(function () {
       var $n = $(this);
       $n.fadeOut(400, function () { $n.remove(); });
     });
   }, 4000);
 
 }(jQuery));
+

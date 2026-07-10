@@ -1,4 +1,4 @@
-# Ratuls- Ads Conversion Tracker (Ratuls-ACT)
+﻿# Ratuls- Ads Conversion Tracker (Ratuls-ACT)
 
 <p align="center">
   <img src="https://img.shields.io/badge/WordPress-v6.0+-21759b?style=for-the-badge&logo=wordpress&logoColor=white" alt="WordPress v6.0+" />
@@ -22,7 +22,7 @@
 Instead of paying high monthly fees for third-party server-side Tag Manager containers (e.g., Stape.io or Google Cloud GTM), Ratuls-ACT acts as your own **self-hosted First-Party CAPI Gateway** directly inside WordPress. 
 
 - **Defeats Safari ITP:** Generates first-party `Set-Cookie` headers via PHP, extending ad-click identifier Lifespans (`fbclid`, `gclid`) from the JavaScript-capped 7 days to a full **2 years**.
-- **Ad-blocker Resiliency:** Bypasses browser-level trackers entirely by proxying events through a local REST endpoint (`/wp-json/servertrack/v1/pixel`).
+- **Ad-blocker Resiliency:** Bypasses browser-level trackers entirely by proxying events through a local REST endpoint (`/wp-json/ratuls-act/v1/pixel`).
 - **Deep Identity Stitching:** Bundles MaxMind GeoIP resolution, true client IP detection across Cloudflare/Sucuri, and user-agent parsing to maximize your Meta Event Match Quality (EMQ).
 
 ---
@@ -68,39 +68,39 @@ Fine-tune tracking sources (WooCommerce, Cart Abandonment, Subscriptions) and to
 Ratuls-ACT is organized into modular, clean layers:
 
 ```text
-servertrack.php                       ← Bootstrap loader
+ratuls-act.php                       ← Bootstrap loader
 │
 ├── includes/
-│   ├── class-servertrack-cookiehelper.php   1st-Party Cookie Generator (ITP bypass)
-│   ├── class-servertrack-dispatcher.php       Secure Cryptotoken-based Async loopback
-│   ├── class-servertrack-pixel-dedup.php    Checkout and Cart Button ID handlers
-│   ├── class-servertrack-enrichment.php     IP, Geo, and UA Signal enrichment
-│   ├── class-servertrack-health.php         Daily API token health diagnostic cron
-│   ├── class-servertrack-stream.php         Real-time SSE Debug Console
-│   ├── class-servertrack-attribution.php    10-touch UTM History Tracker
-│   ├── class-servertrack-consent.php        GDPR Consent State manager
-│   ├── class-servertrack-event.php          Event DTO Model
-│   ├── class-servertrack-retry.php          Exponential back-off retry queue
-│   └── class-servertrack-logger.php         Structured SQL event logger
+│   ├── class-ratuls-act-cookiehelper.php   1st-Party Cookie Generator (ITP bypass)
+│   ├── class-ratuls-act-dispatcher.php       Secure Cryptotoken-based Async loopback
+│   ├── class-ratuls-act-pixel-dedup.php    Checkout and Cart Button ID handlers
+│   ├── class-ratuls-act-enrichment.php     IP, Geo, and UA Signal enrichment
+│   ├── class-ratuls-act-health.php         Daily API token health diagnostic cron
+│   ├── class-ratuls-act-stream.php         Real-time SSE Debug Console
+│   ├── class-ratuls-act-attribution.php    10-touch UTM History Tracker
+│   ├── class-ratuls-act-consent.php        GDPR Consent State manager
+│   ├── class-ratuls-act-event.php          Event DTO Model
+│   ├── class-ratuls-act-retry.php          Exponential back-off retry queue
+│   └── class-ratuls-act-logger.php         Structured SQL event logger
 │
 ├── platforms/
-│   ├── class-servertrack-meta.php           Meta Graph API (Multi-pixel arrays)
-│   ├── class-servertrack-tiktok.php         TikTok Events API v2
-│   └── class-servertrack-google.php         Google Ads Enhanced Conversions
+│   ├── class-ratuls-act-meta.php           Meta Graph API (Multi-pixel arrays)
+│   ├── class-ratuls-act-tiktok.php         TikTok Events API v2
+│   └── class-ratuls-act-google.php         Google Ads Enhanced Conversions
 │
 ├── sources/
-│   ├── class-servertrack-woocommerce.php          Core WooCommerce Hooks
-│   ├── class-servertrack-source-woocommerce.php   Extended Lifecycle Hooks (Wishlist/Status)
-│   ├── class-servertrack-subscriptions.php        WooCommerce Subscriptions integration
-│   ├── class-servertrack-cart-abandonment.php     Cart Abandonment CAPI cron
+│   ├── class-ratuls-act-woocommerce.php          Core WooCommerce Hooks
+│   ├── class-ratuls-act-source-woocommerce.php   Extended Lifecycle Hooks (Wishlist/Status)
+│   ├── class-ratuls-act-subscriptions.php        WooCommerce Subscriptions integration
+│   ├── class-ratuls-act-cart-abandonment.php     Cart Abandonment CAPI cron
 │   └── ...
 │
 ├── frontend/
-│   └── class-servertrack-frontend.php       Browser JS localization bridge
+│   └── class-ratuls-act-frontend.php       Browser JS localization bridge
 │
 └── admin/
-    ├── class-servertrack-dashboard.php      Real-time Dashboard UI & Charts
-    └── class-servertrack-admin.php          Admin Settings & Manual Approval Column
+    ├── class-ratuls-act-dashboard.php      Real-time Dashboard UI & Charts
+    └── class-ratuls-act-admin.php          Admin Settings & Manual Approval Column
 ```
 
 ---
@@ -116,7 +116,7 @@ For high-ticket or fraud-sensitive stores, enable **Manual Purchase Verification
 
 ## Installation & Setup
 
-1. Upload the `servertrack` directory to your WordPress `/wp-content/plugins/` directory.
+1. Upload the `ratuls-act` directory to your WordPress `/wp-content/plugins/` directory.
 2. Activate the plugin via **Plugins → Installed Plugins** in the WordPress Dashboard.
 3. Configure your API tokens under **Ratuls-ACT → Settings**.
 4. Check real-time API logs and matching scores under the **Ratuls-ACT → Dashboard** tab.
@@ -126,7 +126,7 @@ For high-ticket or fraud-sensitive stores, enable **Manual Purchase Verification
 Fire custom server events client-side securely through the local proxy endpoint:
 
 ```javascript
-fetch('/wp-json/servertrack/v1/pixel/meta', {
+fetch('/wp-json/ratuls-act/v1/pixel/meta', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
@@ -145,3 +145,4 @@ fetch('/wp-json/servertrack/v1/pixel/meta', {
 ## License
 
 GPL-2.0-or-later · © MD. Yaser Ahmmed Ratul
+

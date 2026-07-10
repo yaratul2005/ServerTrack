@@ -1,6 +1,6 @@
-<?php
+﻿<?php
 /**
- * Tests for ServerTrack_Source_WooCommerce v3.3.1
+ * Tests for Ratuls_ACT_Source_WooCommerce v3.3.1
  * Section: AddToCart + BUG-11 signature fix
  *
  * Covers:
@@ -15,8 +15,8 @@ use PHPUnit\Framework\TestCase;
 class WooCommerceAddToCartTest extends TestCase {
 
     protected function setUp(): void {
-        ServerTrack_Core::reset();
-        ServerTrack_Dedup::reset();
+        Ratuls_ACT_Core::reset();
+        Ratuls_ACT_Dedup::reset();
 
         $product        = new WC_Product();
         $product->id    = 77;
@@ -32,37 +32,37 @@ class WooCommerceAddToCartTest extends TestCase {
 
     public function test_add_to_cart_dispatches_event(): void {
         // Call with all 6 args (BUG-11 fix verification)
-        ServerTrack_Source_WooCommerce::handle_add_to_cart(
+        Ratuls_ACT_Source_WooCommerce::handle_add_to_cart(
             'cart_key_abc', 77, 2, 0, [], []
         );
 
-        $this->assertCount( 1, ServerTrack_Core::$dispatched );
-        $this->assertSame( 'AddToCart', ServerTrack_Core::$dispatched[0]['event'] );
+        $this->assertCount( 1, Ratuls_ACT_Core::$dispatched );
+        $this->assertSame( 'AddToCart', Ratuls_ACT_Core::$dispatched[0]['event'] );
     }
 
     public function test_add_to_cart_value_is_price_times_quantity(): void {
-        ServerTrack_Source_WooCommerce::handle_add_to_cart(
+        Ratuls_ACT_Source_WooCommerce::handle_add_to_cart(
             'cart_key_abc', 77, 3, 0, [], []
         );
 
-        $custom = ServerTrack_Core::$dispatched[0]['custom'];
+        $custom = Ratuls_ACT_Core::$dispatched[0]['custom'];
         $this->assertSame( 60.00, $custom['value'],   'Value must be price ($20) × quantity (3) = $60.' );
         $this->assertSame( 3,     $custom['num_items'] );
     }
 
     public function test_add_to_cart_content_ids_contains_product_id(): void {
-        ServerTrack_Source_WooCommerce::handle_add_to_cart(
+        Ratuls_ACT_Source_WooCommerce::handle_add_to_cart(
             'cart_key_abc', 77, 1, 0, [], []
         );
 
-        $this->assertSame( [ '77' ], ServerTrack_Core::$dispatched[0]['custom']['content_ids'] );
+        $this->assertSame( [ '77' ], Ratuls_ACT_Core::$dispatched[0]['custom']['content_ids'] );
     }
 
     public function test_bug11_accepts_six_arguments_without_error(): void {
         // If PHP raises an ArgumentCountError or warning, this test fails
         $this->expectNotToPerformAssertions();
 
-        ServerTrack_Source_WooCommerce::handle_add_to_cart(
+        Ratuls_ACT_Source_WooCommerce::handle_add_to_cart(
             'ck', 77, 1,
             0,             // $variation_id
             [],            // $variation
@@ -71,11 +71,12 @@ class WooCommerceAddToCartTest extends TestCase {
     }
 
     public function test_add_to_cart_missing_product_fires_nothing(): void {
-        ServerTrack_Source_WooCommerce::handle_add_to_cart(
+        Ratuls_ACT_Source_WooCommerce::handle_add_to_cart(
             'ck_missing', 9999, 1, 0, [], []
         );
 
-        $this->assertEmpty( ServerTrack_Core::$dispatched,
+        $this->assertEmpty( Ratuls_ACT_Core::$dispatched,
             'Unknown product must result in no dispatch.' );
     }
 }
+

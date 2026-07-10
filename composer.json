@@ -1,6 +1,6 @@
-{
-    "name": "yaratul2005/servertrack",
-    "description": "ServerTrack CAPI plugin for WordPress",
+﻿{
+    "name": "yaratul2005/ratuls-act",
+    "description": "Ratuls_ACT CAPI plugin for WordPress",
     "type": "wordpress-plugin",
     "license": "GPL-2.0-or-later",
     "require": {},
@@ -26,3 +26,4 @@
         "sort-packages": true
     }
 }
+

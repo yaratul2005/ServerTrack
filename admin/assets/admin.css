@@ -1,5 +1,5 @@
-/*
- * ServerTrack Admin Styles — v4.0 VISUAL OVERHAUL
+﻿/*
+ * Ratuls_ACT Admin Styles — v4.0 VISUAL OVERHAUL
  * Pure CSS upgrade. Zero backend changes.
  * New: inline SVG icon system, animated decorations, glassmorphism
  *      accents, gradient meshes, sparkline shimmer, micro-interactions.
@@ -121,7 +121,7 @@
 /* ═══════════════════════════════════════════════════════════════
    2. BASE RESET
 ═══════════════════════════════════════════════════════════════ */
-#servertrack-wrap,
+#ratuls-act-wrap,
 #st-app {
   max-width: 1200px;
   margin-right: 20px;
@@ -132,7 +132,7 @@
   animation: st-fade-in .3s ease both;
 }
 
-#servertrack-wrap *,
+#ratuls-act-wrap *,
 #st-app * { box-sizing: border-box; }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1625,13 +1625,13 @@
 /* ═══════════════════════════════════════════════════════════════
    17. WP ADMIN OVERRIDES (sanitize WP defaults)
 ═══════════════════════════════════════════════════════════════ */
-#servertrack-wrap .wp-header-end,
+#ratuls-act-wrap .wp-header-end,
 #st-app       .wp-header-end { display: none; }
 
-#servertrack-wrap h1.wp-heading-inline,
+#ratuls-act-wrap h1.wp-heading-inline,
 #st-app       h1.wp-heading-inline { display: none; }
 
-#servertrack-wrap .notice,
+#ratuls-act-wrap .notice,
 #st-app       .notice { margin-left: 0; }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1660,7 +1660,7 @@
 }
 
 @media (max-width: 700px) {
-  #servertrack-wrap,
+  #ratuls-act-wrap,
   #st-app { margin-right: 10px; }
 
   .st-page-header { padding: 16px 18px; }
@@ -1871,9 +1871,9 @@
 }
 
 /*
- * ServerTrack v4.1 — SVG Icon System
+ * Ratuls_ACT v4.1 — SVG Icon System
  * Replaces all emoji with accessible inline SVG icons.
- * Loaded alongside admin.css via ServerTrack_Admin::enqueue_assets().
+ * Loaded alongside admin.css via Ratuls_ACT_Admin::enqueue_assets().
  */
 
 /* ── Base icon token ──────────────────────────────────────────────────────── */
@@ -2140,3 +2140,4 @@
     margin-top: 6px;
     line-height: 1.5;
 }
+

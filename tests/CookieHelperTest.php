@@ -1,8 +1,8 @@
-<?php
+﻿<?php
 
 use PHPUnit\Framework\TestCase;
 
-require_once __DIR__ . '/../includes/class-servertrack-cookiehelper.php';
+require_once __DIR__ . '/../includes/class-ratuls-act-cookiehelper.php';
 
 if (!function_exists('is_admin')) {
     function is_admin() { return $GLOBALS['mock_is_admin'] ?? false; }
@@ -43,14 +43,14 @@ class CookieHelperTest extends TestCase {
     public function test_ignores_admin() {
         $GLOBALS['mock_is_admin'] = true;
         $_GET['fbclid'] = 'test1234';
-        ServerTrack_CookieHelper::capture_and_refresh_cookies();
+        Ratuls_ACT_CookieHelper::capture_and_refresh_cookies();
         $this->assertArrayNotHasKey('_fbc', $_COOKIE);
     }
 
     public function test_ignores_cron() {
         $GLOBALS['mock_wp_doing_cron'] = true;
         $_GET['fbclid'] = 'test1234';
-        ServerTrack_CookieHelper::capture_and_refresh_cookies();
+        Ratuls_ACT_CookieHelper::capture_and_refresh_cookies();
         $this->assertArrayNotHasKey('_fbc', $_COOKIE);
     }
 
@@ -60,7 +60,7 @@ class CookieHelperTest extends TestCase {
     public function test_captures_fbclid() {
         // Needs `@runInSeparateProcess` because it modifies headers/cookies
         $_GET['fbclid'] = 'test_fbc_id';
-        ServerTrack_CookieHelper::capture_and_refresh_cookies();
+        Ratuls_ACT_CookieHelper::capture_and_refresh_cookies();
 
         $this->assertArrayHasKey('_fbc', $_COOKIE);
         $this->assertStringContainsString('fb.1.', $_COOKIE['_fbc']);
@@ -71,7 +71,7 @@ class CookieHelperTest extends TestCase {
      * @runInSeparateProcess
      */
     public function test_generates_fbp_if_missing() {
-        ServerTrack_CookieHelper::capture_and_refresh_cookies();
+        Ratuls_ACT_CookieHelper::capture_and_refresh_cookies();
 
         $this->assertArrayHasKey('_fbp', $_COOKIE);
         $this->assertStringContainsString('fb.1.', $_COOKIE['_fbp']);
@@ -83,7 +83,7 @@ class CookieHelperTest extends TestCase {
      */
     public function test_captures_ttclid() {
         $_GET['ttclid'] = 'test_ttclid_id';
-        ServerTrack_CookieHelper::capture_and_refresh_cookies();
+        Ratuls_ACT_CookieHelper::capture_and_refresh_cookies();
 
         $this->assertArrayHasKey('ttclid', $_COOKIE);
         $this->assertEquals('test_ttclid_id', $_COOKIE['ttclid']);
@@ -94,7 +94,7 @@ class CookieHelperTest extends TestCase {
      */
     public function test_captures_gclid() {
         $_GET['gclid'] = 'test_gclid_id';
-        ServerTrack_CookieHelper::capture_and_refresh_cookies();
+        Ratuls_ACT_CookieHelper::capture_and_refresh_cookies();
 
         $this->assertArrayHasKey('_gcl_aw', $_COOKIE);
         $this->assertStringContainsString('GCL.', $_COOKIE['_gcl_aw']);
@@ -110,7 +110,7 @@ class CookieHelperTest extends TestCase {
         $_COOKIE['ttclid'] = 'existing_ttclid';
         $_COOKIE['_gcl_aw'] = 'GCL.12345.existing_gcl';
 
-        ServerTrack_CookieHelper::capture_and_refresh_cookies();
+        Ratuls_ACT_CookieHelper::capture_and_refresh_cookies();
 
         $this->assertEquals('fb.1.12345.existing_fbc', $_COOKIE['_fbc']);
         $this->assertEquals('fb.1.12345.existing_fbp', $_COOKIE['_fbp']);
@@ -118,3 +118,4 @@ class CookieHelperTest extends TestCase {
         $this->assertEquals('GCL.12345.existing_gcl', $_COOKIE['_gcl_aw']);
     }
 }
+

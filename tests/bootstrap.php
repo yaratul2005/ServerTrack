@@ -1,6 +1,6 @@
-<?php
+﻿<?php
 /**
- * PHPUnit bootstrap for ServerTrack.
+ * PHPUnit bootstrap for Ratuls_ACT.
  *
  * Defines all WordPress / WooCommerce stubs needed to load the plugin
  * classes in isolation, without a running WordPress installation.
@@ -89,12 +89,12 @@ class WC_Product {
     public function get_price(): float  { return $this->price; }
 }
 
-// ── ServerTrack dependency stubs ────────────────────────────────────────
+// ── Ratuls_ACT dependency stubs ────────────────────────────────────────
 
 /**
  * Stub logger — records calls so tests can assert on them.
  */
-class ServerTrack_Logger {
+class Ratuls_ACT_Logger {
     public static array $log = [];
 
     public static function info( string $msg ): void    { self::$log[] = [ 'level' => 'info',    'msg' => $msg ]; }
@@ -107,7 +107,7 @@ class ServerTrack_Logger {
 /**
  * Stub dedup — records mark_as_sent calls; already_sent is option-backed.
  */
-class ServerTrack_Dedup {
+class Ratuls_ACT_Dedup {
     public static array $sent = []; // [ "$key:$platform" => true ]
 
     public static function already_sent( $key, string $platform ): bool {
@@ -134,7 +134,7 @@ class ServerTrack_Dedup {
 /**
  * Stub identity.
  */
-class ServerTrack_Identity {
+class Ratuls_ACT_Identity {
     public static function from_order( $order ): array {
         return [ 'em' => hash( 'sha256', $order->get_billing_email() ) ];
     }
@@ -147,7 +147,7 @@ class ServerTrack_Identity {
 /**
  * Stub catalog.
  */
-class ServerTrack_Catalog {
+class Ratuls_ACT_Catalog {
     public static function from_order( $order ): array {
         return [ 'value' => $order->get_total(), 'currency' => 'USD' ];
     }
@@ -161,10 +161,10 @@ class ServerTrack_Catalog {
 /**
  * Stub core dispatcher — records dispatched events.
  */
-class ServerTrack_Core {
+class Ratuls_ACT_Core {
     public static array $dispatched = [];
 
-    public static function dispatch_to_all( ServerTrack_Event $event, $dedup_key = null ): void {
+    public static function dispatch_to_all( Ratuls_ACT_Event $event, $dedup_key = null ): void {
         self::$dispatched[] = [
             'event'     => $event->event_name,
             'event_id'  => $event->event_id,
@@ -174,7 +174,7 @@ class ServerTrack_Core {
         ];
     }
 
-    public static function dispatch_to_platforms( ServerTrack_Event $event, array $platforms, $dedup_key = null ): void {
+    public static function dispatch_to_platforms( Ratuls_ACT_Event $event, array $platforms, $dedup_key = null ): void {
         self::$dispatched[] = [
             'event'     => $event->event_name,
             'event_id'  => $event->event_id,
@@ -190,14 +190,14 @@ class ServerTrack_Core {
 /**
  * Stub platform senders.
  */
-class ServerTrack_Meta   { public static function send( $e ): array { return [ 'status' => 'success' ]; } }
-class ServerTrack_TikTok { public static function send( $e ): array { return [ 'status' => 'success' ]; } }
-class ServerTrack_Google { public static function send( $e ): array { return [ 'status' => 'success' ]; } }
+class Ratuls_ACT_Meta   { public static function send( $e ): array { return [ 'status' => 'success' ]; } }
+class Ratuls_ACT_TikTok { public static function send( $e ): array { return [ 'status' => 'success' ]; } }
+class Ratuls_ACT_Google { public static function send( $e ): array { return [ 'status' => 'success' ]; } }
 
 // ── Autoload plugin classes ─────────────────────────────────────────────
 
-require_once __DIR__ . '/../includes/class-servertrack-retry.php';
-require_once __DIR__ . '/../sources/class-servertrack-source-woocommerce.php';
+require_once __DIR__ . '/../includes/class-ratuls-act-retry.php';
+require_once __DIR__ . '/../sources/class-ratuls-act-source-woocommerce.php';
 
 function get_transient($key) {
     return $GLOBALS['_st_transients'][$key] ?? false;
@@ -229,3 +229,4 @@ function WC() {
     if (!$wc_mock) $wc_mock = new WCMock();
     return $wc_mock;
 }
+
