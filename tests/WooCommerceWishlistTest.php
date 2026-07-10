@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Tests for Ratuls_ACT_Source_WooCommerce v3.3.1
  * Section: AddToWishlist Events (BUG-10 fix)

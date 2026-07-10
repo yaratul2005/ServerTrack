@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Tests for Ratuls_ACT_Source_WooCommerce v3.3.1
  * Section: Partial Refund Events + Full Refund Events (BUG-12 fix)

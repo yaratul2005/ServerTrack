@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Plugin Name:       Ratuls- Ads Conversion Tracker
  * Plugin URI:        https://github.com/yaratul2005/Ratuls_ACT

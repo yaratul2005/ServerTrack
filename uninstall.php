@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Ratuls_ACT Uninstall  — v4.0
  *

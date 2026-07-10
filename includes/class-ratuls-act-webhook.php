@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Ratuls_ACT — Webhook Outbound (Feature #9)  v1.1
  *

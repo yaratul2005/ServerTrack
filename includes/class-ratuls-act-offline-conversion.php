@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Ratuls_ACT — Offline Conversion Uploader  v3.2
  *

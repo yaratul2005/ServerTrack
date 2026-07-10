@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Ratuls_ACT — WP-CLI Commands (Feature #10)
  *

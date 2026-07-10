@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Event Sources settings tab — view fragment only.
  * C1: <form> and settings_fields() removed. render_page() owns the form.

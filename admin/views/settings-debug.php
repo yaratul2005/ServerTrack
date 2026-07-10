@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Ratuls_ACT — Debug Log Tab (redesigned)
  *

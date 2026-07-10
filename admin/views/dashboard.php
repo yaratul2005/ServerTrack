@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Ratuls_ACT — Dashboard Overview Tab  v2.3
  *

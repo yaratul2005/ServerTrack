@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Ratuls_ACT — Browser Pixel event_id Injection (Feature #5)
  *

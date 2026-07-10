@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Ratuls_ACT — Product Catalog Signal Enrichment (Feature #7)
  *

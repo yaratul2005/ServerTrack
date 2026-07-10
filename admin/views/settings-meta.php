@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Meta CAPI settings tab — view fragment only.
  * C1/C9: <form> and settings_fields() removed. render_page() owns the form.

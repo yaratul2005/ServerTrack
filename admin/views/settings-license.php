@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 $license_key = get_option( 'ratuls_act_license_key', '' );

@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Ratuls_ACT — Customer LTV Signal in Purchase Payload (Feature #6)
  *

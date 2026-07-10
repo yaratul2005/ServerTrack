@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Tests for Ratuls_ACT_Retry v2.2
  *
