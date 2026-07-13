@@ -105,6 +105,7 @@ class Ratul_ACT_Admin {
     // ─────────────────────────────────────────────────────────────────
 
     public static function enqueue_assets( string $hook ) {
+        echo '<!-- RATUL_ACT HOOK: ' . esc_html( $hook ) . ' -->';
         $allowed_hooks = [
             'settings_page_ratul-ads-conversion-tracker',
             'toplevel_page_ratul-ads-conversion-tracker',
