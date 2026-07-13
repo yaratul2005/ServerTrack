@@ -112,7 +112,7 @@ class Ratul_ACT_Dashboard {
         }
         wp_enqueue_script(
             'chart-js',
-            'https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js',
+            RATUL_ACT_URL . 'admin/assets/chart.min.js',
             [],
             '4.4.3',
             true
