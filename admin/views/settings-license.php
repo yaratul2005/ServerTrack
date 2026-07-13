@@ -1,8 +1,10 @@
 <?php
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-$license_key = get_option( 'ratul_act_license_key', '' );
-$is_active = Ratul_ACT_License::is_active();
+$license_key    = get_option( 'ratul_act_license_key', '' );
+$is_active      = Ratul_ACT_License::is_active();
+$expires_at     = get_option( 'ratul_act_license_expires_at', '' );
+$last_check     = get_option( 'ratul_act_license_last_check', 0 );
 ?>
 
 <?php settings_errors( 'ratul_act_license_messages' ); ?>
@@ -25,7 +27,14 @@ $is_active = Ratul_ACT_License::is_active();
         <?php if ( $is_active ) : ?>
             <div class="st-notice st-notice-success" style="margin-bottom:20px;">
                 <svg class="st-notice-icon" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                <span>Your license is <strong>active</strong>. You have access to automatic updates.</span>
+                <span>Your license is <strong>active</strong>. You have access to automatic updates.<?php
+                if ( $expires_at ) {
+                    echo ' <em>Expires: ' . esc_html( date_i18n( get_option( 'date_format' ), strtotime( $expires_at ) ) ) . '</em>';
+                }
+                if ( $last_check ) {
+                    echo ' &mdash; <em>Last verified: ' . esc_html( human_time_diff( $last_check ) ) . ' ago</em>';
+                }
+                ?></span>
             </div>
         <?php else : ?>
             <div class="st-notice st-notice-warning" style="margin-bottom:20px;">

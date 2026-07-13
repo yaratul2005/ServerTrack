@@ -64,79 +64,79 @@ define( 'RATUL_ACT_URL',     plugin_dir_url( __FILE__ ) );
 function ratul_act_load_classes(): void {
 
     // ── Core infrastructure ───────────────────────────────────────────────────
-    require_once RATUL_ACT_DIR . 'includes/class-ratul-ads-conversion-tracker-hasher.php';
-    require_once RATUL_ACT_DIR . 'includes/class-ratul-ads-conversion-tracker-event.php';
-    require_once RATUL_ACT_DIR . 'includes/class-ratul-ads-conversion-tracker-dedup.php';
-    require_once RATUL_ACT_DIR . 'includes/class-ratul-ads-conversion-tracker-dedup-engine.php';
-    require_once RATUL_ACT_DIR . 'includes/class-ratul-ads-conversion-tracker-enrichment.php';
-    require_once RATUL_ACT_DIR . 'includes/class-ratul-ads-conversion-tracker-health.php';
-    require_once RATUL_ACT_DIR . 'includes/class-ratul-ads-conversion-tracker-stream.php';
-    require_once RATUL_ACT_DIR . 'includes/class-ratul-ads-conversion-tracker-attribution.php';
-    require_once RATUL_ACT_DIR . 'includes/class-ratul-ads-conversion-tracker-license.php';
-    require_once RATUL_ACT_DIR . 'includes/class-ratul-ads-conversion-tracker-consent.php';
-    require_once RATUL_ACT_DIR . 'includes/class-ratul-ads-conversion-tracker-cookiehelper.php';
-    require_once RATUL_ACT_DIR . 'includes/class-ratul-ads-conversion-tracker-proxy.php';
+    require_once RATUL_ACT_DIR . 'includes/class-ratul-act-hasher.php';
+    require_once RATUL_ACT_DIR . 'includes/class-ratul-act-event.php';
+    require_once RATUL_ACT_DIR . 'includes/class-ratul-act-dedup.php';
+    require_once RATUL_ACT_DIR . 'includes/class-ratul-act-dedup-engine.php';
+    require_once RATUL_ACT_DIR . 'includes/class-ratul-act-enrichment.php';
+    require_once RATUL_ACT_DIR . 'includes/class-ratul-act-health.php';
+    require_once RATUL_ACT_DIR . 'includes/class-ratul-act-stream.php';
+    require_once RATUL_ACT_DIR . 'includes/class-ratul-act-attribution.php';
+    require_once RATUL_ACT_DIR . 'includes/class-ratul-act-license.php';
+    require_once RATUL_ACT_DIR . 'includes/class-ratul-act-consent.php';
+    require_once RATUL_ACT_DIR . 'includes/class-ratul-act-cookiehelper.php';
+    require_once RATUL_ACT_DIR . 'includes/class-ratul-act-proxy.php';
 
-    require_once RATUL_ACT_DIR . 'includes/class-ratul-ads-conversion-tracker-retry.php';
-    require_once RATUL_ACT_DIR . 'includes/class-ratul-ads-conversion-tracker-logger.php';
-    require_once RATUL_ACT_DIR . 'includes/class-ratul-ads-conversion-tracker-identity.php';
-    require_once RATUL_ACT_DIR . 'includes/class-ratul-ads-conversion-tracker-clickcapture.php';
-    require_once RATUL_ACT_DIR . 'includes/class-ratul-ads-conversion-tracker-matchquality.php';
-    require_once RATUL_ACT_DIR . 'includes/class-ratul-ads-conversion-tracker-offline-conversion.php';
-    require_once RATUL_ACT_DIR . 'includes/class-ratul-ads-conversion-tracker-pixel-dedup.php';
-    require_once RATUL_ACT_DIR . 'includes/class-ratul-ads-conversion-tracker-ltv.php';
-    require_once RATUL_ACT_DIR . 'includes/class-ratul-ads-conversion-tracker-catalog.php';
-    require_once RATUL_ACT_DIR . 'includes/class-ratul-ads-conversion-tracker-webhook.php';
+    require_once RATUL_ACT_DIR . 'includes/class-ratul-act-retry.php';
+    require_once RATUL_ACT_DIR . 'includes/class-ratul-act-logger.php';
+    require_once RATUL_ACT_DIR . 'includes/class-ratul-act-identity.php';
+    require_once RATUL_ACT_DIR . 'includes/class-ratul-act-clickcapture.php';
+    require_once RATUL_ACT_DIR . 'includes/class-ratul-act-matchquality.php';
+    require_once RATUL_ACT_DIR . 'includes/class-ratul-act-offline-conversion.php';
+    require_once RATUL_ACT_DIR . 'includes/class-ratul-act-pixel-dedup.php';
+    require_once RATUL_ACT_DIR . 'includes/class-ratul-act-ltv.php';
+    require_once RATUL_ACT_DIR . 'includes/class-ratul-act-catalog.php';
+    require_once RATUL_ACT_DIR . 'includes/class-ratul-act-webhook.php';
     // BUG-2 FIX: custom-events was present but never loaded.
-    require_once RATUL_ACT_DIR . 'includes/class-ratul-ads-conversion-tracker-custom-events.php';
+    require_once RATUL_ACT_DIR . 'includes/class-ratul-act-custom-events.php';
     // Backward-compat shim — keeps Ratul_ACT_Core as a safe no-op class.
-    require_once RATUL_ACT_DIR . 'includes/class-ratul-ads-conversion-tracker-dispatcher.php';
-    require_once RATUL_ACT_DIR . 'includes/class-ratul-ads-conversion-tracker-core.php';
+    require_once RATUL_ACT_DIR . 'includes/class-ratul-act-dispatcher.php';
+    require_once RATUL_ACT_DIR . 'includes/class-ratul-act-core.php';
 
     if ( defined( 'WP_CLI' ) && WP_CLI ) {
-        require_once RATUL_ACT_DIR . 'includes/class-ratul-ads-conversion-tracker-cli.php';
+        require_once RATUL_ACT_DIR . 'includes/class-ratul-act-cli.php';
     }
 
     // ── Platform senders ─────────────────────────────────────────────────────
-    require_once RATUL_ACT_DIR . 'platforms/class-ratul-ads-conversion-tracker-meta.php';
-    require_once RATUL_ACT_DIR . 'platforms/class-ratul-ads-conversion-tracker-tiktok.php';
-    require_once RATUL_ACT_DIR . 'platforms/class-ratul-ads-conversion-tracker-google.php';
-    require_once RATUL_ACT_DIR . 'platforms/class-ratul-ads-conversion-tracker-snapchat.php';
-    require_once RATUL_ACT_DIR . 'platforms/class-ratul-ads-conversion-tracker-pinterest.php';
-    require_once RATUL_ACT_DIR . 'platforms/class-ratul-ads-conversion-tracker-linkedin.php';
+    require_once RATUL_ACT_DIR . 'platforms/class-ratul-act-meta.php';
+    require_once RATUL_ACT_DIR . 'platforms/class-ratul-act-tiktok.php';
+    require_once RATUL_ACT_DIR . 'platforms/class-ratul-act-google.php';
+    require_once RATUL_ACT_DIR . 'platforms/class-ratul-act-snapchat.php';
+    require_once RATUL_ACT_DIR . 'platforms/class-ratul-act-pinterest.php';
+    require_once RATUL_ACT_DIR . 'platforms/class-ratul-act-linkedin.php';
 
     // ── WooCommerce event sources ─────────────────────────────────────────────
     // Core WooCommerce purchase/refund/view events.
-    require_once RATUL_ACT_DIR . 'sources/class-ratul-ads-conversion-tracker-woocommerce.php';
+    require_once RATUL_ACT_DIR . 'sources/class-ratul-act-woocommerce.php';
     // Extended WooCommerce source (v3.x — wishlist, partial refund, order status).
-    require_once RATUL_ACT_DIR . 'sources/class-ratul-ads-conversion-tracker-source-woocommerce.php';
+    require_once RATUL_ACT_DIR . 'sources/class-ratul-act-source-woocommerce.php';
     // Subscription renewal/cancellation events.
-    require_once RATUL_ACT_DIR . 'sources/class-ratul-ads-conversion-tracker-woo-renewals.php';
+    require_once RATUL_ACT_DIR . 'sources/class-ratul-act-woo-renewals.php';
     // Cart abandonment — opt-in, guarded by option check in init().
-    require_once RATUL_ACT_DIR . 'sources/class-ratul-ads-conversion-tracker-cart-abandonment.php';
-    require_once RATUL_ACT_DIR . 'sources/class-ratul-ads-conversion-tracker-woo-abandonment.php';
+    require_once RATUL_ACT_DIR . 'sources/class-ratul-act-cart-abandonment.php';
+    require_once RATUL_ACT_DIR . 'sources/class-ratul-act-woo-abandonment.php';
     // Order lifecycle status events: on-hold, failed, cancelled.
-    require_once RATUL_ACT_DIR . 'sources/class-ratul-ads-conversion-tracker-woo-order-status.php';
+    require_once RATUL_ACT_DIR . 'sources/class-ratul-act-woo-order-status.php';
     // AddToWishlist events — opt-in.
-    require_once RATUL_ACT_DIR . 'sources/class-ratul-ads-conversion-tracker-woo-wishlist.php';
+    require_once RATUL_ACT_DIR . 'sources/class-ratul-act-woo-wishlist.php';
     // Partial refund events.
-    require_once RATUL_ACT_DIR . 'sources/class-ratul-ads-conversion-tracker-woo-partial-refund.php';
+    require_once RATUL_ACT_DIR . 'sources/class-ratul-act-woo-partial-refund.php';
     // Subscriptions (WooCommerce Subscriptions plugin wrapper).
-    require_once RATUL_ACT_DIR . 'sources/class-ratul-ads-conversion-tracker-subscriptions.php';
+    require_once RATUL_ACT_DIR . 'sources/class-ratul-act-subscriptions.php';
 
     // ── Optional third-party sources ─────────────────────────────────────────
-    require_once RATUL_ACT_DIR . 'sources/class-ratul-ads-conversion-tracker-cf7.php';
-    require_once RATUL_ACT_DIR . 'sources/class-ratul-ads-conversion-tracker-edd.php';
+    require_once RATUL_ACT_DIR . 'sources/class-ratul-act-cf7.php';
+    require_once RATUL_ACT_DIR . 'sources/class-ratul-act-edd.php';
 
     // ── Admin ─────────────────────────────────────────────────────────────────
     if ( is_admin() ) {
-        require_once RATUL_ACT_DIR . 'admin/class-ratul-ads-conversion-tracker-dashboard.php';
-        require_once RATUL_ACT_DIR . 'admin/class-ratul-ads-conversion-tracker-admin.php';
+        require_once RATUL_ACT_DIR . 'admin/class-ratul-act-dashboard.php';
+        require_once RATUL_ACT_DIR . 'admin/class-ratul-act-admin.php';
     }
 
     // ── Frontend pixel ────────────────────────────────────────────────────────
     if ( ! is_admin() ) {
-        require_once RATUL_ACT_DIR . 'frontend/class-ratul-ads-conversion-tracker-frontend.php';
+        require_once RATUL_ACT_DIR . 'frontend/class-ratul-act-frontend.php';
     }
 }
 
