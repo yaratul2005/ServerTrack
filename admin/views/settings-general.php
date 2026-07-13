@@ -6,6 +6,16 @@
 if ( ! defined( 'ABSPATH' ) ) exit;
 ?>
 <div class="st-settings-section">
+    <div class="st-settings-section-header">
+        <div class="st-section-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+        </div>
+        <div class="st-settings-section-title">
+            <h3 style="margin:0;"><?php esc_html_e( 'General Settings', 'ratul-ads-conversion-tracker' ); ?></h3>
+            <p class="st-settings-section-desc"><?php esc_html_e( 'Core plugin behavior, consent mode and test mode configuration.', 'ratul-ads-conversion-tracker' ); ?></p>
+        </div>
+    </div>
+    <div class="st-settings-section-body">
 <table class="form-table" role="presentation">
     <tr>
         <th scope="row"><?php esc_html_e( 'Enable Plugin', 'ratul-ads-conversion-tracker' ); ?></th>
@@ -60,6 +70,9 @@ if ( ! defined( 'ABSPATH' ) ) exit;
         </td>
     </tr>
 </table>
+    </div>
 </div><!-- /.st-settings-section -->
+
+
 
 

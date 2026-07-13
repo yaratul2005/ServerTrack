@@ -6,6 +6,16 @@
 if ( ! defined( 'ABSPATH' ) ) exit;
 ?>
 <div class="st-settings-section">
+    <div class="st-settings-section-header">
+        <div class="st-section-icon" style="background:#eff6ff;color:#1877f2;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
+        </div>
+        <div class="st-settings-section-title">
+            <h3 style="margin:0;"><?php esc_html_e( 'Meta Conversions API', 'ratul-ads-conversion-tracker' ); ?></h3>
+            <p class="st-settings-section-desc"><?php esc_html_e( 'Configure server-side event tracking for Meta (Facebook/Instagram) Ads.', 'ratul-ads-conversion-tracker' ); ?></p>
+        </div>
+    </div>
+    <div class="st-settings-section-body">
 <table class="form-table" role="presentation">
     <tr>
         <th scope="row"><?php esc_html_e( 'Enable Meta CAPI', 'ratul-ads-conversion-tracker' ); ?></th>
@@ -124,13 +134,25 @@ if ( ! defined( 'ABSPATH' ) ) exit;
         </td>
     </tr>
 </table>
+    </div>
 </div><!-- /.st-settings-section -->
-<hr />
-<h2><?php esc_html_e( 'Send Test Event', 'ratul-ads-conversion-tracker' ); ?></h2>
-<p><?php esc_html_e( 'Sends a dummy Purchase event to Meta CAPI to verify your credentials.', 'ratul-ads-conversion-tracker' ); ?></p>
-<button type="button" class="button button-secondary ratul-ads-conversion-tracker-test-btn" data-platform="meta">
-    <?php esc_html_e( 'Send Test Event → Meta', 'ratul-ads-conversion-tracker' ); ?>
-</button>
-<div class="st-test-result ratul-ads-conversion-tracker-test-response" id="ratul-ads-conversion-tracker-test-response-meta"></div>
+
+<div class="st-settings-section">
+    <div class="st-settings-section-header">
+        <div class="st-section-icon" style="background:#eff6ff;color:#1877f2;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        </div>
+        <div class="st-settings-section-title">
+            <h3 style="margin:0;"><?php esc_html_e( 'Send Test Event', 'ratul-ads-conversion-tracker' ); ?></h3>
+            <p class="st-settings-section-desc"><?php esc_html_e( 'Sends a dummy Purchase event to Meta CAPI to verify your credentials.', 'ratul-ads-conversion-tracker' ); ?></p>
+        </div>
+    </div>
+    <div class="st-settings-section-body">
+        <button type="button" class="button button-secondary ratul-ads-conversion-tracker-test-btn" data-platform="meta">
+            <?php esc_html_e( 'Send Test Event → Meta', 'ratul-ads-conversion-tracker' ); ?>
+        </button>
+        <div class="st-test-result ratul-ads-conversion-tracker-test-response" id="ratul-ads-conversion-tracker-test-response-meta"></div>
+    </div>
+</div>
 
 

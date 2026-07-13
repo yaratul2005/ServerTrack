@@ -135,9 +135,9 @@
 #ratul-ads-conversion-tracker-wrap *,
 #st-app * { box-sizing: border-box; }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+/* â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• 
    3. PAGE HEADER â€” animated gradient mesh + SVG constellation
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â•  */
 .st-page-header {
   background: #0b1f2e;
   background: linear-gradient(135deg, #081a27 0%, #0d2435 40%, #0a2d2b 100%);
@@ -1951,3 +1951,82 @@
   animation: st-fade-in .22s ease both;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   30. INLINE SVG LOGO WRAP (replaces missing bglogo.png)
+═══════════════════════════════════════════════════════════════ */
+.st-logo-icon-wrap {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 0 10px rgba(14,165,160,.55));
+  transition: filter var(--st-transition), transform var(--st-transition);
+}
+.st-page-header:hover .st-logo-icon-wrap {
+  filter: drop-shadow(0 0 22px rgba(14,165,160,.85));
+  transform: scale(1.06) rotate(-3deg);
+}
+.st-logo-icon-wrap svg { display: block; }
+
+/* ═══════════════════════════════════════════════════════════════
+   31. SETTINGS PAGE SECTION — structural fix
+   The settings views use .st-settings-section wrapping raw <table
+   class="form-table">. Make the section look good without needing
+   a separate header/body wrapper when none is present.
+═══════════════════════════════════════════════════════════════ */
+
+/* When section has no inner header div, give it a top accent border */
+.st-settings-section > .form-table:first-child,
+.st-settings-section > table.form-table:first-child {
+  margin: 0;
+}
+
+/* WP form-table inside st-settings-section — clean it up */
+.st-settings-section .form-table {
+  width: 100%;
+  margin-top: 0;
+}
+.st-settings-section .form-table th {
+  width: 200px;
+  padding: 14px 0 14px 0;
+  vertical-align: top;
+  font-size: .8125rem;
+  font-weight: 600;
+  color: var(--st-text);
+  line-height: 1.4;
+}
+.st-settings-section .form-table td {
+  padding: 12px 0;
+  vertical-align: middle;
+}
+.st-settings-section .form-table tr {
+  border-bottom: 1px solid var(--st-divider);
+}
+.st-settings-section .form-table tr:last-child {
+  border-bottom: none;
+}
+
+/* Section title H2 / H3 inside settings section */
+.st-settings-section h2,
+.st-settings-section h3 {
+  font-size: .9375rem;
+  font-weight: 700;
+  color: var(--st-text);
+  margin: 0 0 12px;
+  padding: 0;
+  border: none;
+}
+
+/* Quick fix for bare .st-settings-section that wraps the test buttons */
+.st-settings-section > h2:first-child,
+.st-settings-section > p:first-child {
+  padding: 20px 20px 0;
+}
+
+/* Submit/Save button row */
+.st-settings-form p.submit {
+  padding: 14px 0 4px;
+  margin: 0;
+}

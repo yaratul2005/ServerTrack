@@ -572,38 +572,39 @@ class Ratul_ACT_Admin {
         ?>
         <div class="st-page-header">
             <div class="st-page-header-left">
-                <img
-                    src="<?php echo esc_url( RATUL_ACT_URL . 'admin/assets/bglogo.png' ); ?>"
-                    alt="Ratuls-ACT"
-                    width="46"
-                    height="46"
-                    class="st-logo-img"
-                    onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"
-                />
-                <span class="st-logo-icon-fallback" style="display:none;">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                <div class="st-logo-icon-wrap">
+                    <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect width="36" height="36" rx="9" fill="url(#logo-grad)"/>
+                        <path d="M8 22 L13 14 L18 19 L23 10 L28 16" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                        <circle cx="28" cy="16" r="2.5" fill="#0ef0e8" opacity="0.9"/>
+                        <defs>
+                            <linearGradient id="logo-grad" x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+                                <stop offset="0%" stop-color="#0ea5a0"/>
+                                <stop offset="100%" stop-color="#0a6b68"/>
+                            </linearGradient>
+                        </defs>
                     </svg>
-                </span>
+                </div>
                 <div class="st-page-title-group">
-                    <h1>Ratuls- Ads Conversion Tracker</h1>
-                    <p>Server-Side Tracking</p>
+                    <h1>Ratul Ads Conversion Tracker</h1>
+                    <p>Server-Side Tracking &mdash; CAPI for Meta, Google &amp; TikTok</p>
                 </div>
             </div>
             <div class="st-header-badges">
                 <span class="st-header-version"><?php echo esc_html( 'v' . RATUL_ACT_VERSION ); ?></span>
                 <nav>
                     <a href="<?php echo esc_url( admin_url( 'admin.php?page=ratul-ads-conversion-tracker' ) ); ?>"
-                       style="color:rgba(255,255,255,.6);text-decoration:none;font-size:.8125rem;margin-right:12px;"
+                       style="color:rgba(255,255,255,.65);text-decoration:none;font-size:.8125rem;margin-right:12px;"
                     ><?php esc_html_e( 'Dashboard', 'ratul-ads-conversion-tracker' ); ?></a>
                     <a href="<?php echo esc_url( self::settings_url() ); ?>"
-                       style="color:rgba(255,255,255,.6);text-decoration:none;font-size:.8125rem;"
+                       style="color:rgba(255,255,255,.65);text-decoration:none;font-size:.8125rem;"
                     ><?php esc_html_e( 'Settings', 'ratul-ads-conversion-tracker' ); ?></a>
                 </nav>
             </div>
         </div>
         <?php
     }
+
 
     // ─────────────────────────────────────────────────────────────────
     // Settings Page
