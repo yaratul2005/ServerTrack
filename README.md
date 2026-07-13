@@ -1,148 +1,82 @@
-# Ratul Ads Conversion Tracker
+# Ratul Ads Conversion Tracker (Ratul-ACT)
 
 <p align="center">
-  <img src="https://img.shields.io/badge/WordPress-v6.0+-21759b?style=for-the-badge&logo=wordpress&logoColor=white" alt="WordPress v6.0+" />
-  <img src="https://img.shields.io/badge/PHP-v8.0+-777bb4?style=for-the-badge&logo=php&logoColor=white" alt="PHP v8.0+" />
-  <img src="https://img.shields.io/badge/JavaScript-ES6+-f7df1e?style=for-the-badge&logo=javascript&logoColor=black" alt="JavaScript ES6+" />
-  <img src="https://img.shields.io/badge/WooCommerce-v7.0+-96588a?style=for-the-badge&logo=woocommerce&logoColor=white" alt="WooCommerce v7.0+" />
+  <img src="https://img.shields.io/badge/WordPress-6.0+-21759b?style=for-the-badge&logo=wordpress&logoColor=white" alt="WordPress Compatibility" />
+  <img src="https://img.shields.io/badge/PHP-8.0+-777bb4?style=for-the-badge&logo=php&logoColor=white" alt="PHP Compatibility" />
+  <img src="https://img.shields.io/badge/WooCommerce-7.0+-96588a?style=for-the-badge&logo=woocommerce&logoColor=white" alt="WooCommerce Compatibility" />
+  <img src="https://img.shields.io/badge/Ad_Blocker-Resilient-ef4444?style=for-the-badge&logo=shield&logoColor=white" alt="Ad-Blocker Resiliency" />
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Meta_CAPI-Active_Deduplication-0668e1?style=for-the-badge&logo=meta&logoColor=white" alt="Meta CAPI" />
-  <img src="https://img.shields.io/badge/TikTok_Events_API-Active-000000?style=for-the-badge&logo=tiktok&logoColor=white" alt="TikTok Events API" />
-  <img src="https://img.shields.io/badge/Google_Ads-Enhanced_Conversions-4285f4?style=for-the-badge&logo=google&logoColor=white" alt="Google Ads" />
+  <img src="https://img.shields.io/badge/Meta_CAPI-Active_Deduplication-0668e1?style=for-the-badge&logo=meta&logoColor=white" alt="Meta Conversions API" />
+  <img src="https://img.shields.io/badge/TikTok_Events-API_v2-000000?style=for-the-badge&logo=tiktok&logoColor=white" alt="TikTok Events API" />
+  <img src="https://img.shields.io/badge/Google_Ads-Enhanced_Conversions-4285f4?style=for-the-badge&logo=google&logoColor=white" alt="Google Ads Enhanced Conversions" />
 </p>
 
 ---
 
-**Ratul Ads Conversion Tracker** is a professional, high-performance server-side Conversion API (CAPI) tracking plugin for WordPress and WooCommerce. It routes client-side events through your own first-party domain, stitches browser identity parameters, and dispatches them synchronously to Meta (Facebook), TikTok, and Google Ads with perfect event deduplication and GDPR/CCPA consent compliance.
+## 🌟 Executive Summary
 
-## Why Ratul Ads Conversion Tracker?
+**Ratul Ads Conversion Tracker (Ratul-ACT)** is a self-hosted, enterprise-grade first-party Conversion API (CAPI) and browser tracking gateway for WordPress and WooCommerce. 
 
-Instead of paying high monthly fees for third-party server-side Tag Manager containers (e.g., Stape.io or Google Cloud GTM), Ratul Ads Conversion Tracker acts as your own **self-hosted First-Party CAPI Gateway** directly inside WordPress. 
-
-- **Defeats Safari ITP:** Generates first-party `Set-Cookie` headers via PHP, extending ad-click identifier Lifespans (`fbclid`, `gclid`) from the JavaScript-capped 7 days to a full **2 years**.
-- **Ad-blocker Resiliency:** Bypasses browser-level trackers entirely by proxying events through a local REST endpoint (`/wp-json/ratul-ads-conversion-tracker/v1/pixel`).
-- **Deep Identity Stitching:** Bundles MaxMind GeoIP resolution, true client IP detection across Cloudflare/Sucuri, and user-agent parsing to maximize your Meta Event Match Quality (EMQ).
+Designed to bypass ad-blockers and privacy regulations (iOS 14+, Safari ITP), Ratul-ACT routes tracking events directly through your own domain. It synchronizes browser event ids and server dispatches to provide Meta, Google, and TikTok with perfect deduplication data. By eliminating dependency on expensive external tag containers like Stape.io or Google Cloud GTM, it acts as a direct, self-hosted CAPI engine on your WordPress server.
 
 ---
 
-## Meta Event Manager Deduplication in Action
+## 🚀 Key Features & Capabilities
 
-Ratuls-ACT aligns event ID generation seeds between the browser and the server. Below is the live verification in the Meta Event Manager, demonstrating perfect 1-to-1 event deduplication:
-
-### 1. ViewContent Event Deduplication
-Both the browser and server triggers report the exact same event ID, allowing Meta to merge them into a single processed conversion.
-![Meta Event Manager - ViewContent Deduplication](pluginss/vc.png)
-
-### 2. Add to Cart Event Deduplication
-Standard and AJAX-based Add to Cart triggers map directly to the same event ID, eliminating double counting.
-![Meta Event Manager - Add to Cart Deduplication](pluginss/add2c.png)
-
-### 3. Initiate Checkout Event Deduplication
-Deduplicates Checkout visits safely by passing the enqueued event ID between the WooCommerce session and server CAPI.
-![Meta Event Manager - Initiate Checkout Deduplication](pluginss/init_ch.png)
+| Feature | Description | Business Benefit |
+| :--- | :--- | :--- |
+| **First-Party Cookie Engine** | Issues first-party `Set-Cookie` headers directly via PHP, protecting tracking identifiers (`fbclid`, `gclid`) from Safari's 7-day script caps. | Extends attribution lifespans to **2 years** |
+| **Ad-Blocker Resilience** | Proxies client-side events through a local WordPress REST endpoint. | Recovers up to **20–30%** of lost checkout signals |
+| **Signal Enrichment** | Extracts IP, City, State, ZIP, and User-Agent parameters dynamically on the client, with fallbacks for Cloudflare and Nginx. | Maximizes Meta Event Match Quality (EMQ) |
+| **Anti-Fraud Approval** | Prevents automatic purchase tracking, allowing manual confirmation and fraud checks from the admin order screen. | Prevents fake/refunded orders from polluting ad algorithms |
+| **Fail-Safe Retry Queue** | Exponential back-off retry loop that automatically resends failed platform payloads. | Guarantees delivery of server-side conversions |
 
 ---
 
-## Plugin Dashboard & Configuration Admin UI
+## 📊 Live Verification & Deduplication
 
-Ratuls-ACT features a premium, intuitive admin dashboard and a granular settings console to configure multi-pixel events, tracking sources, and manual approvals.
-
-### 1. Real-Time Analytics Dashboard
-Directly inspect diagnostic performance, health, API logs, and events dispatch status in real-time.
-![Ratuls-ACT - Real-Time Analytics Dashboard](pluginss/settings/Dashboard.png)
-
-### 2. Meta Pixel & CAPI Settings
-Loop and fire events to multiple Meta Properties concurrently with advanced matching parameter configurations.
-![Ratuls-ACT - Meta Pixel & CAPI Settings](pluginss/settings/Meta.png)
-
-### 3. Event Sources & Verification Settings
-Fine-tune tracking sources (WooCommerce, Cart Abandonment, Subscriptions) and toggle Manual Purchase Verification.
-![Ratuls-ACT - Event Sources Settings](pluginss/settings/eventS.png)
+### 1. Meta Event Manager Deduplication
+Both client-side browser triggers and server-side CAPI webhooks report matching Event IDs, allowing Meta to successfully deduplicate actions:
+* **View Content**: ![ViewContent Deduplication](pluginss/vc.png)
+* **Add to Cart**: ![AddToCart Deduplication](pluginss/add2c.png)
+* **Initiate Checkout**: ![InitiateCheckout Deduplication](pluginss/init_ch.png)
 
 ---
 
-## Core Architecture
+## 🖥️ UI Dashboard & Configuration
 
-Ratuls-ACT is organized into modular, clean layers:
+### Real-Time Performance Analytics
+Inspect event metrics, health stats, API response logs, and queue retries in real-time.
+![Real-Time Dashboard](pluginss/settings/Dashboard.png)
 
-```text
-ratul-ads-conversion-tracker.php                       ← Bootstrap loader
-│
-├── includes/
-│   ├── class-ratul-ads-conversion-tracker-cookiehelper.php   1st-Party Cookie Generator (ITP bypass)
-│   ├── class-ratul-ads-conversion-tracker-dispatcher.php       Secure Cryptotoken-based Async loopback
-│   ├── class-ratul-ads-conversion-tracker-pixel-dedup.php    Checkout and Cart Button ID handlers
-│   ├── class-ratul-ads-conversion-tracker-enrichment.php     IP, Geo, and UA Signal enrichment
-│   ├── class-ratul-ads-conversion-tracker-health.php         Daily API token health diagnostic cron
-│   ├── class-ratul-ads-conversion-tracker-stream.php         Real-time SSE Debug Console
-│   ├── class-ratul-ads-conversion-tracker-attribution.php    10-touch UTM History Tracker
-│   ├── class-ratul-ads-conversion-tracker-consent.php        GDPR Consent State manager
-│   ├── class-ratul-ads-conversion-tracker-event.php          Event DTO Model
-│   ├── class-ratul-ads-conversion-tracker-retry.php          Exponential back-off retry queue
-│   └── class-ratul-ads-conversion-tracker-logger.php         Structured SQL event logger
-│
-├── platforms/
-│   ├── class-ratul-ads-conversion-tracker-meta.php           Meta Graph API (Multi-pixel arrays)
-│   ├── class-ratul-ads-conversion-tracker-tiktok.php         TikTok Events API v2
-│   └── class-ratul-ads-conversion-tracker-google.php         Google Ads Enhanced Conversions
-│
-├── sources/
-│   ├── class-ratul-ads-conversion-tracker-woocommerce.php          Core WooCommerce Hooks
-│   ├── class-ratul-ads-conversion-tracker-source-woocommerce.php   Extended Lifecycle Hooks (Wishlist/Status)
-│   ├── class-ratul-ads-conversion-tracker-subscriptions.php        WooCommerce Subscriptions integration
-│   ├── class-ratul-ads-conversion-tracker-cart-abandonment.php     Cart Abandonment CAPI cron
-│   └── ...
-│
-├── frontend/
-│   └── class-ratul-ads-conversion-tracker-frontend.php       Browser JS localization bridge
-│
-└── admin/
-    ├── class-ratul-ads-conversion-tracker-dashboard.php      Real-time Dashboard UI & Charts
-    └── class-ratul-ads-conversion-tracker-admin.php          Admin Settings & Manual Approval Column
-```
+### Multi-Pixel Meta CAPI Setup
+Loop dispatches to multiple Meta Pixels with toggle controls for PII parameter hashing.
+![Meta Settings](pluginss/settings/Meta.png)
+
+### WooCommerce Advanced Sources
+Configure extended WooCommerce triggers (order lifecycle status, wishlist opt-ins) and toggle Manual Purchase Verification.
+![WooCommerce Event Sources Settings](pluginss/settings/eventS.png)
 
 ---
 
-## Advanced Verification Panel
+## 🛠️ Installation & Activation
 
-For high-ticket or fraud-sensitive stores, enable **Manual Purchase Verification** in settings:
-- Disables automatic purchase event firing on checkout.
-- Adds an **Approve & Sync** / **Mark Fraud** control column directly in the WooCommerce Orders list.
-- Admin can manually verify the purchase before releasing the conversion data to Meta.
-
----
-
-## Installation & Setup
-
-1. Upload the `ratul-ads-conversion-tracker` directory to your WordPress `/wp-content/plugins/` directory.
-2. Activate the plugin via **Plugins → Installed Plugins** in the WordPress Dashboard.
-3. Configure your API tokens under **Ratuls-ACT → Settings**.
-4. Check real-time API logs and matching scores under the **Ratuls-ACT → Dashboard** tab.
-
-## Custom Events (REST API Proxy)
-
-Fire custom server events client-side securely through the local proxy endpoint:
-
-```javascript
-fetch('/wp-json/ratul-ads-conversion-tracker/v1/pixel/meta', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    event_name: 'Lead',
-    params: {
-      value: 49.99,
-      currency: 'USD',
-      content_name: 'Newsletter signup'
-    }
-  })
-});
-```
+1. Upload the `ratul-ads-conversion-tracker` directory to `/wp-content/plugins/`.
+2. Activate the plugin via **Plugins → Installed Plugins**.
+3. Go to **Ratuls-ACT** → **Settings** to set up your ad platform access tokens.
+4. Monitor active events and match metrics in **Ratuls-ACT** → **Dashboard**.
 
 ---
 
-## License
+## 📚 Technical Documentation
 
-GPL-2.0-or-later · © MD. Yaser Ahmmed Ratul
+To explore the deeper mechanics of the plugin, refer to the accompanying documentation files:
+* 🛠️ **[ARCHITECTURE.md](ARCHITECTURE.md)**: Details the codebase design, data flows, database deduplication engine, and ITP cookie bypass logic.
+* 🛡️ **[COMPLIANCE.md](COMPLIANCE.md)**: Explains GDPR/CCPA cookie consent manager integrations (CookieYes, Complianz) and the data security PII blocklist.
 
+---
+
+## 📄 License & Credits
+Licensed under GPL-2.0-or-later. Created and maintained by **MD. Yaser Ahmmed Ratul**.
