@@ -107,8 +107,10 @@ class Ratul_ACT_Admin {
     public static function enqueue_assets( string $hook ) {
         $allowed_hooks = [
             'settings_page_ratul-ads-conversion-tracker',
-            'ratul_act_page_ratul-ads-conversion-tracker-settings',
             'toplevel_page_ratul-ads-conversion-tracker',
+            'ratul-ads-conversion-tracker_page_ratul-ads-conversion-tracker-settings',
+            'ratul_act_page_ratul-ads-conversion-tracker-settings',
+            'settings_page_ratul-ads-conversion-tracker-settings',
         ];
         if ( ! in_array( $hook, $allowed_hooks, true ) ) return;
 
