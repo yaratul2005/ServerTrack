@@ -105,8 +105,6 @@ class Ratul_ACT_Admin {
     // ─────────────────────────────────────────────────────────────────
 
     public static function enqueue_assets( string $hook ) {
-        echo '<!-- RATUL_ACT HOOK: ' . esc_html( $hook ) . ' -->';
-        
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         $current_page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
         $allowed_pages = [
