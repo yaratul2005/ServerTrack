@@ -320,7 +320,7 @@ class Ratul_ACT_Frontend {
 
         wp_register_script(
             'ratul-ads-conversion-tracker-pixel',
-            RATUL_ACT_URL . 'frontend/assets/ratul-ads-conversion-tracker-pixel.js',
+            RATUL_ACT_URL . 'frontend/assets/ratul-act-pixel.js',
             [],
             RATUL_ACT_VERSION,
             true
