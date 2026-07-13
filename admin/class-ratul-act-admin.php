@@ -106,14 +106,17 @@ class Ratul_ACT_Admin {
 
     public static function enqueue_assets( string $hook ) {
         echo '<!-- RATUL_ACT HOOK: ' . esc_html( $hook ) . ' -->';
-        $allowed_hooks = [
-            'settings_page_ratul-ads-conversion-tracker',
-            'toplevel_page_ratul-ads-conversion-tracker',
-            'ratul-ads-conversion-tracker_page_ratul-ads-conversion-tracker-settings',
-            'ratul_act_page_ratul-ads-conversion-tracker-settings',
-            'settings_page_ratul-ads-conversion-tracker-settings',
+        
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $current_page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
+        $allowed_pages = [
+            'ratul-ads-conversion-tracker',
+            'ratul-ads-conversion-tracker-settings',
         ];
-        if ( ! in_array( $hook, $allowed_hooks, true ) ) return;
+        
+        if ( ! in_array( $current_page, $allowed_pages, true ) ) {
+            return;
+        }
 
         wp_enqueue_style(
             'ratul-ads-conversion-tracker-admin-base',
