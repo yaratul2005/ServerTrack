@@ -1,16 +1,6 @@
 /* Ratul Ads Conversion Tracker - CSS Base, Tokens & Header */
-*
- * ServerTrack Admin Styles ÔÇö v4.0 VISUAL OVERHAUL
- * Pure CSS upgrade. Zero backend changes.
- * New: inline SVG icon system, animated decorations, glassmorphism
- *      accents, gradient meshes, sparkline shimmer, micro-interactions.
- */
-
-/* ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
-   0. DESIGN TOKENS
-ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ */
-:root {
-  /* Brand */
+#ratul-ads-conversion-tracker-wrap,
+#st-app {
   --st-brand:          #0ea5a0;
   --st-brand-hover:    #0c8f8a;
   --st-brand-active:   #0a7a76;
@@ -18,14 +8,12 @@
   --st-brand-dark:     #0b7a76;
   --st-brand-glow:     rgba(14,165,160,.35);
 
-  /* Shorthand */
   --st-primary:        #0ea5a0;
   --st-muted:          #64748b;
   --st-faint:          #94a3b8;
   --st-text:           #0f172a;
   --st-error:          #ef4444;
 
-  /* Surfaces */
   --st-bg:             #f1f5f9;
   --st-surface:        #ffffff;
   --st-surface-2:      #f8fafc;
@@ -34,12 +22,10 @@
   --st-border-strong:  rgba(15,23,42,.14);
   --st-divider:        #e2e8f0;
 
-  /* Text */
   --st-text-muted:     #64748b;
   --st-text-faint:     #94a3b8;
   --st-text-inv:       #f8fafc;
 
-  /* Status */
   --st-success:        #10b981;
   --st-success-bg:     #ecfdf5;
   --st-success-text:   #065f46;
@@ -52,7 +38,6 @@
   --st-info-bg:        #eff6ff;
   --st-info-text:      #1e40af;
 
-  /* Platforms */
   --st-meta-color:     #1877f2;
   --st-meta-bg:        #eff6ff;
   --st-google-color:   #db4437;
@@ -60,7 +45,6 @@
   --st-tiktok-color:   #111827;
   --st-tiktok-bg:      #f1f5f9;
 
-  /* Layout */
   --st-radius-xs:      4px;
   --st-radius-sm:      6px;
   --st-radius:         10px;
@@ -75,9 +59,96 @@
   --st-transition-fast:120ms cubic-bezier(0.16,1,0.3,1);
 }
 
-/* ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
-   1. GLOBAL ANIMATIONS
-ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ */
+/* Global resets & wrappers */
+#ratul-ads-conversion-tracker-wrap,
+#st-app {
+  max-width: 1200px;
+  margin-right: 20px;
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+  color: var(--st-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  animation: st-fade-in .3s ease both;
+}
+#ratul-ads-conversion-tracker-wrap *,
+#st-app * {
+  box-sizing: border-box;
+}
+
+#ratul-ads-conversion-tracker-wrap h1.wp-heading-inline,
+#ratul-ads-conversion-tracker-wrap .wp-header-end {
+  display: none !important;
+}
+
+/* Page Header */
+.st-page-header {
+  border-radius: var(--st-radius-lg);
+  margin-bottom: 25px;
+  padding: 20px 25px;
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  position: relative;
+  overflow: hidden;
+}
+.st-page-header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  position: relative;
+  z-index: 1;
+}
+.st-logo-icon-wrap {
+  width: 44px; height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 0 12px rgba(14,165,160,.5));
+  transition: filter var(--st-transition), transform var(--st-transition);
+}
+.st-page-header:hover .st-logo-icon-wrap {
+  filter: drop-shadow(0 0 22px rgba(14,165,160,.85));
+  transform: scale(1.06) rotate(-3deg);
+}
+.st-logo-icon-wrap svg {
+  display: block;
+}
+.st-page-title-group h1 {
+  color: white !important;
+  margin: 0; padding: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  border: none;
+}
+.st-page-title-group p {
+  color: rgba(255,255,255,0.7) !important;
+  margin: 3px 0 0;
+  font-size: .8rem;
+}
+.st-header-badges {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  position: relative;
+  z-index: 1;
+}
+.st-header-version {
+  display: inline-block;
+  padding: 3px 8px;
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: var(--st-radius-xs);
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255,255,255,.8);
+}
+
+/* Animations */
 @keyframes st-blink {
   0%,100% { opacity: 1; }
   50%      { opacity: .35; }
@@ -105,263 +176,10 @@
   from { opacity: 0; transform: translateX(-8px); }
   to   { opacity: 1; transform: translateX(0); }
 }
-@keyframes st-draw {
-  from { stroke-dashoffset: 200; }
-  to   { stroke-dashoffset: 0; }
+@keyframes fadeInWrap {
+  from { opacity: 0; transform: translateY(15px); }
+  to { opacity: 1; transform: translateY(0); }
 }
-@keyframes st-orbit {
-  from { transform: rotate(0deg)   translateX(28px) rotate(0deg); }
-  to   { transform: rotate(360deg) translateX(28px) rotate(-360deg); }
-}
-@keyframes st-gradient-shift {
-  0%   { background-position: 0%   50%; }
-  50%  { background-position: 100% 50%; }
-  100% { background-position: 0%   50%; }
-}
-
-/* ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
-   2. BASE RESET
-ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ */
-#ratul-ads-conversion-tracker-wrap,
-#st-app {
-  max-width: 1200px;
-  margin-right: 20px;
-  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
-  color: var(--st-text);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  animation: st-fade-in .3s ease both;
-}
-
-#ratul-ads-conversion-tracker-wrap *,
-#st-app * { box-sizing: border-box; }
-
-/* ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
-   3. PAGE HEADER ÔÇö animated gradient mesh + SVG constellation
-ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ */
-.st-page-header {
-  background: #0b1f2e;
-  background: linear-gradient(135deg, #081a27 0%, #0d2435 40%, #0a2d2b 100%);
-  border-radius: var(--st-radius-lg);
-  padding: 22px 28px;
-  margin-bottom: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 14px;
-  border: 1px solid rgba(14,165,160,.18);
-  box-shadow:
-    0 4px 24px rgba(0,0,0,.25),
-    0 1px 0 rgba(14,165,160,.12) inset;
-  position: relative;
-  overflow: hidden;
-}
-
-/* Animated gradient orb ÔÇö top-right */
-.st-page-header::before {
-  content: '';
-  position: absolute;
-  top: -70px; right: -50px;
-  width: 300px; height: 300px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(14,165,160,.18) 0%, transparent 68%);
-  pointer-events: none;
-  animation: st-float 6s ease-in-out infinite;
-}
-
-/* Second orb ÔÇö bottom-left */
-.st-page-header::after {
-  content: '';
-  position: absolute;
-  bottom: -50px; left: 60px;
-  width: 200px; height: 200px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(59,130,246,.1) 0%, transparent 70%);
-  pointer-events: none;
-  animation: st-float 8s ease-in-out infinite reverse;
-}
-
-/* Inline SVG constellation overlay ÔÇö rendered via CSS background */
-.st-page-header-decoration {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  overflow: hidden;
-  border-radius: var(--st-radius-lg);
-}
-
-/* Dot grid pattern */
-.st-page-header-decoration::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-image:
-    radial-gradient(circle, rgba(14,165,160,.18) 1px, transparent 1px);
-  background-size: 28px 28px;
-  opacity: .55;
-}
-
-/* Diagonal line sweep */
-.st-page-header-decoration::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(
-    -45deg,
-    transparent,
-    transparent 38px,
-    rgba(14,165,160,.04) 38px,
-    rgba(14,165,160,.04) 39px
-  );
-}
-
-.st-page-header-left {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  position: relative;
-  z-index: 2;
-}
-
-/* ÔöÇÔöÇ Logo ÔöÇÔöÇ */
-.st-logo-img {
-  width: 48px; height: 48px;
-  object-fit: contain;
-  flex-shrink: 0;
-  display: block;
-  filter:
-    drop-shadow(0 0 10px rgba(14,165,160,.55))
-    drop-shadow(0 2px 8px rgba(0,0,0,.4));
-  transition: filter var(--st-transition), transform var(--st-transition);
-}
-
-.st-page-header:hover .st-logo-img {
-  filter:
-    drop-shadow(0 0 18px rgba(14,165,160,.8))
-    drop-shadow(0 2px 12px rgba(0,0,0,.5));
-  transform: scale(1.05) rotate(-2deg);
-}
-
-/* Logo icon SVG fallback wrapper */
-.st-logo-icon-fallback {
-  width: 48px; height: 48px;
-  background: linear-gradient(135deg, var(--st-brand), #0a6b68);
-  border-radius: 12px;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  box-shadow: 0 4px 16px rgba(14,165,160,.45);
-  position: relative;
-}
-
-/* Pulse ring on fallback icon */
-.st-logo-icon-fallback::before {
-  content: '';
-  position: absolute;
-  inset: -4px;
-  border-radius: 16px;
-  border: 2px solid var(--st-brand);
-  animation: st-pulse-ring 2.4s ease-out infinite;
-}
-
-.st-logo-icon-fallback svg {
-  width: 24px; height: 24px;
-  color: #fff;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  position: relative;
-  z-index: 1;
-}
-
-.st-page-title-group { position: relative; z-index: 2; }
-
-.st-page-title-group h1 {
-  color: #fff;
-  font-size: 1.2rem;
-  font-weight: 700;
-  margin: 0; padding: 0;
-  border: none;
-  line-height: 1.2;
-  letter-spacing: -.02em;
-}
-
-.st-page-title-group p {
-  color: rgba(255,255,255,.42);
-  font-size: .775rem;
-  margin: 3px 0 0;
-  letter-spacing: .01em;
-}
-
-.st-header-badges {
-  display: flex;
-  gap: 7px;
-  flex-wrap: wrap;
-  align-items: center;
-  position: relative;
-  z-index: 2;
-}
-
-.st-header-version {
-  font-size: .675rem;
-  color: rgba(255,255,255,.22);
-  font-weight: 500;
-  letter-spacing: .06em;
-  margin-right: 4px;
-  text-transform: uppercase;
-}
-
-/* ÔöÇÔöÇ Badges ÔöÇÔöÇ */
-.st-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
-  border-radius: var(--st-radius-sm);
-  font-size: .7rem;
-  font-weight: 600;
-  line-height: 1;
-  white-space: nowrap;
-  transition: transform var(--st-transition), box-shadow var(--st-transition);
-}
-
-.st-badge:hover { transform: translateY(-1px); }
-
-.st-badge-meta   { background: rgba(24,119,242,.22); color: #93c5fd; border: 1px solid rgba(24,119,242,.28); }
-.st-badge-google { background: rgba(219,68,55,.22);  color: #fca5a5; border: 1px solid rgba(219,68,55,.28); }
-.st-badge-tiktok { background: rgba(255,255,255,.09); color: rgba(255,255,255,.62); border: 1px solid rgba(255,255,255,.12); }
-
-.st-badge-dot {
-  width: 5px; height: 5px;
-  border-radius: 50%;
-  background: currentColor;
-  animation: st-blink 2.4s ease-in-out infinite;
-}
-
-.st-badge.on   { background: var(--st-success-bg); color: var(--st-success-text); }
-.st-badge.off  { background: var(--st-divider);    color: var(--st-text-faint); }
-.st-badge.warn { background: var(--st-warning-bg); color: var(--st-warning-text); }
-
-/* ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
-   4. TAB NAVIGATION ÔÇö with animated active indicator
-ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ */
-/* Improve header logo/styling */
-.st-page-header {
-    border-radius: var(--st-radius-lg);
-    margin-bottom: 25px;
-    padding: 20px 25px;
-    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-    color: white;
-}
-
-.st-page-title-group h1 {
-    color: white !important;
-}
-
-.st-page-title-group p {
-    color: rgba(255,255,255,0.7) !important;
+.wrap {
+  animation: fadeInWrap 0.4s cubic-bezier(0.165, 0.84, 0.44, 1) forwards;
 }
