@@ -113,9 +113,27 @@ class Ratul_ACT_Admin {
         if ( ! in_array( $hook, $allowed_hooks, true ) ) return;
 
         wp_enqueue_style(
-            'ratul-ads-conversion-tracker-admin',
-            RATUL_ACT_URL . 'admin/assets/admin.css',
+            'ratul-ads-conversion-tracker-admin-base',
+            RATUL_ACT_URL . 'admin/assets/css/base.css',
             [],
+            RATUL_ACT_VERSION
+        );
+        wp_enqueue_style(
+            'ratul-ads-conversion-tracker-admin-tabs',
+            RATUL_ACT_URL . 'admin/assets/css/tabs.css',
+            [ 'ratul-ads-conversion-tracker-admin-base' ],
+            RATUL_ACT_VERSION
+        );
+        wp_enqueue_style(
+            'ratul-ads-conversion-tracker-admin-dashboard',
+            RATUL_ACT_URL . 'admin/assets/css/dashboard.css',
+            [ 'ratul-ads-conversion-tracker-admin-base' ],
+            RATUL_ACT_VERSION
+        );
+        wp_enqueue_style(
+            'ratul-ads-conversion-tracker-admin-settings',
+            RATUL_ACT_URL . 'admin/assets/css/settings.css',
+            [ 'ratul-ads-conversion-tracker-admin-base' ],
             RATUL_ACT_VERSION
         );
         wp_enqueue_script(

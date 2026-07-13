@@ -1,0 +1,71 @@
+*
+ * Ratul Ads Conversion Tracker — Tab Navigation Styles
+ */
+
+.st-tab-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border);
+  padding: 6px 8px;
+  margin: 0 0 20px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.st-tab-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.st-tab-nav .nav-tab {
+  float: none !important;
+  margin: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm) !important;
+  font-size: .8125rem;
+  font-weight: 500;
+  color: var(--text-muted) !important;
+  text-decoration: none;
+  white-space: nowrap;
+  position: relative;
+  transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.st-tab-nav .nav-tab svg {
+  width: 14px; height: 14px;
+  flex-shrink: 0;
+  opacity: .7;
+}
+.st-tab-nav .nav-tab:hover {
+  color: var(--brand) !important;
+  background: var(--brand-light) !important;
+}
+.st-tab-nav .nav-tab:hover svg {
+  opacity: 1;
+}
+.st-tab-nav .nav-tab-active,
+.st-tab-nav .nav-tab-active:focus,
+.st-tab-nav .nav-tab-active:hover {
+  color: var(--brand) !important;
+  background: var(--brand-light) !important;
+  font-weight: 600;
+}
+.st-tab-nav .nav-tab-active::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 12px; right: 12px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--brand);
+}
+.st-tab-nav .nav-tab-active svg {
+  opacity: 1;
+}

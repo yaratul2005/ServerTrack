@@ -1,0 +1,442 @@
+*
+ * Ratul Ads Conversion Tracker — Settings Page Styles
+ */
+
+/* ─────────────────────────────────────────────────────────────────
+   SETTINGS CARDS & HEADERS
+   ───────────────────────────────────────────────────────────────── */
+.st-settings-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 0;
+  margin: 0 0 18px;
+  overflow: hidden;
+  transition: box-shadow var(--dur) var(--ease);
+  animation: st-fade-in .28s var(--ease) both;
+}
+.st-settings-section:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.st-settings-section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.st-section-icon {
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--brand-light);
+  border-radius: var(--radius-sm);
+  color: var(--brand);
+  flex-shrink: 0;
+}
+.st-section-icon svg {
+  width: 16px; height: 16px;
+}
+
+.st-settings-section-title h3 {
+  margin: 0; padding: 0;
+  font-size: .875rem;
+  font-weight: 600;
+  color: var(--text);
+  border: none;
+}
+.st-settings-section-desc,
+.st-settings-section-title p {
+  margin: 2px 0 0;
+  font-size: .775rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.st-settings-section-body,
+.st-settings-section > .form-table,
+.st-settings-section > table.form-table {
+  padding: 4px 22px 20px;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   FORM LAYOUT (FORM-TABLE)
+   ───────────────────────────────────────────────────────────────── */
+.st-settings-section .form-table,
+.st-settings-form .form-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 !important;
+}
+.st-settings-section .form-table th,
+.st-settings-form .form-table th {
+  width: 220px;
+  padding: 16px 20px 16px 0;
+  vertical-align: top;
+  font-size: .8125rem;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+  border: none;
+  border-bottom: 1px solid var(--border);
+}
+.st-settings-section .form-table td,
+.st-settings-form .form-table td {
+  padding: 14px 0;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border);
+}
+.st-settings-section .form-table tr:last-child th,
+.st-settings-section .form-table tr:last-child td,
+.st-settings-form .form-table tr:last-child th,
+.st-settings-form .form-table tr:last-child td {
+  border-bottom: none;
+}
+
+.st-settings-section .form-table .description,
+.st-settings-form .form-table .description,
+p.description {
+  margin: 5px 0 0;
+  font-size: .775rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   FORM CONTROLS (INPUTS, SELECTS)
+   ───────────────────────────────────────────────────────────────── */
+.st-field-input,
+.st-field-select,
+.st-settings-form input[type="text"],
+.st-settings-form input[type="password"],
+.st-settings-form input[type="email"],
+.st-settings-form input[type="url"],
+.st-settings-form input[type="number"],
+.st-settings-form select,
+.st-settings-form textarea {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  padding: 9px 12px;
+  font-size: .8375rem;
+  font-family: var(--font);
+  color: var(--text);
+  background: var(--surface-3);
+  border: 1.5px solid var(--border-2);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+  -webkit-appearance: none;
+  appearance: none;
+  line-height: 1.5;
+}
+.st-settings-form input[type="number"] { max-width: 120px; }
+.st-settings-form select { max-width: 320px; cursor: pointer; }
+
+.st-field-input:focus,
+.st-field-select:focus,
+.st-settings-form input[type="text"]:focus,
+.st-settings-form input[type="password"]:focus,
+.st-settings-form input[type="email"]:focus,
+.st-settings-form input[type="url"]:focus,
+.st-settings-form input[type="number"]:focus,
+.st-settings-form select:focus,
+.st-settings-form textarea:focus {
+  border-color: var(--brand);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--brand-light);
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   TOGGLE SWITCHES
+   ───────────────────────────────────────────────────────────────── */
+.st-toggle {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+.st-toggle input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0; height: 0;
+  pointer-events: none;
+}
+.st-toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--border-2);
+  border-radius: 24px;
+  cursor: pointer;
+  transition: background .25s var(--ease), box-shadow .25s var(--ease);
+}
+.st-toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 18px; height: 18px;
+  left: 3px; bottom: 3px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(0,0,0,.22);
+  transition: transform .25s cubic-bezier(.175,.885,.32,1.275);
+}
+.st-toggle input:checked + .st-toggle-slider {
+  background: var(--brand);
+}
+.st-toggle input:checked + .st-toggle-slider::before {
+  transform: translateX(20px);
+}
+.st-toggle input:focus + .st-toggle-slider {
+  box-shadow: 0 0 0 3px var(--brand-light);
+}
+
+.st-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+.st-toggle-text {
+  font-size: .8375rem;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.4;
+}
+.st-toggle-label { cursor: pointer; }
+.st-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   PLATFORM BADGES & MAPPINGS
+   ───────────────────────────────────────────────────────────────── */
+.st-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: var(--radius-xl);
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: #fff;
+  line-height: 1.6;
+}
+.st-badge.meta   { background: #1877f2; }
+.st-badge.tiktok { background: #111;    }
+.st-badge.google { background: #34a853; }
+
+.st-badge-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+.st-event-mapping-label {
+  font-size: .72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-bottom: 4px;
+  margin-top: 10px;
+}
+.st-event-fires {
+  font-size: .775rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   BUTTONS
+   ───────────────────────────────────────────────────────────────── */
+.st-settings-form .button-primary,
+.st-btn-save {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 10px 22px !important;
+  background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%) !important;
+  border: none !important;
+  border-radius: var(--radius-sm) !important;
+  color: #fff !important;
+  font-size: .84rem !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  box-shadow: 0 3px 10px var(--brand-glow) !important;
+  transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease) !important;
+  text-decoration: none !important;
+  line-height: 1.4 !important;
+}
+.st-settings-form .button-primary:hover,
+.st-btn-save:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 18px var(--brand-glow) !important;
+}
+.st-settings-form .button-primary:active,
+.st-btn-save:active {
+  transform: translateY(0) !important;
+  box-shadow: 0 2px 6px var(--brand-glow) !important;
+}
+
+.st-test-btn,
+.button.button-secondary.ratul-ads-conversion-tracker-test-btn,
+.ratul-ads-conversion-tracker-test-btn {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px !important;
+  background: var(--surface) !important;
+  border: 1.5px solid var(--brand) !important;
+  border-radius: var(--radius-sm) !important;
+  color: var(--brand) !important;
+  font-size: .8125rem !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.st-test-btn:hover,
+.ratul-ads-conversion-tracker-test-btn:hover {
+  background: var(--brand-light) !important;
+}
+.st-test-btn svg {
+  width: 13px; height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.st-test-result {
+  margin-top: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: .8rem;
+  font-family: 'Courier New', monospace;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  display: none;
+}
+.st-test-result.is-visible { display: block; }
+
+/* ─────────────────────────────────────────────────────────────────
+   ALERTS / NOTICES
+   ───────────────────────────────────────────────────────────────── */
+.st-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  font-size: .8125rem;
+  line-height: 1.5;
+  margin-bottom: 16px;
+  border: 1px solid transparent;
+}
+.st-notice-icon {
+  width: 18px; height: 18px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  margin-top: 1px;
+}
+.st-notice-success {
+  background: var(--green-bg);
+  border-color: rgba(16,185,129,.25);
+  color: #065f46;
+}
+.st-notice-warning {
+  background: var(--amber-bg);
+  border-color: rgba(245,158,11,.25);
+  color: #92400e;
+}
+.st-notice-error {
+  background: var(--red-bg);
+  border-color: rgba(239,68,68,.25);
+  color: #991b1b;
+}
+.st-notice-info {
+  background: var(--blue-bg);
+  border-color: rgba(59,130,246,.25);
+  color: #1e40af;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   LOG TABLE (inside settings logs / debug)
+   ───────────────────────────────────────────────────────────────── */
+.st-log-section { margin-top: 20px; }
+.st-log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .8rem;
+}
+.st-log-table thead th {
+  padding: 10px 14px;
+  text-align: left;
+  font-size: .7rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  background: var(--surface-2);
+  border-bottom: 1.5px solid var(--border);
+}
+.st-log-table tbody td {
+  padding: 11px 14px;
+  color: var(--text-2);
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border);
+}
+.st-log-table tbody tr:last-child td { border-bottom: none; }
+.st-log-table tbody tr:hover td { background: var(--brand-light); }
+
+.st-status-success {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-xs);
+  font-size: .72rem; font-weight: 700;
+  background: var(--green-bg); color: #065f46;
+}
+.st-status-error {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-xs);
+  font-size: .72rem; font-weight: 700;
+  background: var(--red-bg); color: #991b1b;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   RESPONSIVE DESIGN CONTROLS
+   ───────────────────────────────────────────────────────────────── */
+@media screen and (max-width: 1100px) {
+  .st-kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .st-dashboard-grid { grid-template-columns: 1fr; }
+}
+@media screen and (max-width: 782px) {
+  .st-page-header { flex-direction: column; align-items: flex-start; padding: 16px 18px; }
+  .st-header-badges { align-self: flex-end; }
+  .st-kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .st-settings-section .form-table th { width: 160px; }
+  .st-tab-nav { gap: 2px; padding: 4px 6px; }
+  .st-tab-nav .nav-tab { padding: 7px 10px; font-size: .77rem; }
+}
+@media screen and (max-width: 600px) {
+  .st-kpi-grid { grid-template-columns: 1fr; }
+  .st-settings-section .form-table th,
+  .st-settings-form .form-table th { display: block; width: 100%; padding-bottom: 4px; border-bottom: none; }
+  .st-settings-section .form-table td,
+  .st-settings-form .form-table td { display: block; width: 100%; padding-top: 4px; }
+  .st-field-input, .st-field-select,
+  .st-settings-form input[type="text"],
+  .st-settings-form input[type="password"],
+  .st-settings-form select { max-width: 100%; }
+}

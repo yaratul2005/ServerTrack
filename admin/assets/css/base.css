@@ -1,0 +1,188 @@
+*
+ * Ratul Ads Conversion Tracker — CSS Base & Tokens
+ */
+
+#ratul-ads-conversion-tracker-wrap,
+#ratul-ads-conversion-tracker-wrap * {
+  --brand:          #0ea5a0;
+  --brand-dark:     #0a7a76;
+  --brand-xdark:    #075957;
+  --brand-light:    rgba(14,165,160,.12);
+  --brand-glow:     rgba(14,165,160,.35);
+
+  --page-bg:        #f0f4f8;
+  --surface:        #ffffff;
+  --surface-2:      #f8fafc;
+  --surface-3:      #f1f5f9;
+
+  --text:           #1e293b;
+  --text-2:         #475569;
+  --text-muted:     #64748b;
+  --text-light:     #94a3b8;
+
+  --border:         #e2e8f0;
+  --border-2:       #cbd5e1;
+
+  --header-bg-a:    #0a1628;
+  --header-bg-b:    #0d2c35;
+
+  --green:          #10b981;
+  --green-bg:       rgba(16,185,129,.1);
+  --red:            #ef4444;
+  --red-bg:         rgba(239,68,68,.1);
+  --amber:          #f59e0b;
+  --amber-bg:       rgba(245,158,11,.1);
+  --blue:           #3b82f6;
+  --blue-bg:        rgba(59,130,246,.1);
+
+  --radius-xs:      4px;
+  --radius-sm:      6px;
+  --radius-md:      10px;
+  --radius-lg:      14px;
+  --radius-xl:      20px;
+
+  --shadow-sm:      0 1px 3px rgba(0,0,0,.07), 0 1px 2px rgba(0,0,0,.05);
+  --shadow-md:      0 4px 12px rgba(0,0,0,.08), 0 2px 4px rgba(0,0,0,.04);
+  --shadow-lg:      0 8px 24px rgba(0,0,0,.10), 0 4px 8px rgba(0,0,0,.06);
+
+  --ease:           cubic-bezier(.4,0,.2,1);
+  --dur:            .2s;
+  --font:           -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+#ratul-ads-conversion-tracker-wrap,
+#ratul-ads-conversion-tracker-wrap * {
+  box-sizing: border-box;
+}
+
+#ratul-ads-conversion-tracker-wrap {
+  font-family: var(--font);
+  color: var(--text);
+  background: var(--page-bg);
+  padding: 0 0 40px;
+  margin: 0;
+  min-height: 100vh;
+}
+
+#ratul-ads-conversion-tracker-wrap h1.wp-heading-inline,
+#ratul-ads-conversion-tracker-wrap .wp-header-end {
+  display: none !important;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   PAGE HEADER
+   ───────────────────────────────────────────────────────────────── */
+.st-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 28px;
+  background: linear-gradient(135deg, var(--header-bg-a) 0%, var(--header-bg-b) 100%);
+  border-radius: var(--radius-lg);
+  margin: 0 0 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+.st-page-header::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 60% 80% at 85% 50%, rgba(14,165,160,.18) 0%, transparent 65%),
+    radial-gradient(ellipse 40% 60% at 10% 50%, rgba(14,165,160,.08) 0%, transparent 55%);
+  pointer-events: none;
+}
+
+.st-page-header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  position: relative;
+  z-index: 1;
+}
+
+.st-logo-icon-wrap {
+  flex-shrink: 0;
+  width: 46px;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 0 10px rgba(14,165,160,.55));
+  transition: filter var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.st-page-header:hover .st-logo-icon-wrap {
+  filter: drop-shadow(0 0 20px rgba(14,165,160,.85));
+  transform: scale(1.07) rotate(-4deg);
+}
+.st-logo-icon-wrap svg {
+  display: block;
+}
+
+.st-page-title-group h1 {
+  margin: 0; padding: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.25;
+  letter-spacing: -.01em;
+  border: none;
+}
+.st-page-title-group p {
+  margin: 3px 0 0;
+  font-size: .78rem;
+  color: rgba(255,255,255,.55);
+  line-height: 1.3;
+}
+
+.st-header-badges {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+.st-header-version {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.15);
+  border-radius: var(--radius-xl);
+  font-size: .7rem;
+  font-weight: 600;
+  color: rgba(255,255,255,.8);
+  letter-spacing: .04em;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   ANIMATIONS & KEYFRAMES
+   ───────────────────────────────────────────────────────────────── */
+@keyframes st-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@keyframes st-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes st-fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+@keyframes st-pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: .5; transform: scale(.8); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #ratul-ads-conversion-tracker-wrap *,
+  #ratul-ads-conversion-tracker-wrap *::before,
+  #ratul-ads-conversion-tracker-wrap *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
