@@ -743,6 +743,9 @@ class Ratul_ACT_Admin {
         if ( ! empty( $result['status'] ) && 'success' === $result['status'] ) {
             wp_send_json_success( $result );
         } else {
+            if ( isset( $result['status'] ) && 'skipped' === $result['status'] ) {
+                $result['message'] = sprintf( __( '%s is disabled. Please enable it and save settings first.', 'ratul-ads-conversion-tracker' ), ucfirst( $platform ) );
+            }
             wp_send_json_error( $result );
         }
     }
