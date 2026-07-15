@@ -286,3 +286,85 @@
   .st-settings-section .form-table td { display: block; width: 100%; padding-top: 4px; }
   .st-field-input, .st-field-select { max-width: 100%; }
 }
+
+/* Glassmorphic Saving Overlay */
+#st-save-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999999;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+#st-save-overlay.is-active {
+  opacity: 1;
+}
+.st-save-card {
+  background: #ffffff;
+  padding: 32px 40px;
+  border-radius: 16px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  text-align: center;
+  max-width: 380px;
+  width: 90%;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  transform: translateY(20px);
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+#st-save-overlay.is-active .st-save-card {
+  transform: translateY(0);
+}
+.st-save-progress-text {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--st-text);
+  margin-bottom: 12px;
+}
+.st-save-progress-bar-container {
+  height: 8px;
+  background: var(--st-divider);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+.st-save-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--st-brand) 0%, #06b6d4 100%);
+  border-radius: 4px;
+  transition: width 0.1s ease-out;
+}
+
+/* Connection Badges */
+.connection-status-badge.st-status-inactive {
+  background: var(--st-divider);
+  color: var(--st-text-muted);
+}
+.connection-status-badge.st-status-success {
+  background: var(--st-success-bg);
+  color: var(--st-success-text);
+}
+.connection-status-badge.st-status-error {
+  background: var(--st-error-bg);
+  color: var(--st-error-text);
+}
+
+.st-connection-check-btn {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Spinner Loader on Buttons */
+.st-connection-check-btn .st-spinner {
+  display: inline-block;
+  vertical-align: middle;
+  border: 2px solid rgba(14, 165, 160, 0.2);
+  border-top-color: var(--st-brand);
+  border-radius: 50%;
+  animation: st-spin .8s linear infinite;
+}

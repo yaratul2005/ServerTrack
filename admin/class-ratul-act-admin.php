@@ -91,6 +91,7 @@ class Ratul_ACT_Admin {
         add_action( 'wp_ajax_ratul_act_test_event',          [ self::class, 'ajax_test_event' ] );
         add_action( 'wp_ajax_ratul_act_get_logs',            [ self::class, 'ajax_get_logs' ] );
         add_action( 'wp_ajax_ratul_act_get_dashboard_stats', [ self::class, 'ajax_get_dashboard_stats' ] );
+        add_action( 'wp_ajax_ratul_act_verify_credentials',  [ self::class, 'ajax_verify_credentials' ] );
 
         // Custom columns hooks for manual CAPI approval
         add_filter( 'manage_edit-shop_order_columns',        [ self::class, 'add_orders_column' ] );
@@ -771,6 +772,62 @@ class Ratul_ACT_Admin {
         $stats = get_option( 'ratul_act_stats', [] );
         wp_send_json_success( $stats );
     }
+
+    public static function ajax_verify_credentials(): void {
+        check_ajax_referer( 'ratul_act_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Unauthorized' );
+
+        $platform = isset( $_POST['platform'] ) ? sanitize_key( wp_unslash( $_POST['platform'] ) ) : '';
+        $pixel_id = isset( $_POST['pixel_id'] ) ? sanitize_text_field( wp_unslash( $_POST['pixel_id'] ) ) : '';
+        $token    = isset( $_POST['token'] ) ? sanitize_text_field( wp_unslash( $_POST['token'] ) ) : '';
+
+        if ( empty( $pixel_id ) || empty( $token ) ) {
+            wp_send_json_error( [ 'message' => __( 'Pixel ID and Access Token are required.', 'ratul-ads-conversion-tracker' ) ] );
+        }
+
+        if ( 'meta' === $platform ) {
+            $url = 'https://graph.facebook.com/v17.0/' . $pixel_id . '?access_token=' . $token;
+            $res = wp_remote_get( $url, [ 'timeout' => 15 ] );
+            if ( is_wp_error( $res ) ) {
+                wp_send_json_error( [ 'message' => $res->get_error_message() ] );
+            }
+            $body = wp_remote_retrieve_body( $res );
+            $data = json_decode( $body, true );
+            if ( ! empty( $data['error'] ) ) {
+                wp_send_json_error( [ 'message' => $data['error']['message'] ?? __( 'Invalid API credentials.', 'ratul-ads-conversion-tracker' ) ] );
+            }
+            wp_send_json_success( [ 'message' => __( 'Meta Connection Successful!', 'ratul-ads-conversion-tracker' ) ] );
+        } elseif ( 'tiktok' === $platform ) {
+            $url = 'https://business-api.tiktok.com/open_api/v1.3/event/track/';
+            $body = wp_json_encode( [
+                'pixel_code' => $pixel_id,
+                'event'      => 'PageView',
+                'event_id'   => 'verify_conn_' . time(),
+                'timestamp'  => gmdate( 'Y-m-d\TH:i:s\Z' ),
+                'context'    => [
+                    'ad'   => [ 'callback' => 'test' ],
+                    'user' => [ 'ip' => '127.0.0.1', 'user_agent' => 'Test' ]
+                ]
+            ] );
+            $res = wp_remote_post( $url, [
+                'timeout' => 15,
+                'headers' => [
+                    'Access-Token' => $token,
+                    'Content-Type' => 'application/json'
+                ],
+                'body'    => $body
+            ] );
+            if ( is_wp_error( $res ) ) {
+                wp_send_json_error( [ 'message' => $res->get_error_message() ] );
+            }
+            $resp_body = wp_remote_retrieve_body( $res );
+            $data = json_decode( $resp_body, true );
+            if ( isset( $data['code'] ) && (int) $data['code'] !== 0 ) {
+                wp_send_json_error( [ 'message' => $data['message'] ?? __( 'Invalid API credentials.', 'ratul-ads-conversion-tracker' ) ] );
+            }
+            wp_send_json_success( [ 'message' => __( 'TikTok Connection Successful!', 'ratul-ads-conversion-tracker' ) ] );
+        }
+
+        wp_send_json_error( [ 'message' => __( 'Unsupported platform verification.', 'ratul-ads-conversion-tracker' ) ] );
+    }
 }
-
-

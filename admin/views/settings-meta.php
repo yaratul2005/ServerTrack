@@ -42,6 +42,13 @@ if ( ! defined( 'ABSPATH' ) ) exit;
                    class="regular-text st-field-input"
                    autocomplete="new-password" />
             <p class="description"><?php esc_html_e( 'Generate from Meta Events Manager → Settings → System User Token.', 'ratul-ads-conversion-tracker' ); ?></p>
+            <div style="margin-top: 12px; display: flex; align-items: center; gap: 10px;">
+                <button type="button" class="button button-secondary st-connection-check-btn" data-platform="meta" data-pixel-input="#ratul_act_meta_pixel_id" data-token-input="#ratul_act_meta_access_token">
+                    <?php esc_html_e( 'Verify API Connection', 'ratul-ads-conversion-tracker' ); ?>
+                    <span class="st-spinner" style="display:none; width: 12px; height: 12px; margin-left: 5px; border-width: 1.5px;"></span>
+                </button>
+                <span class="st-badge connection-status-badge st-status-inactive" id="st-meta-connection-badge"><?php esc_html_e( 'Unverified', 'ratul-ads-conversion-tracker' ); ?></span>
+            </div>
         </td>
     </tr>
     <!-- Advanced Matching -->

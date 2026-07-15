@@ -217,5 +217,117 @@
     });
   }, 4000);
 
+  /* ─────────────────────────────────────────────────
+     INTERACTIVE SAVE SETTINGS OVERLAY
+  ───────────────────────────────────────────────── */
+  $(document).on('submit', '.st-settings-form', function (e) {
+    e.preventDefault();
+    var $form = $(this);
+
+    // Create and show overlay
+    var $overlay = $(
+      '<div id="st-save-overlay">' +
+        '<div class="st-save-card">' +
+          '<div class="st-save-progress-text">Saving Settings... <span id="st-save-percent">0%</span></div>' +
+          '<div class="st-save-progress-bar-container">' +
+            '<div class="st-save-progress-bar" id="st-save-bar"></div>' +
+          '</div>' +
+        '</div>' +
+      '</div>'
+    ).appendTo('body');
+
+    // Smooth fade in
+    setTimeout(function () {
+      $overlay.addClass('is-active');
+    }, 10);
+
+    var progress = 0;
+    var progressInterval = setInterval(function () {
+      if (progress < 90) {
+        progress += Math.floor(Math.random() * 8) + 2;
+        if (progress > 90) progress = 90;
+        $('#st-save-bar').css('width', progress + '%');
+        $('#st-save-percent').text(progress + '%');
+      }
+    }, 120);
+
+    // Submit via AJAX
+    $.ajax({
+      url: $form.attr('action') || 'options.php',
+      type: 'POST',
+      data: $form.serialize(),
+      success: function () {
+        clearInterval(progressInterval);
+        $('#st-save-bar').css('width', '100%');
+        $('#st-save-percent').text('100%');
+        $('.st-save-progress-text').text('Settings Saved!');
+
+        setTimeout(function () {
+          $overlay.removeClass('is-active');
+          setTimeout(function () {
+            $overlay.remove();
+            // Reload settings tab page
+            window.location.reload();
+          }, 300);
+        }, 800);
+      },
+      error: function () {
+        clearInterval(progressInterval);
+        $overlay.removeClass('is-active');
+        setTimeout(function () { $overlay.remove(); }, 300);
+        showToast('error', 'Save Failed', 'Could not save settings.');
+      }
+    });
+  });
+
+  /* ─────────────────────────────────────────────────
+     CREDENTIALS VALIDATION SYSTEM
+  ───────────────────────────────────────────────── */
+  $(document).on('click', '.st-connection-check-btn', function () {
+    var $btn = $(this);
+    var platform = $btn.data('platform');
+    var pixelId = $($btn.data('pixel-input')).val().trim();
+    var token = $($btn.data('token-input')).val().trim();
+    var $badge = $('#st-' + platform + '-connection-badge');
+    var $spinner = $btn.find('.st-spinner');
+
+    if (!pixelId || !token) {
+      showToast('error', 'Missing Data', 'Please fill in both Pixel ID and Access Token.');
+      return;
+    }
+
+    $btn.prop('disabled', true);
+    $spinner.show();
+    $badge.removeClass('st-status-success st-status-error').addClass('st-status-inactive').text('Verifying...');
+
+    $.post(
+      cfg.ajax_url,
+      {
+        action: 'ratul_act_verify_credentials',
+        nonce: cfg.nonce,
+        platform: platform,
+        pixel_id: pixelId,
+        token: token
+      },
+      function (res) {
+        $btn.prop('disabled', false);
+        $spinner.hide();
+
+        if (res.success) {
+          $badge.removeClass('st-status-inactive st-status-error').addClass('st-status-success').text('Connected');
+          showToast('success', 'Verified', res.data.message || 'Connection verified.');
+        } else {
+          $badge.removeClass('st-status-inactive st-status-success').addClass('st-status-error').text('Failed');
+          showToast('error', 'Verification Failed', res.data.message || 'Unable to connect.');
+        }
+      }
+    ).fail(function () {
+      $btn.prop('disabled', false);
+      $spinner.hide();
+      $badge.removeClass('st-status-inactive st-status-success').addClass('st-status-error').text('Failed');
+      showToast('error', 'Error', 'Connection check failed.');
+    });
+  });
+
 }(jQuery));
 
