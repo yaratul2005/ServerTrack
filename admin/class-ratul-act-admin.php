@@ -110,6 +110,8 @@ class Ratul_ACT_Admin {
         $allowed_pages = [
             'ratul-ads-conversion-tracker',
             'ratul-ads-conversion-tracker-settings',
+            'ratul-ads-conversion-tracker-attribution',
+            'ratul-ads-conversion-tracker-offline',
         ];
         
         if ( ! in_array( $current_page, $allowed_pages, true ) ) {

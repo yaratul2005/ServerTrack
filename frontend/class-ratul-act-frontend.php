@@ -586,8 +586,14 @@ class Ratul_ACT_Frontend {
         }
         if ( $gclid ) $order->update_meta_data( '_ratul_act_gclid', $gclid );
 
+        // Save UTM history
+        if ( class_exists( 'Ratul_ACT_Attribution' ) ) {
+            $history = method_exists( 'Ratul_ACT_Attribution', 'get_history' ) ? call_user_func( [ 'Ratul_ACT_Attribution', 'get_history' ] ) : [];
+            if ( ! empty( $history ) ) {
+                $order->update_meta_data( '_ratul_act_utm_history', $history );
+            }
+        }
+
         $order->save_meta_data();
     }
 }
-
-

@@ -97,15 +97,42 @@ class Ratul_ACT_Hasher {
     }
 
     /**
-     * Hash an email address.
-     * Normalises to lowercase + trim.
+     * Normalize an email address by stripping whitespace and downcasing.
+     * For Gmail/Googlemail domains, strips '.' and '+' suffixes before hashing.
      */
-    public static function hash_email( string $email ): string {
+    public static function normalize_email( string $email ): string {
         $email = trim( strtolower( $email ) );
         if ( empty( $email ) ) {
             return '';
         }
-        return hash( 'sha256', $email );
+        $parts = explode( '@', $email );
+        if ( count( $parts ) !== 2 ) {
+            return $email;
+        }
+        $local  = $parts[0];
+        $domain = $parts[1];
+
+        if ( in_array( $domain, [ 'gmail.com', 'googlemail.com' ], true ) ) {
+            $plus_pos = strpos( $local, '+' );
+            if ( $plus_pos !== false ) {
+                $local = substr( $local, 0, $plus_pos );
+            }
+            $local  = str_replace( '.', '', $local );
+            $domain = 'gmail.com';
+        }
+        return $local . '@' . $domain;
+    }
+
+    /**
+     * Hash an email address.
+     * Normalises to lowercase + trim + Gmail strip-down prior to hashing.
+     */
+    public static function hash_email( string $email ): string {
+        $normalized = self::normalize_email( $email );
+        if ( empty( $normalized ) ) {
+            return '';
+        }
+        return hash( 'sha256', $normalized );
     }
 
     /**

@@ -103,7 +103,8 @@ class Ratul_ACT_Dashboard {
 
         add_submenu_page( 'ratul-ads-conversion-tracker', __( 'Dashboard', 'ratul-ads-conversion-tracker' ), __( 'Dashboard', 'ratul-ads-conversion-tracker' ), 'manage_options', 'ratul-ads-conversion-tracker',          [ self::class, 'render_page' ] );
         add_submenu_page( 'ratul-ads-conversion-tracker', __( 'Settings',  'ratul-ads-conversion-tracker' ), __( 'Settings',  'ratul-ads-conversion-tracker' ), 'manage_options', 'ratul-ads-conversion-tracker-settings', [ 'Ratul_ACT_Admin', 'render_page' ] );
-
+        add_submenu_page( 'ratul-ads-conversion-tracker', __( 'Attribution', 'ratul-ads-conversion-tracker' ), __( 'Attribution', 'ratul-ads-conversion-tracker' ), 'manage_options', 'ratul-ads-conversion-tracker-attribution', [ 'Ratul_ACT_Admin_Attribution', 'render_page' ] );
+        add_submenu_page( 'ratul-ads-conversion-tracker', __( 'Offline Uploads', 'ratul-ads-conversion-tracker' ), __( 'Offline Uploads', 'ratul-ads-conversion-tracker' ), 'manage_options', 'ratul-ads-conversion-tracker-offline', [ 'Ratul_ACT_Admin_Offline', 'render_page' ] );
     }
 
     public static function enqueue_assets( string $hook ): void {

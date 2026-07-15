@@ -132,6 +132,8 @@ function ratul_act_load_classes(): void {
     if ( is_admin() ) {
         require_once RATUL_ACT_DIR . 'admin/class-ratul-act-dashboard.php';
         require_once RATUL_ACT_DIR . 'admin/class-ratul-act-admin.php';
+        require_once RATUL_ACT_DIR . 'admin/class-ratul-act-admin-attribution.php';
+        require_once RATUL_ACT_DIR . 'admin/class-ratul-act-admin-offline.php';
     }
 
     // ── Frontend pixel ────────────────────────────────────────────────────────

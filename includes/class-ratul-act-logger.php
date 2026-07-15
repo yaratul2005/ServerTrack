@@ -135,6 +135,31 @@ class Ratul_ACT_Logger {
 			'event_name' => $event_type,
 		];
 
+		// Capture UTM attribution details for Purchase events
+		if ( $order_id > 0 && ( $event_type === 'Purchase' || $event_type === 'purchase' ) ) {
+			$history = [];
+			if ( function_exists( 'wc_get_order' ) ) {
+				$order = wc_get_order( $order_id );
+				if ( $order ) {
+					$history = $order->get_meta( '_ratul_act_utm_history' ) ?: [];
+				}
+			}
+			if ( empty( $history ) && class_exists( 'Ratul_ACT_Attribution' ) ) {
+				$history = method_exists( 'Ratul_ACT_Attribution', 'get_history' ) ? call_user_func( [ 'Ratul_ACT_Attribution', 'get_history' ] ) : [];
+			}
+			if ( ! empty( $history ) ) {
+				$first = reset( $history );
+				$last  = end( $history );
+				$entry['first_utm_source']   = $first['utm_source'] ?? '';
+				$entry['first_utm_medium']   = $first['utm_medium'] ?? '';
+				$entry['first_utm_campaign'] = $first['utm_campaign'] ?? '';
+				$entry['last_utm_source']    = $last['utm_source'] ?? '';
+				$entry['last_utm_medium']    = $last['utm_medium'] ?? '';
+				$entry['last_utm_campaign']  = $last['utm_campaign'] ?? '';
+				$entry['utm_path']           = wp_json_encode( $history );
+			}
+		}
+
 		if ( ! empty( $emq ) && isset( $emq['score'] ) ) {
 			$entry['emq_score'] = $emq['score'];
 			$entry['emq_grade'] = $emq['grade'] ?? '';
